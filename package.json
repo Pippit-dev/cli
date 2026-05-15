@@ -1,0 +1,44 @@
+{
+  "name": "@pippit-dev/cli",
+  "version": "0.1.0",
+  "description": "Pippit CLI",
+  "bin": {
+    "pippit-cli": "scripts/run.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "test": "go test ./... && go vet ./..."
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Pippit-dev/cli.git"
+  },
+  "license": "MIT",
+  "files": [
+    "cmd",
+    "internal",
+    "scripts/install.js",
+    "scripts/install-wizard.js",
+    "scripts/run.js",
+    "go.mod",
+    "go.sum",
+    "main.go",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
