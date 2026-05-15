@@ -30,6 +30,9 @@ mocked while their real service contracts are wired.
 
 ## HTTP Client
 
-Command modules should share `internal.Client` for service calls. It supports
-JSON `GET` and `POST`, a common base URL, and centralized HTTP error handling.
+Command modules should receive `internal.Runner` for service calls. Runtime
+settings such as base URL, HTTP timeout, and API paths are loaded by
+`internal/config` and paired with `internal.Client` in the runner.
 Set `PIPPIT_CLI_BASE_URL` to override the default `https://xyq.jianying.com`.
+Legacy overrides are also accepted in this order: `XYQ_OPENAPI_BASE`,
+`XYQ_BASE_URL`.

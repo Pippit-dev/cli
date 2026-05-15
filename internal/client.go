@@ -14,8 +14,6 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-const defaultTimeout = 30 * time.Second
-
 var (
 	defaultOnce   sync.Once
 	defaultClient *Client
@@ -32,16 +30,16 @@ type Client struct {
 
 // NewClient returns the process-wide shared HTTP client. Repeated calls return the
 // same instance and update its base URL for the current command invocation.
-func NewClient(baseURL string) *Client {
+func NewClient(baseURL string, timeout ...time.Duration) *Client {
 	defaultOnce.Do(func() {
 		defaultClient = &Client{
-			HTTPClient: &http.Client{
-				Timeout: defaultTimeout,
-			},
 			Headers: make(http.Header),
 		}
 	})
 	defaultClient.SetBaseURL(baseURL)
+	if len(timeout) > 0 {
+		defaultClient.SetTimeout(timeout[0])
+	}
 	return defaultClient
 }
 
@@ -57,6 +55,15 @@ func (c *Client) SetHeader(key, value string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.Headers.Set(key, value)
+}
+
+func (c *Client) SetTimeout(timeout time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.HTTPClient == nil {
+		c.HTTPClient = &http.Client{}
+	}
+	c.HTTPClient.Timeout = timeout
 }
 
 func (c *Client) snapshot() (string, *http.Client, http.Header) {
@@ -117,7 +124,7 @@ func (c *Client) do(req *http.Request, out any) error {
 	req.Header.Set("Accept", "application/json")
 
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultTimeout}
+		httpClient = http.DefaultClient
 	}
 
 	resp, err := httpClient.Do(req)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Pippit-dev/pippit-cli/internal"
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 type submitRunResponse struct {
@@ -19,9 +20,11 @@ type submitRunResponse struct {
 	} `json:"data"`
 }
 
-const submitRunPath = "/api/biz/v1/skill/submit_run"
+func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *internal.Runner) (*SubmitRunResult, error) {
+	if runner == nil || runner.Client == nil {
+		return nil, fmt.Errorf("submit_run runner client is required")
+	}
 
-func SubmitRun(ctx context.Context, opts SubmitRunOptions, client *internal.Client) (*SubmitRunResult, error) {
 	body := map[string]any{
 		"message": opts.Message,
 	}
@@ -33,7 +36,7 @@ func SubmitRun(ctx context.Context, opts SubmitRunOptions, client *internal.Clie
 	}
 
 	var resp submitRunResponse
-	if err := client.Post(ctx, submitRunPath, body, &resp); err != nil {
+	if err := runner.Client.Post(ctx, submitRunPath(runner), body, &resp); err != nil {
 		return nil, fmt.Errorf("submit_run request failed: %w", err)
 	}
 	if resp.Ret != "0" {
@@ -53,4 +56,11 @@ func SubmitRun(ctx context.Context, opts SubmitRunOptions, client *internal.Clie
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,
 	}, nil
+}
+
+func submitRunPath(runner *internal.Runner) string {
+	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.SubmitRun != "" {
+		return runner.Config.Paths.SubmitRun
+	}
+	return config.SubmitRunPath
 }

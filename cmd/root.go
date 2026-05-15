@@ -6,6 +6,7 @@ import (
 
 	novelcmd "github.com/Pippit-dev/pippit-cli/cmd/novel"
 	"github.com/Pippit-dev/pippit-cli/internal"
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +16,8 @@ func Execute() error {
 }
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
-	apiClient := internal.NewClient(resolveBaseURL())
+	cfg := config.Load()
+	runner := internal.NewRunner(cfg)
 
 	root := &cobra.Command{
 		Use:           "pippit-cli",
@@ -25,19 +27,6 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(novelcmd.NewCommand(stdout, stderr, apiClient))
+	root.AddCommand(novelcmd.NewCommand(stdout, stderr, runner))
 	return root
-}
-
-func resolveBaseURL() string {
-	if v := os.Getenv("PIPPIT_CLI_BASE_URL"); v != "" {
-		return v
-	}
-	if v := os.Getenv("XYQ_OPENAPI_BASE"); v != "" {
-		return v
-	}
-	if v := os.Getenv("XYQ_BASE_URL"); v != "" {
-		return v
-	}
-	return "https://xyq.jianying.com"
 }

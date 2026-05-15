@@ -14,7 +14,7 @@ import (
 )
 
 // NewCommand builds the novel scene command tree.
-func NewCommand(stdout, stderr io.Writer, apiClient *internal.Client) *cobra.Command {
+func NewCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "novel",
 		Short: "Novel generation workflows",
@@ -22,13 +22,13 @@ func NewCommand(stdout, stderr io.Writer, apiClient *internal.Client) *cobra.Com
 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.AddCommand(newNovelSubmitRunCommand(stdout, stderr, apiClient))
-	cmd.AddCommand(newNovelUploadFileCommand(stdout, stderr, apiClient))
-	cmd.AddCommand(newNovelGetThreadCommand(stdout, stderr, apiClient))
+	cmd.AddCommand(newNovelSubmitRunCommand(stdout, stderr, runner))
+	cmd.AddCommand(newNovelUploadFileCommand(stdout, stderr, runner))
+	cmd.AddCommand(newNovelGetThreadCommand(stdout, stderr, runner))
 	return cmd
 }
 
-func newNovelSubmitRunCommand(stdout, stderr io.Writer, client *internal.Client) *cobra.Command {
+func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
 	var opts novel.SubmitRunOptions
 
 	cmd := &cobra.Command{
@@ -43,7 +43,7 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, client *internal.Client)
 				return fmt.Errorf("--message is required")
 			}
 
-			result, err := novel.SubmitRun(cmd.Context(), opts, client)
+			result, err := novel.SubmitRun(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
@@ -58,7 +58,7 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, client *internal.Client)
 	return cmd
 }
 
-func newNovelUploadFileCommand(stdout, stderr io.Writer, client *internal.Client) *cobra.Command {
+func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
 	var opts novel.UploadFileOptions
 
 	cmd := &cobra.Command{
@@ -74,7 +74,7 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, client *internal.Client
 			opts.FileName = filepath.Base(opts.Path)
 			opts.Mock = true
 
-			result, err := novel.UploadFile(cmd.Context(), opts, client)
+			result, err := novel.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -87,7 +87,7 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, client *internal.Client
 	return cmd
 }
 
-func newNovelGetThreadCommand(stdout, stderr io.Writer, client *internal.Client) *cobra.Command {
+func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
 	var opts novel.GetThreadOptions
 
 	cmd := &cobra.Command{
@@ -101,7 +101,7 @@ func newNovelGetThreadCommand(stdout, stderr io.Writer, client *internal.Client)
 			}
 			opts.Mock = true
 
-			result, err := novel.GetThread(cmd.Context(), opts, client)
+			result, err := novel.GetThread(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
