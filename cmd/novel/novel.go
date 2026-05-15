@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Pippit-dev/pippit-cli/internal"
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
 
@@ -14,7 +14,7 @@ import (
 )
 
 // NewCommand builds the novel scene command tree.
-func NewCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
+func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "novel",
 		Short: "Novel generation workflows",
@@ -28,7 +28,7 @@ func NewCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Comman
 	return cmd
 }
 
-func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
+func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var opts novel.SubmitRunOptions
 
 	cmd := &cobra.Command{
@@ -58,7 +58,7 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *internal.Runner)
 	return cmd
 }
 
-func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
+func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var opts novel.UploadFileOptions
 
 	cmd := &cobra.Command{
@@ -87,7 +87,7 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *internal.Runner
 	return cmd
 }
 
-func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *internal.Runner) *cobra.Command {
+func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var opts novel.GetThreadOptions
 
 	cmd := &cobra.Command{

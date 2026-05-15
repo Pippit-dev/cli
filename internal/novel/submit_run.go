@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Pippit-dev/pippit-cli/internal"
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
@@ -20,7 +20,7 @@ type submitRunResponse struct {
 	} `json:"data"`
 }
 
-func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *internal.Runner) (*SubmitRunResult, error) {
+func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runner) (*SubmitRunResult, error) {
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("submit_run runner client is required")
 	}
@@ -58,7 +58,7 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *internal.Run
 	}, nil
 }
 
-func submitRunPath(runner *internal.Runner) string {
+func submitRunPath(runner *common.Runner) string {
 	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.SubmitRun != "" {
 		return runner.Config.Paths.SubmitRun
 	}

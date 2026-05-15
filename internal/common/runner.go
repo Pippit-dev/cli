@@ -1,4 +1,4 @@
-package internal
+package common
 
 import "github.com/Pippit-dev/pippit-cli/internal/config"
 

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	novelcmd "github.com/Pippit-dev/pippit-cli/cmd/novel"
-	"github.com/Pippit-dev/pippit-cli/internal"
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +17,7 @@ func Execute() error {
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
-	runner := internal.NewRunner(cfg)
+	runner := common.NewRunner(cfg)
 
 	root := &cobra.Command{
 		Use:           "pippit-cli",
