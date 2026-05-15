@@ -15,7 +15,7 @@ func Execute() error {
 }
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
-	apiClient := internal.New(os.Getenv("PIPPIT_CLI_BASE_URL"))
+	apiClient := internal.NewClient(resolveBaseURL())
 
 	root := &cobra.Command{
 		Use:           "pippit-cli",
@@ -27,4 +27,17 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	root.SetErr(stderr)
 	root.AddCommand(novelcmd.NewCommand(stdout, stderr, apiClient))
 	return root
+}
+
+func resolveBaseURL() string {
+	if v := os.Getenv("PIPPIT_CLI_BASE_URL"); v != "" {
+		return v
+	}
+	if v := os.Getenv("XYQ_OPENAPI_BASE"); v != "" {
+		return v
+	}
+	if v := os.Getenv("XYQ_BASE_URL"); v != "" {
+		return v
+	}
+	return "https://xyq.jianying.com"
 }

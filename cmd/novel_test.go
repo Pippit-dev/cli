@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -9,33 +12,63 @@ import (
 )
 
 func TestNovelSubmitRun(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/biz/v1/skill/submit_run" {
+			t.Fatalf("path = %s, want submit_run path", r.URL.Path)
+		}
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var body map[string]any
+		if err := sonic.Unmarshal(data, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["message"] != "write a cyberpunk opening" {
+			t.Fatalf("message = %v, want submitted message", body["message"])
+		}
+		if body["thread_id"] != "thread_123" {
+			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
+		}
+		assetIDs, ok := body["asset_ids"].([]any)
+		if !ok || len(assetIDs) != 2 || assetIDs[0] != "asset_1" || assetIDs[1] != "asset_2" {
+			t.Fatalf("asset_ids = %#v, want two asset ids", body["asset_ids"])
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"},"web_thread_link":"https://xyq.example/thread_123"}}`))
+	}))
+	defer server.Close()
+	t.Setenv("PIPPIT_CLI_BASE_URL", server.URL)
+
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+submit-run", "--prompt", "write a cyberpunk opening", "--title", "Neon Dawn"})
+	root.SetArgs([]string{
+		"novel", "+submit-run",
+		"--message", "write a cyberpunk opening",
+		"--thread-id", "thread_123",
+		"--asset-ids", "asset_1",
+		"--asset-ids", "asset_2",
+	})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
-	var got map[string]any
-	if err := sonic.Unmarshal(stdout.Bytes(), &got); err != nil {
-		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout.String())
+	got := decodeJSON(t, stdout.Bytes())
+	if got["thread_id"] != "thread_123" {
+		t.Fatalf("thread_id = %v, want thread_123", got["thread_id"])
 	}
-	if got["scene"] != "novel" {
-		t.Fatalf("scene = %v, want novel", got["scene"])
+	if got["run_id"] != "run_456" {
+		t.Fatalf("run_id = %v, want run_456", got["run_id"])
 	}
-	if got["status"] != "submitted" {
-		t.Fatalf("status = %v, want submitted", got["status"])
-	}
-	if !strings.HasPrefix(got["thread_id"].(string), "thread_mock_") {
-		t.Fatalf("thread_id = %v, want mock thread id", got["thread_id"])
-	}
-	if !strings.HasPrefix(got["run_id"].(string), "run_mock_") {
-		t.Fatalf("run_id = %v, want mock run id", got["run_id"])
+	if got["web_thread_link"] != "https://xyq.example/thread_123" {
+		t.Fatalf("web_thread_link = %v, want returned link", got["web_thread_link"])
 	}
 }
 
-func TestNovelSubmitRunRequiresPrompt(t *testing.T) {
+func TestNovelSubmitRunRequiresMessage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{"novel", "+submit-run"})
@@ -44,8 +77,8 @@ func TestNovelSubmitRunRequiresPrompt(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--prompt is required") {
-		t.Fatalf("error = %q, want prompt validation", err)
+	if !strings.Contains(err.Error(), "--message is required") {
+		t.Fatalf("error = %q, want message validation", err)
 	}
 }
 

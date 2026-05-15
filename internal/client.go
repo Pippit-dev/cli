@@ -30,9 +30,9 @@ type Client struct {
 	Headers    http.Header
 }
 
-// New returns the process-wide shared HTTP client. Repeated calls return the
+// NewClient returns the process-wide shared HTTP client. Repeated calls return the
 // same instance and update its base URL for the current command invocation.
-func New(baseURL string) *Client {
+func NewClient(baseURL string) *Client {
 	defaultOnce.Do(func() {
 		defaultClient = &Client{
 			HTTPClient: &http.Client{
