@@ -38,21 +38,9 @@ is still mocked while its real service contract is wired.
 Command modules should receive `common.Runner` for service calls. Runtime
 settings such as base URL, HTTP timeout, and API paths are loaded by
 `internal/config` and paired with `common.Client` in the runner.
-Set `PIPPIT_CLI_BASE_URL` to override the default `https://xyq.jianying.com`.
-Legacy overrides are also accepted in this order: `XYQ_OPENAPI_BASE`,
-`XYQ_BASE_URL`.
 
 ## OAuth
 
-`novel +submit-run` and `novel +get-thread` require OAuth. Configure Passport
-settings through environment variables before logging in:
-
-```bash
-export PIPPIT_OAUTH_CLIENT_KEY="<passport-client-key>"
-export PIPPIT_OAUTH_BASE_URL="https://<passport-host>"
-export PIPPIT_OAUTH_SCOPES="user_info,aigc_generate"
-export PIPPIT_OAUTH_STORE_SERVICE_NAME="pippit-cli"
-```
-
-`PIPPIT_OAUTH_STORE_SERVICE_NAME` defaults to `pippit-cli`. Scopes can be
-comma-separated or space-separated.
+`novel +submit-run` and `novel +get-thread` require OAuth. Passport settings
+are built into the CLI; run `pippit-cli auth login` before calling these
+commands.

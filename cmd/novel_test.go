@@ -50,10 +50,9 @@ func TestNovelSubmitRun(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"},"web_thread_link":"https://xyq.example/thread_123"}}`))
 	}))
 	defer server.Close()
-	t.Setenv("PIPPIT_CLI_BASE_URL", server.URL)
 
 	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr)
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
 		"novel", "+submit-run",
 		"--message", "write a cyberpunk opening",
@@ -158,10 +157,9 @@ func TestNovelGetThread(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"run_list":[{"state":3,"entry_list":[{"message":{"message_id":"msg_1","role":"assistant","content":[{"text":"hello"}],"client_tool_calls":[{"name":"tool_call"}]}},{"artifact":{"artifact_id":"artifact_1","role":"assistant","content":[{"type":"image"}]}}]}]}}}`))
 	}))
 	defer server.Close()
-	t.Setenv("PIPPIT_CLI_BASE_URL", server.URL)
 
 	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr)
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
 		"novel", "+get-thread",
 		"--thread-id", "thread_123",
@@ -254,9 +252,10 @@ func (a *testAuthorizer) IsLoginPending(error) bool {
 	return false
 }
 
-func newTestRootCommand(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
+func newTestRootCommand(t *testing.T, stdout, stderr io.Writer, baseURL string) *cobra.Command {
 	t.Helper()
 	cfg := config.Load()
+	cfg.BaseURL = baseURL
 	authAuthorizer := &testAuthorizer{t: t}
 	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, authAuthorizer)
 	runner := common.NewRunner(cfg, client, authAuthorizer)
