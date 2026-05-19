@@ -37,7 +37,7 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	}
 
 	var resp submitRunResponse
-	if err := runner.Client.PostAuthenticated(ctx, submitRunPath(runner), body, &resp, runner.AuthAuthorizer, authTTL(runner)); err != nil {
+	if err := runner.Client.PostAuthenticated(ctx, submitRunPath(runner), body, &resp, authTTL(runner)); err != nil {
 		return nil, fmt.Errorf("submit_run request failed: %w", err)
 	}
 	if resp.Ret != "0" {

@@ -6,6 +6,7 @@ import (
 
 	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
 	novelcmd "github.com/Pippit-dev/pippit-cli/cmd/novel"
+	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -18,7 +19,9 @@ func Execute() error {
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
-	runner := common.NewRunner(cfg)
+	authManager := auth.NewManager(cfg)
+	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, authManager)
+	runner := common.NewRunner(cfg, client, authManager)
 	return newRootCommand(stdout, stderr, runner)
 }
 

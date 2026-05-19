@@ -256,8 +256,10 @@ func (a *testAuthorizer) IsLoginPending(error) bool {
 
 func newTestRootCommand(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
 	t.Helper()
-	runner := common.NewRunner(config.Load())
-	runner.AuthAuthorizer = &testAuthorizer{t: t}
+	cfg := config.Load()
+	authAuthorizer := &testAuthorizer{t: t}
+	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, authAuthorizer)
+	runner := common.NewRunner(cfg, client, authAuthorizer)
 	return newRootCommand(stdout, stderr, runner)
 }
 

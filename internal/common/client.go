@@ -8,78 +8,38 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/bytedance/sonic"
 )
 
-var (
-	defaultOnce   sync.Once
-	defaultClient *Client
-)
-
-// Client is the shared HTTP client used by command modules.
-type Client struct {
-	mu sync.RWMutex
-
-	BaseURL    string
-	HTTPClient *http.Client
-	Headers    http.Header
+type Client interface {
+	Get(ctx context.Context, path string, query map[string]string, out any) error
+	Post(ctx context.Context, path string, body any, out any) error
+	PostAuthenticated(ctx context.Context, path string, body any, out any, ensureTTL time.Duration) error
 }
 
-// NewClient returns the process-wide shared HTTP client. Repeated calls return the
-// same instance and update its base URL for the current command invocation.
-func NewClient(baseURL string, timeout ...time.Duration) *Client {
-	defaultOnce.Do(func() {
-		defaultClient = &Client{
-			Headers: make(http.Header),
-		}
-	})
-	defaultClient.SetBaseURL(baseURL)
-	if len(timeout) > 0 {
-		defaultClient.SetTimeout(timeout[0])
+type httpClient struct {
+	baseURL    string
+	httpClient *http.Client
+	headers    http.Header
+	authorizer auth.Authorizer
+}
+
+func NewHTTPClient(baseURL string, timeout time.Duration, authorizer auth.Authorizer) Client {
+	return &httpClient{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		httpClient: &http.Client{
+			Timeout: timeout,
+		},
+		headers:    make(http.Header),
+		authorizer: authorizer,
 	}
-	return defaultClient
-}
-
-// SetBaseURL updates the shared client's base URL.
-func (c *Client) SetBaseURL(baseURL string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.BaseURL = strings.TrimRight(baseURL, "/")
-}
-
-// SetHeader sets a default header applied to every request.
-func (c *Client) SetHeader(key, value string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.Headers.Set(key, value)
-}
-
-func (c *Client) SetTimeout(timeout time.Duration) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.HTTPClient == nil {
-		c.HTTPClient = &http.Client{}
-	}
-	c.HTTPClient.Timeout = timeout
-}
-
-func (c *Client) snapshot() (string, *http.Client, http.Header) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	headers := make(http.Header, len(c.Headers))
-	for k, values := range c.Headers {
-		headers[k] = append([]string(nil), values...)
-	}
-	return c.BaseURL, c.HTTPClient, headers
 }
 
 // Get issues a GET request and JSON-decodes the response into out when out is non-nil.
-func (c *Client) Get(ctx context.Context, path string, query map[string]string, out any) error {
+func (c *httpClient) Get(ctx context.Context, path string, query map[string]string, out any) error {
 	reqURL, err := c.resolveURL(path, query)
 	if err != nil {
 		return err
@@ -92,7 +52,7 @@ func (c *Client) Get(ctx context.Context, path string, query map[string]string, 
 }
 
 // Post issues a JSON POST request and JSON-decodes the response into out when out is non-nil.
-func (c *Client) Post(ctx context.Context, path string, body any, out any) error {
+func (c *httpClient) Post(ctx context.Context, path string, body any, out any) error {
 	req, err := c.newJSONRequest(ctx, path, body)
 	if err != nil {
 		return err
@@ -100,24 +60,24 @@ func (c *Client) Post(ctx context.Context, path string, body any, out any) error
 	return c.do(req, out)
 }
 
-func (c *Client) PostAuthenticated(ctx context.Context, path string, body any, out any, authorizer auth.Authorizer, ensureTTL time.Duration) error {
-	if authorizer == nil {
+func (c *httpClient) PostAuthenticated(ctx context.Context, path string, body any, out any, ensureTTL time.Duration) error {
+	if c.authorizer == nil {
 		return fmt.Errorf("authenticated request requires authorizer")
 	}
 	req, err := c.newJSONRequest(ctx, path, body)
 	if err != nil {
 		return err
 	}
-	if err := authorizer.Refresh(ctx, ensureTTL); err != nil {
+	if err := c.authorizer.Refresh(ctx, ensureTTL); err != nil {
 		return fmt.Errorf("refresh auth state: %w", err)
 	}
-	if err := authorizer.Inject(ctx, req); err != nil {
+	if err := c.authorizer.Inject(ctx, req); err != nil {
 		return fmt.Errorf("inject auth headers: %w", err)
 	}
 	return c.do(req, out)
 }
 
-func (c *Client) newJSONRequest(ctx context.Context, path string, body any) (*http.Request, error) {
+func (c *httpClient) newJSONRequest(ctx context.Context, path string, body any) (*http.Request, error) {
 	reqURL, err := c.resolveURL(path, nil)
 	if err != nil {
 		return nil, err
@@ -140,20 +100,15 @@ func (c *Client) newJSONRequest(ctx context.Context, path string, body any) (*ht
 	return req, nil
 }
 
-func (c *Client) do(req *http.Request, out any) error {
-	_, httpClient, headers := c.snapshot()
-	for k, values := range headers {
+func (c *httpClient) do(req *http.Request, out any) error {
+	for k, values := range c.headers {
 		for _, v := range values {
 			req.Header.Add(k, v)
 		}
 	}
 	req.Header.Set("Accept", "application/json")
 
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
-
-	resp, err := httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s failed: %w", req.Method, req.URL.String(), err)
 	}
@@ -179,18 +134,17 @@ func (c *Client) do(req *http.Request, out any) error {
 	return nil
 }
 
-func (c *Client) resolveURL(path string, query map[string]string) (string, error) {
+func (c *httpClient) resolveURL(path string, query map[string]string) (string, error) {
 	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
 		return appendQuery(path, query)
 	}
-	baseURL, _, _ := c.snapshot()
-	if baseURL == "" {
+	if c.baseURL == "" {
 		return "", fmt.Errorf("base URL is required for relative path %q", path)
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return appendQuery(baseURL+path, query)
+	return appendQuery(c.baseURL+path, query)
 }
 
 func appendQuery(raw string, query map[string]string) (string, error) {
