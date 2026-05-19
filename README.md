@@ -8,6 +8,8 @@ Install from npm after the package is published:
 
 ```bash
 npx @pippit-dev/cli@latest install
+pippit-cli auth login
+pippit-cli auth check --device-code <device_code>
 pippit-cli novel +submit-run --message "写一个赛博朋克小说开头"
 pippit-cli novel +upload-file --path ./story.md
 pippit-cli novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
@@ -19,6 +21,8 @@ NPM package names must be lowercase, so the publishable package name is
 Submit a Run task for the novel scene:
 
 ```bash
+go run . auth login
+go run . auth check --device-code <device_code>
 go run . novel +submit-run --message "写一个赛博朋克小说开头"
 go run . novel +upload-file --path ./story.md
 go run . novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
@@ -37,3 +41,18 @@ settings such as base URL, HTTP timeout, and API paths are loaded by
 Set `PIPPIT_CLI_BASE_URL` to override the default `https://xyq.jianying.com`.
 Legacy overrides are also accepted in this order: `XYQ_OPENAPI_BASE`,
 `XYQ_BASE_URL`.
+
+## OAuth
+
+`novel +submit-run` and `novel +get-thread` require OAuth. Configure Passport
+settings through environment variables before logging in:
+
+```bash
+export PIPPIT_OAUTH_CLIENT_KEY="<passport-client-key>"
+export PIPPIT_OAUTH_BASE_URL="https://<passport-host>"
+export PIPPIT_OAUTH_SCOPES="user_info,aigc_generate"
+export PIPPIT_OAUTH_STORE_SERVICE_NAME="pippit-cli"
+```
+
+`PIPPIT_OAUTH_STORE_SERVICE_NAME` defaults to `pippit-cli`. Scopes can be
+comma-separated or space-separated.

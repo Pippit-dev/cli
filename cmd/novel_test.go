@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
@@ -232,10 +234,30 @@ func (a *testAuthorizer) Inject(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
+func (a *testAuthorizer) NewLoginFlow(context.Context) (*auth.LoginFlow, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (a *testAuthorizer) CheckLogin(context.Context, string) (*auth.State, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (a *testAuthorizer) State(context.Context) (*auth.State, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (a *testAuthorizer) Logout(context.Context) error {
+	return errors.New("not implemented")
+}
+
+func (a *testAuthorizer) IsLoginPending(error) bool {
+	return false
+}
+
 func newTestRootCommand(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
 	t.Helper()
 	runner := common.NewRunner(config.Load())
-	runner.Authorizer = &testAuthorizer{t: t}
+	runner.AuthAuthorizer = &testAuthorizer{t: t}
 	return newRootCommand(stdout, stderr, runner)
 }
 

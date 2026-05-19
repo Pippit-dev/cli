@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/bytedance/sonic"
 )
 
@@ -99,18 +100,18 @@ func (c *Client) Post(ctx context.Context, path string, body any, out any) error
 	return c.do(req, out)
 }
 
-func (c *Client) PostAuthenticated(ctx context.Context, path string, body any, out any, auth Authorizer, ensureTTL time.Duration) error {
-	if auth == nil {
+func (c *Client) PostAuthenticated(ctx context.Context, path string, body any, out any, authorizer auth.Authorizer, ensureTTL time.Duration) error {
+	if authorizer == nil {
 		return fmt.Errorf("authenticated request requires authorizer")
 	}
 	req, err := c.newJSONRequest(ctx, path, body)
 	if err != nil {
 		return err
 	}
-	if err := auth.Refresh(ctx, ensureTTL); err != nil {
+	if err := authorizer.Refresh(ctx, ensureTTL); err != nil {
 		return fmt.Errorf("refresh auth state: %w", err)
 	}
-	if err := auth.Inject(ctx, req); err != nil {
+	if err := authorizer.Inject(ctx, req); err != nil {
 		return fmt.Errorf("inject auth headers: %w", err)
 	}
 	return c.do(req, out)

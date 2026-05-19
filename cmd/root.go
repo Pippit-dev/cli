@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 
+	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
 	novelcmd "github.com/Pippit-dev/pippit-cli/cmd/novel"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
@@ -30,6 +31,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
+	root.AddCommand(authcmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(novelcmd.NewCommand(stdout, stderr, runner))
 	return root
 }
