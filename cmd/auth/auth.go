@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -72,7 +73,11 @@ func newCheckCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, checkResult{State: state})
+			v := map[string]any{
+				"logged_in":  state.LoggedIn,
+				"expires_at": state.ExpiresAt.Format(time.RFC3339),
+			}
+			return writeJSON(stdout, checkResult{State: v})
 		},
 	}
 	cmd.SetOut(stdout)
@@ -94,7 +99,14 @@ func newStatusCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, state)
+			if !state.LoggedIn {
+				return fmt.Errorf("not logged in")
+			}
+			v := map[string]any{
+				"logged_in":  state.LoggedIn,
+				"expires_at": state.ExpiresAt.Format(time.RFC3339),
+			}
+			return writeJSON(stdout, v)
 		},
 	}
 	cmd.SetOut(stdout)

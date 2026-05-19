@@ -29,11 +29,9 @@ type OAuthManager struct {
 }
 
 type LoginFlow struct {
-	DeviceCode      string    `json:"device_code"`
-	UserCode        string    `json:"user_code"`
-	VerificationURI string    `json:"verification_uri"`
-	IntervalSeconds int64     `json:"interval_seconds"`
-	ExpiresAt       time.Time `json:"expires_at"`
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
 }
 
 type State struct {
@@ -58,8 +56,6 @@ func (m *OAuthManager) NewLoginFlow(ctx context.Context) (*LoginFlow, error) {
 		DeviceCode:      flow.DeviceCode,
 		UserCode:        flow.UserCode,
 		VerificationURI: flow.VerificationURI,
-		IntervalSeconds: int64(flow.Interval / time.Second),
-		ExpiresAt:       flow.ExpiresAt,
 	}, nil
 }
 
