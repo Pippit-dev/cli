@@ -2,13 +2,18 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/common"
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
+	"github.com/spf13/cobra"
 )
 
 func TestNovelSubmitRun(t *testing.T) {
@@ -18,6 +23,9 @@ func TestNovelSubmitRun(t *testing.T) {
 		}
 		if r.URL.Path != "/api/biz/v1/skill/submit_run" {
 			t.Fatalf("path = %s, want submit_run path", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
 		}
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -43,7 +51,7 @@ func TestNovelSubmitRun(t *testing.T) {
 	t.Setenv("PIPPIT_CLI_BASE_URL", server.URL)
 
 	var stdout, stderr bytes.Buffer
-	root := NewRootCommand(&stdout, &stderr)
+	root := newTestRootCommand(t, &stdout, &stderr)
 	root.SetArgs([]string{
 		"novel", "+submit-run",
 		"--message", "write a cyberpunk opening",
@@ -118,23 +126,66 @@ func TestNovelUploadFileRequiresPath(t *testing.T) {
 }
 
 func TestNovelGetThread(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/biz/v1/skill/get_thread" {
+			t.Fatalf("path = %s, want get_thread path", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
+		}
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var body map[string]any
+		if err := sonic.Unmarshal(data, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["thread_id"] != "thread_123" {
+			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
+		}
+		if body["run_id"] != "run_456" {
+			t.Fatalf("run_id = %v, want run_456", body["run_id"])
+		}
+		if body["after_seq"] != float64(7) {
+			t.Fatalf("after_seq = %v, want 7", body["after_seq"])
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"run_list":[{"state":3,"entry_list":[{"message":{"message_id":"msg_1","role":"assistant","content":[{"text":"hello"}],"client_tool_calls":[{"name":"tool_call"}]}},{"artifact":{"artifact_id":"artifact_1","role":"assistant","content":[{"type":"image"}]}}]}]}}}`))
+	}))
+	defer server.Close()
+	t.Setenv("PIPPIT_CLI_BASE_URL", server.URL)
+
 	var stdout, stderr bytes.Buffer
-	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+get-thread", "--thread-id", "thread_mock_123456"})
+	root := newTestRootCommand(t, &stdout, &stderr)
+	root.SetArgs([]string{
+		"novel", "+get-thread",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--after-seq", "7",
+	})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["scene"] != "novel" {
-		t.Fatalf("scene = %v, want novel", got["scene"])
+	messages, ok := got["messages"].([]any)
+	if !ok || len(messages) != 2 {
+		t.Fatalf("messages = %#v, want two entries", got["messages"])
 	}
-	if got["thread_id"] != "thread_mock_123456" {
-		t.Fatalf("thread_id = %v, want thread_mock_123456", got["thread_id"])
+	first, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("first message = %#v, want object", messages[0])
 	}
-	if got["status"] != "active" {
-		t.Fatalf("status = %v, want active", got["status"])
+	if first["id"] != "msg_1" {
+		t.Fatalf("first id = %v, want msg_1", first["id"])
+	}
+	content, ok := first["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("first content = %#v, want message content plus tool call", first["content"])
 	}
 }
 
@@ -150,6 +201,42 @@ func TestNovelGetThreadRequiresThreadID(t *testing.T) {
 	if !strings.Contains(err.Error(), "--thread-id is required") {
 		t.Fatalf("error = %q, want thread-id validation", err)
 	}
+}
+
+type testAuthorizer struct {
+	t         *testing.T
+	refreshed bool
+}
+
+func (a *testAuthorizer) Refresh(ctx context.Context, ensureTTL time.Duration) error {
+	a.t.Helper()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if ensureTTL != config.DefaultAuthTTL {
+		a.t.Fatalf("ensureTTL = %s, want %s", ensureTTL, config.DefaultAuthTTL)
+	}
+	a.refreshed = true
+	return nil
+}
+
+func (a *testAuthorizer) Inject(ctx context.Context, req *http.Request) error {
+	a.t.Helper()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if !a.refreshed {
+		a.t.Fatal("Inject called before Refresh")
+	}
+	req.Header.Set("Authorization", "Bearer test-token")
+	return nil
+}
+
+func newTestRootCommand(t *testing.T, stdout, stderr io.Writer) *cobra.Command {
+	t.Helper()
+	runner := common.NewRunner(config.Load())
+	runner.Authorizer = &testAuthorizer{t: t}
+	return newRootCommand(stdout, stderr, runner)
 }
 
 func decodeJSON(t *testing.T, data []byte) map[string]any {

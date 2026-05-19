@@ -99,9 +99,9 @@ func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *
 			if opts.ThreadID == "" {
 				return fmt.Errorf("--thread-id is required")
 			}
-			opts.Mock = true
+			opts.RunID = strings.TrimSpace(opts.RunID)
 
-			result, err := novel.GetThread(cmd.Context(), opts, runner)
+			result, err := novel.GetThread(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
@@ -111,6 +111,8 @@ func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to fetch")
+	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run ID to fetch")
+	cmd.Flags().IntVar(&opts.AfterSeq, "after-seq", 0, "return messages whose sequence is greater than or equal to this value")
 	return cmd
 }
 

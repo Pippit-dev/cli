@@ -92,26 +92,51 @@ func (c *Client) Get(ctx context.Context, path string, query map[string]string, 
 
 // Post issues a JSON POST request and JSON-decodes the response into out when out is non-nil.
 func (c *Client) Post(ctx context.Context, path string, body any, out any) error {
-	reqURL, err := c.resolveURL(path, nil)
+	req, err := c.newJSONRequest(ctx, path, body)
 	if err != nil {
 		return err
+	}
+	return c.do(req, out)
+}
+
+func (c *Client) PostAuthenticated(ctx context.Context, path string, body any, out any, auth Authorizer, ensureTTL time.Duration) error {
+	if auth == nil {
+		return fmt.Errorf("authenticated request requires authorizer")
+	}
+	req, err := c.newJSONRequest(ctx, path, body)
+	if err != nil {
+		return err
+	}
+	if err := auth.Refresh(ctx, ensureTTL); err != nil {
+		return fmt.Errorf("refresh auth state: %w", err)
+	}
+	if err := auth.Inject(ctx, req); err != nil {
+		return fmt.Errorf("inject auth headers: %w", err)
+	}
+	return c.do(req, out)
+}
+
+func (c *Client) newJSONRequest(ctx context.Context, path string, body any) (*http.Request, error) {
+	reqURL, err := c.resolveURL(path, nil)
+	if err != nil {
+		return nil, err
 	}
 	var reader io.Reader
 	if body != nil {
 		payload, err := sonic.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("encode POST body: %w", err)
+			return nil, fmt.Errorf("encode POST body: %w", err)
 		}
 		reader = bytes.NewReader(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, reader)
 	if err != nil {
-		return fmt.Errorf("build POST request: %w", err)
+		return nil, fmt.Errorf("build POST request: %w", err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return c.do(req, out)
+	return req, nil
 }
 
 func (c *Client) do(req *http.Request, out any) error {

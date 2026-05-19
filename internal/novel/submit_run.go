@@ -3,6 +3,7 @@ package novel
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
@@ -36,7 +37,7 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	}
 
 	var resp submitRunResponse
-	if err := runner.Client.Post(ctx, submitRunPath(runner), body, &resp); err != nil {
+	if err := runner.Client.PostAuthenticated(ctx, submitRunPath(runner), body, &resp, runner.Authorizer, authTTL(runner)); err != nil {
 		return nil, fmt.Errorf("submit_run request failed: %w", err)
 	}
 	if resp.Ret != "0" {
@@ -63,4 +64,11 @@ func submitRunPath(runner *common.Runner) string {
 		return runner.Config.Paths.SubmitRun
 	}
 	return config.SubmitRunPath
+}
+
+func authTTL(runner *common.Runner) time.Duration {
+	if runner != nil && runner.Config != nil && runner.Config.AuthTTL > 0 {
+		return runner.Config.AuthTTL
+	}
+	return config.DefaultAuthTTL
 }

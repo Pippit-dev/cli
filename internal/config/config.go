@@ -8,6 +8,7 @@ import (
 const (
 	DefaultBaseURL     = "https://xyq.jianying.com"
 	DefaultHTTPTimeout = 30 * time.Second
+	DefaultAuthTTL     = 30 * time.Second
 	SubmitRunPath      = "/api/biz/v1/skill/submit_run"
 	GetThreadPath      = "/api/biz/v1/skill/get_thread"
 	UploadFilePath     = "/api/biz/v1/skill/upload_file"
@@ -21,6 +22,7 @@ const (
 type Config struct {
 	BaseURL     string
 	HTTPTimeout time.Duration
+	AuthTTL     time.Duration
 	Paths       *Paths
 }
 
@@ -37,6 +39,7 @@ func Load() *Config {
 	return &Config{
 		BaseURL:     resolveBaseURL(),
 		HTTPTimeout: DefaultHTTPTimeout,
+		AuthTTL:     DefaultAuthTTL,
 		Paths: &Paths{
 			SubmitRun:  SubmitRunPath,
 			GetThread:  GetThreadPath,

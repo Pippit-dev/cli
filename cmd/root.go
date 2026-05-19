@@ -18,7 +18,10 @@ func Execute() error {
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
 	runner := common.NewRunner(cfg)
+	return newRootCommand(stdout, stderr, runner)
+}
 
+func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "pippit-cli",
 		Short:         "Pippit CLI",

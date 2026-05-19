@@ -42,15 +42,14 @@ func (MockClient) GetThread(ctx context.Context, opts GetThreadOptions) (*GetThr
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	runID := "run_mock_" + stableID(opts.ThreadID, 8)
 	return &GetThreadResult{
-		Scene:    "novel",
-		ThreadID: opts.ThreadID,
-		Status:   "active",
-		Runs: []ThreadRun{
-			{RunID: runID, Status: "submitted", Scene: "novel"},
+		Messages: []*ThreadEntry{
+			{
+				ID:      "message_mock_" + stableID(opts.ThreadID, 8),
+				Role:    "assistant",
+				Content: []any{"mock thread message"},
+			},
 		},
-		Request: opts,
 	}, nil
 }
 

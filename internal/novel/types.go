@@ -34,21 +34,18 @@ type UploadFileResult struct {
 // GetThreadOptions is the stable command-facing request shape for thread lookup.
 type GetThreadOptions struct {
 	ThreadID string `json:"thread_id"`
-	Mock     bool   `json:"mock"`
+	RunID    string `json:"run_id,omitempty"`
+	AfterSeq int    `json:"after_seq"`
 }
 
-// ThreadRun is a compact run summary inside a thread.
-type ThreadRun struct {
-	RunID  string `json:"run_id"`
-	Status string `json:"status"`
-	Scene  string `json:"scene"`
+// ThreadEntry is a compact message or artifact entry inside a thread run.
+type ThreadEntry struct {
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
 }
 
 // GetThreadResult is the JSON envelope printed by `pippit-cli novel +get-thread`.
 type GetThreadResult struct {
-	Scene    string           `json:"scene"`
-	ThreadID string           `json:"thread_id"`
-	Status   string           `json:"status"`
-	Runs     []ThreadRun      `json:"runs"`
-	Request  GetThreadOptions `json:"request"`
+	Messages []*ThreadEntry `json:"messages"`
 }

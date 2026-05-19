@@ -10,7 +10,7 @@ Install from npm after the package is published:
 npx @pippit-dev/cli@latest install
 pippit-cli novel +submit-run --message "写一个赛博朋克小说开头"
 pippit-cli novel +upload-file --path ./story.md
-pippit-cli novel +get-thread --thread-id thread_mock_123456
+pippit-cli novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
 ```
 
 NPM package names must be lowercase, so the publishable package name is
@@ -21,12 +21,13 @@ Submit a Run task for the novel scene:
 ```bash
 go run . novel +submit-run --message "写一个赛博朋克小说开头"
 go run . novel +upload-file --path ./story.md
-go run . novel +get-thread --thread-id thread_mock_123456
+go run . novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
 ```
 
 `+submit-run` calls `/api/biz/v1/skill/submit_run` and prints `thread_id`,
-`run_id`, and `web_thread_link`. `+upload-file` and `+get-thread` are still
-mocked while their real service contracts are wired.
+`run_id`, and `web_thread_link`. `+get-thread` calls
+`/api/biz/v1/skill/get_thread` and prints extracted `messages`. `+upload-file`
+is still mocked while its real service contract is wired.
 
 ## HTTP Client
 
