@@ -40,6 +40,9 @@ func TestNovelSubmitRun(t *testing.T) {
 		if body["thread_id"] != "thread_123" {
 			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
 		}
+		if body["agent_name"] != "pippit_nest_novel_agent" {
+			t.Fatalf("agent_name = %v, want pippit_nest_novel_agent", body["agent_name"])
+		}
 		assetIDs, ok := body["asset_ids"].([]any)
 		if !ok || len(assetIDs) != 2 || assetIDs[0] != "asset_1" || assetIDs[1] != "asset_2" {
 			t.Fatalf("asset_ids = %#v, want two asset ids", body["asset_ids"])
@@ -54,6 +57,7 @@ func TestNovelSubmitRun(t *testing.T) {
 		"novel", "+submit-run",
 		"--message", "write a cyberpunk opening",
 		"--thread-id", "thread_123",
+		"--agent-name", " pippit_nest_novel_agent ",
 		"--asset-ids", "asset_1",
 		"--asset-ids", "asset_2",
 	})
@@ -88,6 +92,20 @@ func TestNovelSubmitRunRequiresMessage(t *testing.T) {
 	}
 }
 
+func TestNovelSubmitRunRequiresAgentName(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"novel", "+submit-run", "--message", "write a cyberpunk opening"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "--agent-name is required") {
+		t.Fatalf("error = %q, want agent-name validation", err)
+	}
+}
+
 func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
@@ -96,7 +114,11 @@ func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"novel", "+submit-run", "--message", "write a cyberpunk opening"})
+	root.SetArgs([]string{
+		"novel", "+submit-run",
+		"--message", "write a cyberpunk opening",
+		"--agent-name", "pippit_nest_novel_agent",
+	})
 
 	err := root.Execute()
 	if err == nil {

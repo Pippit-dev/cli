@@ -34,6 +34,9 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	if len(opts.AssetIDs) > 0 {
 		body["asset_ids"] = opts.AssetIDs
 	}
+	if opts.AgentName != "" {
+		body["agent_name"] = opts.AgentName
+	}
 
 	var resp submitRunResponse
 	if err := runner.Client.SendRequest(ctx, submitRunPath(runner), body, &resp); err != nil {

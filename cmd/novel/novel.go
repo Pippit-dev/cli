@@ -38,9 +38,13 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.Message = strings.TrimSpace(opts.Message)
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
+			opts.AgentName = strings.TrimSpace(opts.AgentName)
 
 			if opts.Message == "" {
 				return fmt.Errorf("--message is required")
+			}
+			if opts.AgentName == "" {
+				return fmt.Errorf("--agent-name is required")
 			}
 
 			result, err := novel.SubmitRun(cmd.Context(), &opts, runner)
@@ -55,6 +59,7 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *
 	cmd.Flags().StringVar(&opts.Message, "message", "", "message to send to the novel agent")
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "existing thread ID; omit to create a new thread")
 	cmd.Flags().StringArrayVar(&opts.AssetIDs, "asset-ids", nil, "asset ID to attach; repeat for multiple assets")
+	cmd.Flags().StringVar(&opts.AgentName, "agent-name", "", "agent name to submit the run to")
 	return cmd
 }
 

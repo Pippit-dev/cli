@@ -2,9 +2,10 @@ package novel
 
 // SubmitRunOptions is the stable command-facing request shape for novel run submission.
 type SubmitRunOptions struct {
-	Message  string   `json:"message"`
-	ThreadID string   `json:"thread_id,omitempty"`
-	AssetIDs []string `json:"asset_ids,omitempty"`
+	Message   string   `json:"message"`
+	ThreadID  string   `json:"thread_id,omitempty"`
+	AssetIDs  []string `json:"asset_ids,omitempty"`
+	AgentName string   `json:"agent_name,omitempty"`
 }
 
 // SubmitRunResult is the JSON envelope printed by `pippit-cli novel +submit-run`.
