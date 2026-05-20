@@ -56,7 +56,7 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *common.Runne
 	}
 
 	var resp getThreadResponse
-	if err := runner.Client.PostAuthenticated(ctx, getThreadPath(runner), body, &resp, authTTL(runner)); err != nil {
+	if err := runner.Client.SendRequest(ctx, getThreadPath(runner), body, &resp); err != nil {
 		return nil, fmt.Errorf("get_thread request failed: %w", err)
 	}
 	if resp.Ret != "0" {

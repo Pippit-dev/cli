@@ -8,8 +8,7 @@ Install from npm after the package is published:
 
 ```bash
 npx @pippit-dev/cli@latest install
-pippit-cli auth login
-pippit-cli auth check --device-code <device_code>
+export XYQ_ACCESS_KEY="<access-key>"
 pippit-cli novel +submit-run --message "写一个赛博朋克小说开头"
 pippit-cli novel +upload-file --path ./story.md
 pippit-cli novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
@@ -21,8 +20,7 @@ NPM package names must be lowercase, so the publishable package name is
 Submit a Run task for the novel scene:
 
 ```bash
-go run . auth login
-go run . auth check --device-code <device_code>
+export XYQ_ACCESS_KEY="<access-key>"
 go run . novel +submit-run --message "写一个赛博朋克小说开头"
 go run . novel +upload-file --path ./story.md
 go run . novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
@@ -39,8 +37,8 @@ Command modules should receive `common.Runner` for service calls. Runtime
 settings such as base URL, HTTP timeout, and API paths are loaded by
 `internal/config` and paired with `common.Client` in the runner.
 
-## OAuth
+## Auth
 
-`novel +submit-run` and `novel +get-thread` require OAuth. Passport settings
-are built into the CLI; run `pippit-cli auth login` before calling these
-commands.
+`novel +submit-run` and `novel +get-thread` authenticate with
+`Authorization: Bearer <XYQ_ACCESS_KEY>`. OAuth command code remains available,
+but runtime novel requests do not use it.

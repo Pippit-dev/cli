@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,7 @@ const (
 	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
 	GetThreadPath               = "/api/biz/v1/skill/get_thread"
 	UploadFilePath              = "/api/biz/v1/skill/upload_file"
+	EnvXYQAccessKey             = "XYQ_ACCESS_KEY"
 )
 
 // Config holds runtime settings selected by the root command and passed down
@@ -22,6 +25,7 @@ type Config struct {
 	BaseURL     string
 	HTTPTimeout time.Duration
 	AuthTTL     time.Duration
+	AccessKey   string
 	OAuth       *OAuth
 	Paths       *Paths
 }
@@ -45,6 +49,7 @@ func Load() *Config {
 		BaseURL:     DefaultBaseURL,
 		HTTPTimeout: DefaultHTTPTimeout,
 		AuthTTL:     DefaultAuthTTL,
+		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
 		OAuth:       resolveOAuth(),
 		Paths: &Paths{
 			SubmitRun:  SubmitRunPath,

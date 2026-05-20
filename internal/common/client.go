@@ -10,24 +10,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/bytedance/sonic"
 )
 
 type Client interface {
-	Get(ctx context.Context, path string, query map[string]string, out any) error
-	Post(ctx context.Context, path string, body any, out any) error
-	PostAuthenticated(ctx context.Context, path string, body any, out any, ensureTTL time.Duration) error
+	SendRequest(ctx context.Context, path string, body any, out any) error
+}
+
+type RequestAuthorizer interface {
+	Inject(ctx context.Context, req *http.Request) error
 }
 
 type httpClient struct {
 	baseURL    string
 	httpClient *http.Client
 	headers    http.Header
-	authorizer auth.Authorizer
+	authorizer RequestAuthorizer
 }
 
-func NewHTTPClient(baseURL string, timeout time.Duration, authorizer auth.Authorizer) Client {
+func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
 	return &httpClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
@@ -38,38 +39,13 @@ func NewHTTPClient(baseURL string, timeout time.Duration, authorizer auth.Author
 	}
 }
 
-// Get issues a GET request and JSON-decodes the response into out when out is non-nil.
-func (c *httpClient) Get(ctx context.Context, path string, query map[string]string, out any) error {
-	reqURL, err := c.resolveURL(path, query)
-	if err != nil {
-		return err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return fmt.Errorf("build GET request: %w", err)
-	}
-	return c.do(req, out)
-}
-
-// Post issues a JSON POST request and JSON-decodes the response into out when out is non-nil.
-func (c *httpClient) Post(ctx context.Context, path string, body any, out any) error {
-	req, err := c.newJSONRequest(ctx, path, body)
-	if err != nil {
-		return err
-	}
-	return c.do(req, out)
-}
-
-func (c *httpClient) PostAuthenticated(ctx context.Context, path string, body any, out any, ensureTTL time.Duration) error {
+func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out any) error {
 	if c.authorizer == nil {
-		return fmt.Errorf("authenticated request requires authorizer")
+		return fmt.Errorf("authorized request requires authorizer")
 	}
 	req, err := c.newJSONRequest(ctx, path, body)
 	if err != nil {
 		return err
-	}
-	if err := c.authorizer.Refresh(ctx, ensureTTL); err != nil {
-		return fmt.Errorf("refresh auth state: %w", err)
 	}
 	if err := c.authorizer.Inject(ctx, req); err != nil {
 		return fmt.Errorf("inject auth headers: %w", err)

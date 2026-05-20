@@ -20,7 +20,7 @@ func Execute() error {
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
 	authManager := auth.NewManager(cfg)
-	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, authManager)
+	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
 	runner := common.NewRunner(cfg, client, authManager)
 	return newRootCommand(stdout, stderr, runner)
 }

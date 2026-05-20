@@ -2,14 +2,11 @@ package cmd
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -88,6 +85,25 @@ func TestNovelSubmitRunRequiresMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--message is required") {
 		t.Fatalf("error = %q, want message validation", err)
+	}
+}
+
+func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request without access key")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
+	root.SetArgs([]string{"novel", "+submit-run", "--message", "write a cyberpunk opening"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want access key error")
+	}
+	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
+		t.Fatalf("error = %q, want access key guidance", err)
 	}
 }
 
@@ -203,61 +219,37 @@ func TestNovelGetThreadRequiresThreadID(t *testing.T) {
 	}
 }
 
-type testAuthorizer struct {
-	t         *testing.T
-	refreshed bool
-}
+func TestNovelGetThreadRequiresAccessKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request without access key")
+	}))
+	defer server.Close()
 
-func (a *testAuthorizer) Refresh(ctx context.Context, ensureTTL time.Duration) error {
-	a.t.Helper()
-	if err := ctx.Err(); err != nil {
-		return err
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
+	root.SetArgs([]string{"novel", "+get-thread", "--thread-id", "thread_123"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want access key error")
 	}
-	if ensureTTL != config.DefaultAuthTTL {
-		a.t.Fatalf("ensureTTL = %s, want %s", ensureTTL, config.DefaultAuthTTL)
+	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
+		t.Fatalf("error = %q, want access key guidance", err)
 	}
-	a.refreshed = true
-	return nil
-}
-
-func (a *testAuthorizer) Inject(ctx context.Context, req *http.Request) error {
-	a.t.Helper()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if !a.refreshed {
-		a.t.Fatal("Inject called before Refresh")
-	}
-	req.Header.Set("Authorization", "Bearer test-token")
-	return nil
-}
-
-func (a *testAuthorizer) NewLoginFlow(context.Context) (*auth.LoginFlow, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (a *testAuthorizer) CheckLogin(context.Context, string) (*auth.State, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (a *testAuthorizer) State(context.Context) (*auth.State, error) {
-	return nil, errors.New("not implemented")
-}
-
-func (a *testAuthorizer) Logout(context.Context) error {
-	return errors.New("not implemented")
-}
-
-func (a *testAuthorizer) IsLoginPending(error) bool {
-	return false
 }
 
 func newTestRootCommand(t *testing.T, stdout, stderr io.Writer, baseURL string) *cobra.Command {
 	t.Helper()
+	return newTestRootCommandWithAccessKey(t, stdout, stderr, baseURL, "test-token")
+}
+
+func newTestRootCommandWithAccessKey(t *testing.T, stdout, stderr io.Writer, baseURL string, accessKey string) *cobra.Command {
+	t.Helper()
 	cfg := config.Load()
 	cfg.BaseURL = baseURL
-	authAuthorizer := &testAuthorizer{t: t}
-	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, authAuthorizer)
+	cfg.AccessKey = accessKey
+	authAuthorizer := auth.NewManager(cfg)
+	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
 	runner := common.NewRunner(cfg, client, authAuthorizer)
 	return newRootCommand(stdout, stderr, runner)
 }
