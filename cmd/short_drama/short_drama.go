@@ -1,4 +1,4 @@
-package novelcmd
+package short_drama
 
 import (
 	"fmt"
@@ -7,34 +7,33 @@ import (
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
+	"github.com/Pippit-dev/pippit-cli/internal/short_drama"
 	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
-
-	"github.com/Pippit-dev/pippit-cli/internal/novel"
 )
 
-// NewCommand builds the novel scene command tree.
+// NewCommand builds the short_drama scene command tree.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "novel",
-		Short: "Novel generation workflows",
+		Use:   "shot-drama",
+		Short: "Short drama generation workflows",
 	}
 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.AddCommand(newNovelSubmitRunCommand(stdout, stderr, runner))
-	cmd.AddCommand(newNovelUploadFileCommand(stdout, stderr, runner))
-	cmd.AddCommand(newNovelDownloadResultsCommand(stdout, stderr, runner))
-	cmd.AddCommand(newNovelGetThreadCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaSubmitRunCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaDownloadResultsCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaGetThreadCommand(stdout, stderr, runner))
 	return cmd
 }
 
-func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts novel.SubmitRunOptions
+func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts short_drama.SubmitRunOptions
 
 	cmd := &cobra.Command{
 		Use:   "+submit-run",
-		Short: "Submit a Run task for the novel scene",
+		Short: "Submit a Run task for the short drama scene",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.Message = strings.TrimSpace(opts.Message)
@@ -48,7 +47,7 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *
 				return fmt.Errorf("--agent-name is required")
 			}
 
-			result, err := novel.SubmitRun(cmd.Context(), &opts, runner)
+			result, err := short_drama.SubmitRun(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
@@ -57,19 +56,19 @@ func newNovelSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runner) *
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.Message, "message", "", "message to send to the novel agent")
+	cmd.Flags().StringVar(&opts.Message, "message", "", "message to send to the short drama agent")
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "existing thread ID; omit to create a new thread")
 	cmd.Flags().StringArrayVar(&opts.AssetIDs, "asset-ids", nil, "asset ID to attach; repeat for multiple assets")
 	cmd.Flags().StringVar(&opts.AgentName, "agent-name", "", "agent name to submit the run to")
 	return cmd
 }
 
-func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts novel.UploadFileOptions
+func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts short_drama.UploadFileOptions
 
 	cmd := &cobra.Command{
 		Use:   "+upload-file",
-		Short: "Upload a file for the novel scene",
+		Short: "Upload a file for the short drama scene",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.Path = strings.TrimSpace(opts.Path)
@@ -80,7 +79,7 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) 
 			opts.FileName = filepath.Base(opts.Path)
 			opts.Mock = true
 
-			result, err := novel.UploadFile(cmd.Context(), opts, runner)
+			result, err := short_drama.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -93,8 +92,8 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) 
 	return cmd
 }
 
-func newNovelDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts novel.DownloadResultsOptions
+func newShortDramaDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts short_drama.DownloadResultsOptions
 
 	cmd := &cobra.Command{
 		Use:   "+download-results [urls...]",
@@ -118,7 +117,7 @@ func newNovelDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Run
 				return fmt.Errorf("--workers must be greater than 0")
 			}
 
-			result, err := novel.DownloadResults(cmd.Context(), opts, runner)
+			result, err := short_drama.DownloadResults(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -128,17 +127,17 @@ func newNovelDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Run
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.Flags().StringArrayVar(&opts.URLs, "urls", nil, "URL to download; repeat or pass additional URLs after the flag")
-	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output directory; defaults to ./xyq_novel_output")
+	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output directory; defaults to ./xyq_short_drama_output")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
 	return cmd
 }
 
-func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts novel.GetThreadOptions
+func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts short_drama.GetThreadOptions
 
 	cmd := &cobra.Command{
 		Use:   "+get-thread",
-		Short: "Get a novel thread summary",
+		Short: "Get a short drama thread summary",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
@@ -147,7 +146,7 @@ func newNovelGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *
 			}
 			opts.RunID = strings.TrimSpace(opts.RunID)
 
-			result, err := novel.GetThread(cmd.Context(), &opts, runner)
+			result, err := short_drama.GetThread(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}

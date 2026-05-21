@@ -1,4 +1,4 @@
-package novel
+package short_drama
 
 import (
 	"context"

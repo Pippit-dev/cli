@@ -1,6 +1,6 @@
-package novel
+package short_drama
 
-// SubmitRunOptions is the stable command-facing request shape for novel run submission.
+// SubmitRunOptions is the stable command-facing request shape for short drama run submission.
 type SubmitRunOptions struct {
 	Message   string   `json:"message"`
 	ThreadID  string   `json:"thread_id,omitempty"`
@@ -8,7 +8,7 @@ type SubmitRunOptions struct {
 	AgentName string   `json:"agent_name,omitempty"`
 }
 
-// SubmitRunResult is the JSON envelope printed by `pippit-cli novel +submit-run`.
+// SubmitRunResult is the JSON envelope printed by `pippit-cli short-drama +submit-run`.
 type SubmitRunResult struct {
 	ThreadID      string `json:"thread_id"`
 	RunID         string `json:"run_id"`
@@ -23,7 +23,7 @@ type UploadFileOptions struct {
 	Mock     bool   `json:"mock"`
 }
 
-// UploadFileResult is the JSON envelope printed by `pippit-cli novel +upload-file`.
+// UploadFileResult is the JSON envelope printed by `pippit-cli short-drama +upload-file`.
 type UploadFileResult struct {
 	Scene    string            `json:"scene"`
 	FileID   string            `json:"file_id"`
@@ -44,7 +44,7 @@ type DownloadResultsError struct {
 	Error string `json:"error"`
 }
 
-// DownloadResultsResult is the JSON envelope printed by `pippit-cli novel +download-results`.
+// DownloadResultsResult is the JSON envelope printed by `pippit-cli short-drama +download-results`.
 type DownloadResultsResult struct {
 	OutputDir  string                  `json:"output_dir"`
 	Downloaded []string                `json:"downloaded"`
@@ -66,7 +66,7 @@ type ThreadEntry struct {
 	Content []any  `json:"content"`
 }
 
-// GetThreadResult is the JSON envelope printed by `pippit-cli novel +get-thread`.
+// GetThreadResult is the JSON envelope printed by `pippit-cli short-drama +get-thread`.
 type GetThreadResult struct {
 	Messages []*ThreadEntry `json:"messages"`
 }

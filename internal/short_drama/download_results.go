@@ -1,4 +1,4 @@
-package novel
+package short_drama
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	defaultDownloadOutputDir = "./xyq_novel_output"
+	defaultDownloadOutputDir = "./xyq_short_drama_output"
 	maxDownloadRetries       = 3
 	retryBaseDelay           = 500 * time.Millisecond
 )
