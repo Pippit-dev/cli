@@ -12,6 +12,7 @@ export XYQ_ACCESS_KEY="<access-key>"
 pippit-cli novel +submit-run --message "写一个赛博朋克小说开头" --agent-name pippit_nest_novel_agent
 pippit-cli novel +upload-file --path ./story.md
 pippit-cli novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
+pippit-cli novel +download-results --urls URL1 URL2 --output-dir ./xyq_novel_output
 ```
 
 NPM package names must be lowercase, so the publishable package name is
@@ -24,13 +25,15 @@ export XYQ_ACCESS_KEY="<access-key>"
 go run . novel +submit-run --message "写一个赛博朋克小说开头" --agent-name pippit_nest_novel_agent
 go run . novel +upload-file --path ./story.md
 go run . novel +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
+go run . novel +download-results --urls URL1 URL2 --output-dir ./xyq_novel_output
 ```
 
 `+submit-run` calls `/api/biz/v1/skill/submit_run` and prints `thread_id`,
 `run_id`, and `web_thread_link`; `--message` and `--agent-name` are required.
 `+get-thread` calls
-`/api/biz/v1/skill/get_thread` and prints extracted `messages`. `+upload-file`
-is still mocked while its real service contract is wired.
+`/api/biz/v1/skill/get_thread` and prints extracted `messages`.
+`+download-results` downloads result URLs to local files. `+upload-file` is
+still mocked while its real service contract is wired.
 
 ## HTTP Client
 

@@ -24,6 +24,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newNovelSubmitRunCommand(stdout, stderr, runner))
 	cmd.AddCommand(newNovelUploadFileCommand(stdout, stderr, runner))
+	cmd.AddCommand(newNovelDownloadResultsCommand(stdout, stderr, runner))
 	cmd.AddCommand(newNovelGetThreadCommand(stdout, stderr, runner))
 	return cmd
 }
@@ -89,6 +90,46 @@ func newNovelUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.Path, "path", "", "local file path to upload")
+	return cmd
+}
+
+func newNovelDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts novel.DownloadResultsOptions
+
+	cmd := &cobra.Command{
+		Use:   "+download-results [urls...]",
+		Short: "Download generated result URLs",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.OutputDir = strings.TrimSpace(opts.OutputDir)
+
+			urls := make([]string, 0, len(opts.URLs)+len(args))
+			for _, rawURL := range append(opts.URLs, args...) {
+				rawURL = strings.TrimSpace(rawURL)
+				if rawURL != "" {
+					urls = append(urls, rawURL)
+				}
+			}
+			opts.URLs = urls
+			if len(opts.URLs) == 0 {
+				return fmt.Errorf("--urls is required")
+			}
+			if opts.Workers <= 0 {
+				return fmt.Errorf("--workers must be greater than 0")
+			}
+
+			result, err := novel.DownloadResults(cmd.Context(), opts, runner)
+			if err != nil {
+				return err
+			}
+			return writeJSON(stdout, result)
+		},
+	}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.Flags().StringArrayVar(&opts.URLs, "urls", nil, "URL to download; repeat or pass additional URLs after the flag")
+	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output directory; defaults to ./xyq_novel_output")
+	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
 	return cmd
 }
 

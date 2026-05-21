@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -164,6 +166,151 @@ func TestNovelUploadFileRequiresPath(t *testing.T) {
 	}
 }
 
+func TestNovelDownloadResults(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") != "Pippit-CLI/1.0" {
+			t.Fatalf("User-Agent = %q, want Pippit-CLI/1.0", r.Header.Get("User-Agent"))
+		}
+		switch r.URL.Path {
+		case "/image":
+			_, _ = w.Write([]byte("image-data"))
+		case "/clip.mp4":
+			_, _ = w.Write([]byte("video-data"))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"novel", "+download-results",
+		"--output-dir", outputDir,
+		"--workers", "2",
+		"--urls", server.URL + "/image?filename=cover.jpeg",
+		server.URL + "/clip.mp4",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	if got["output_dir"] != outputDir {
+		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputDir)
+	}
+	if got["total"] != float64(2) {
+		t.Fatalf("total = %v, want 2", got["total"])
+	}
+	downloaded, ok := got["downloaded"].([]any)
+	if !ok || len(downloaded) != 2 {
+		t.Fatalf("downloaded = %#v, want two files", got["downloaded"])
+	}
+	wantFiles := []string{
+		filepath.Join(outputDir, "01.jpeg"),
+		filepath.Join(outputDir, "02.mp4"),
+	}
+	for i, want := range wantFiles {
+		if downloaded[i] != want {
+			t.Fatalf("downloaded[%d] = %v, want %s", i, downloaded[i], want)
+		}
+	}
+	assertFileContent(t, wantFiles[0], "image-data")
+	assertFileContent(t, wantFiles[1], "video-data")
+}
+
+func TestNovelDownloadResultsRequiresURLs(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"novel", "+download-results"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "--urls is required") {
+		t.Fatalf("error = %q, want urls validation", err)
+	}
+}
+
+func TestNovelDownloadResultsRejectsInvalidScheme(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"novel", "+download-results", "--urls", "file:///etc/passwd"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want scheme validation error")
+	}
+	if !strings.Contains(err.Error(), "only http and https are allowed") {
+		t.Fatalf("error = %q, want scheme validation", err)
+	}
+}
+
+func TestNovelDownloadResultsAllFailed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	outputDir := t.TempDir()
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"novel", "+download-results",
+		"--output-dir", outputDir,
+		"--urls", server.URL + "/notfound",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want all-failed error")
+	}
+	if !strings.Contains(err.Error(), "all 1 download(s) failed") {
+		t.Fatalf("error = %q, want all-failed message", err)
+	}
+}
+
+func TestNovelDownloadResultsDefaultOutputDir(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("image-data"))
+	}))
+	defer server.Close()
+
+	cwd := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd(): %v", err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("Chdir(%s): %v", cwd, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore working dir: %v", err)
+		}
+	})
+
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"novel", "+download-results",
+		"--urls", server.URL + "/image.png",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	if got["output_dir"] != "./xyq_novel_output" {
+		t.Fatalf("output_dir = %v, want ./xyq_novel_output", got["output_dir"])
+	}
+	assertFileContent(t, filepath.Join(cwd, "xyq_novel_output", "01.png"), "image-data")
+}
+
 func TestNovelGetThread(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -283,4 +430,15 @@ func decodeJSON(t *testing.T, data []byte) map[string]any {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, string(data))
 	}
 	return got
+}
+
+func assertFileContent(t *testing.T, path string, want string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	if string(data) != want {
+		t.Fatalf("ReadFile(%s) = %q, want %q", path, string(data), want)
+	}
 }

@@ -32,6 +32,26 @@ type UploadFileResult struct {
 	Request  UploadFileOptions `json:"request"`
 }
 
+// DownloadResultsOptions is the command-facing shape for downloading result URLs.
+type DownloadResultsOptions struct {
+	URLs      []string `json:"urls"`
+	OutputDir string   `json:"output_dir"`
+	Workers   int      `json:"workers"`
+}
+
+type DownloadResultsError struct {
+	File  string `json:"file"`
+	Error string `json:"error"`
+}
+
+// DownloadResultsResult is the JSON envelope printed by `pippit-cli novel +download-results`.
+type DownloadResultsResult struct {
+	OutputDir  string                  `json:"output_dir"`
+	Downloaded []string                `json:"downloaded"`
+	Total      int                     `json:"total"`
+	Errors     []*DownloadResultsError `json:"errors,omitempty"`
+}
+
 // GetThreadOptions is the stable command-facing request shape for thread lookup.
 type GetThreadOptions struct {
 	ThreadID string `json:"thread_id"`
