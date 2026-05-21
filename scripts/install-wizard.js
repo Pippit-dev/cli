@@ -65,7 +65,7 @@ function main() {
   }
 
   console.log(`pippit-cli is ready: ${bin}`);
-  console.log("Try: pippit-cli short-drama +submit-run --message \"写一个小说开头\"");
+  console.log("Try: pippit-cli short-drama +submit-run --message \"写一个短剧开头\"");
 }
 
 main();

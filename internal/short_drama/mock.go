@@ -30,7 +30,7 @@ func (MockClient) UploadFile(ctx context.Context, opts UploadFileOptions) (*Uplo
 	key := opts.Purpose + "\x00" + opts.FileName + "\x00" + opts.Path
 	id := stableID(key, 10)
 	return &UploadFileResult{
-		Scene:    "novel",
+		Scene:    "short-drama",
 		FileID:   "file_mock_" + id,
 		Status:   "uploaded",
 		Uploaded: time.Now().UTC().Format(time.RFC3339),

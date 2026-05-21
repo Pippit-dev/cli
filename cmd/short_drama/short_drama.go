@@ -15,7 +15,7 @@ import (
 // NewCommand builds the short_drama scene command tree.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "shot-drama",
+		Use:   "short-drama",
 		Short: "Short drama generation workflows",
 	}
 

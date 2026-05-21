@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestNovelSubmitRun(t *testing.T) {
+func TestShortDramaSubmitRun(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -42,8 +42,8 @@ func TestNovelSubmitRun(t *testing.T) {
 		if body["thread_id"] != "thread_123" {
 			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
 		}
-		if body["agent_name"] != "pippit_nest_novel_agent" {
-			t.Fatalf("agent_name = %v, want pippit_nest_novel_agent", body["agent_name"])
+		if body["agent_name"] != "pippit_nest_short_drama_agent" {
+			t.Fatalf("agent_name = %v, want pippit_nest_short_drama_agent", body["agent_name"])
 		}
 		assetIDs, ok := body["asset_ids"].([]any)
 		if !ok || len(assetIDs) != 2 || assetIDs[0] != "asset_1" || assetIDs[1] != "asset_2" {
@@ -56,10 +56,10 @@ func TestNovelSubmitRun(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"novel", "+submit-run",
+		"short-drama", "+submit-run",
 		"--message", "write a cyberpunk opening",
 		"--thread-id", "thread_123",
-		"--agent-name", " pippit_nest_novel_agent ",
+		"--agent-name", " pippit_nest_short_drama_agent ",
 		"--asset-ids", "asset_1",
 		"--asset-ids", "asset_2",
 	})
@@ -80,10 +80,10 @@ func TestNovelSubmitRun(t *testing.T) {
 	}
 }
 
-func TestNovelSubmitRunRequiresMessage(t *testing.T) {
+func TestShortDramaSubmitRunRequiresMessage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+submit-run"})
+	root.SetArgs([]string{"short-drama", "+submit-run"})
 
 	err := root.Execute()
 	if err == nil {
@@ -94,10 +94,10 @@ func TestNovelSubmitRunRequiresMessage(t *testing.T) {
 	}
 }
 
-func TestNovelSubmitRunRequiresAgentName(t *testing.T) {
+func TestShortDramaSubmitRunRequiresAgentName(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+submit-run", "--message", "write a cyberpunk opening"})
+	root.SetArgs([]string{"short-drama", "+submit-run", "--message", "write a cyberpunk opening"})
 
 	err := root.Execute()
 	if err == nil {
@@ -108,7 +108,7 @@ func TestNovelSubmitRunRequiresAgentName(t *testing.T) {
 	}
 }
 
-func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
+func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -117,9 +117,9 @@ func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
 	root.SetArgs([]string{
-		"novel", "+submit-run",
+		"short-drama", "+submit-run",
 		"--message", "write a cyberpunk opening",
-		"--agent-name", "pippit_nest_novel_agent",
+		"--agent-name", "pippit_nest_short_drama_agent",
 	})
 
 	err := root.Execute()
@@ -131,18 +131,18 @@ func TestNovelSubmitRunRequiresAccessKey(t *testing.T) {
 	}
 }
 
-func TestNovelUploadFile(t *testing.T) {
+func TestShortDramaUploadFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+upload-file", "--path", "/tmp/story.md"})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", "/tmp/story.md"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["scene"] != "novel" {
-		t.Fatalf("scene = %v, want novel", got["scene"])
+	if got["scene"] != "short-drama" {
+		t.Fatalf("scene = %v, want short-drama", got["scene"])
 	}
 	if got["status"] != "uploaded" {
 		t.Fatalf("status = %v, want uploaded", got["status"])
@@ -152,10 +152,10 @@ func TestNovelUploadFile(t *testing.T) {
 	}
 }
 
-func TestNovelUploadFileRequiresPath(t *testing.T) {
+func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+upload-file"})
+	root.SetArgs([]string{"short-drama", "+upload-file"})
 
 	err := root.Execute()
 	if err == nil {
@@ -166,7 +166,7 @@ func TestNovelUploadFileRequiresPath(t *testing.T) {
 	}
 }
 
-func TestNovelDownloadResults(t *testing.T) {
+func TestShortDramaDownloadResults(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") != "Pippit-CLI/1.0" {
 			t.Fatalf("User-Agent = %q, want Pippit-CLI/1.0", r.Header.Get("User-Agent"))
@@ -186,7 +186,7 @@ func TestNovelDownloadResults(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"novel", "+download-results",
+		"short-drama", "+download-results",
 		"--output-dir", outputDir,
 		"--workers", "2",
 		"--urls", server.URL + "/image?filename=cover.jpeg",
@@ -221,10 +221,10 @@ func TestNovelDownloadResults(t *testing.T) {
 	assertFileContent(t, wantFiles[1], "video-data")
 }
 
-func TestNovelDownloadResultsRequiresURLs(t *testing.T) {
+func TestShortDramaDownloadResultsRequiresURLs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+download-results"})
+	root.SetArgs([]string{"short-drama", "+download-results"})
 
 	err := root.Execute()
 	if err == nil {
@@ -235,10 +235,10 @@ func TestNovelDownloadResultsRequiresURLs(t *testing.T) {
 	}
 }
 
-func TestNovelDownloadResultsRejectsInvalidScheme(t *testing.T) {
+func TestShortDramaDownloadResultsRejectsInvalidScheme(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+download-results", "--urls", "file:///etc/passwd"})
+	root.SetArgs([]string{"short-drama", "+download-results", "--urls", "file:///etc/passwd"})
 
 	err := root.Execute()
 	if err == nil {
@@ -249,7 +249,7 @@ func TestNovelDownloadResultsRejectsInvalidScheme(t *testing.T) {
 	}
 }
 
-func TestNovelDownloadResultsAllFailed(t *testing.T) {
+func TestShortDramaDownloadResultsAllFailed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -259,7 +259,7 @@ func TestNovelDownloadResultsAllFailed(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"novel", "+download-results",
+		"short-drama", "+download-results",
 		"--output-dir", outputDir,
 		"--urls", server.URL + "/notfound",
 	})
@@ -273,7 +273,7 @@ func TestNovelDownloadResultsAllFailed(t *testing.T) {
 	}
 }
 
-func TestNovelDownloadResultsDefaultOutputDir(t *testing.T) {
+func TestShortDramaDownloadResultsDefaultOutputDir(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("image-data"))
 	}))
@@ -296,7 +296,7 @@ func TestNovelDownloadResultsDefaultOutputDir(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"novel", "+download-results",
+		"short-drama", "+download-results",
 		"--urls", server.URL + "/image.png",
 	})
 
@@ -305,13 +305,13 @@ func TestNovelDownloadResultsDefaultOutputDir(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != "./xyq_novel_output" {
-		t.Fatalf("output_dir = %v, want ./xyq_novel_output", got["output_dir"])
+	if got["output_dir"] != "./xyq_short_drama_output" {
+		t.Fatalf("output_dir = %v, want ./xyq_short_drama_output", got["output_dir"])
 	}
-	assertFileContent(t, filepath.Join(cwd, "xyq_novel_output", "01.png"), "image-data")
+	assertFileContent(t, filepath.Join(cwd, "xyq_short_drama_output", "01.png"), "image-data")
 }
 
-func TestNovelGetThread(t *testing.T) {
+func TestShortDramaGetThread(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -346,7 +346,7 @@ func TestNovelGetThread(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"novel", "+get-thread",
+		"short-drama", "+get-thread",
 		"--thread-id", "thread_123",
 		"--run-id", "run_456",
 		"--after-seq", "7",
@@ -374,10 +374,10 @@ func TestNovelGetThread(t *testing.T) {
 	}
 }
 
-func TestNovelGetThreadRequiresThreadID(t *testing.T) {
+func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"novel", "+get-thread"})
+	root.SetArgs([]string{"short-drama", "+get-thread"})
 
 	err := root.Execute()
 	if err == nil {
@@ -388,7 +388,7 @@ func TestNovelGetThreadRequiresThreadID(t *testing.T) {
 	}
 }
 
-func TestNovelGetThreadRequiresAccessKey(t *testing.T) {
+func TestShortDramaGetThreadRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -396,7 +396,7 @@ func TestNovelGetThreadRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"novel", "+get-thread", "--thread-id", "thread_123"})
+	root.SetArgs([]string{"short-drama", "+get-thread", "--thread-id", "thread_123"})
 
 	err := root.Execute()
 	if err == nil {
