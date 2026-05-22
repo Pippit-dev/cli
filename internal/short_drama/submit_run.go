@@ -8,6 +8,21 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
+// SubmitRunOptions is the stable command-facing request shape for short drama run submission.
+type SubmitRunOptions struct {
+	Message   string   `json:"message"`
+	ThreadID  string   `json:"thread_id,omitempty"`
+	AssetIDs  []string `json:"asset_ids,omitempty"`
+	AgentName string   `json:"agent_name,omitempty"`
+}
+
+// SubmitRunResult is the JSON envelope printed by `pippit-cli short-drama +submit-run`.
+type SubmitRunResult struct {
+	ThreadID      string `json:"thread_id"`
+	RunID         string `json:"run_id"`
+	WebThreadLink string `json:"web_thread_link"`
+}
+
 type submitRunResponse struct {
 	Ret    string `json:"ret"`
 	Errmsg string `json:"errmsg"`

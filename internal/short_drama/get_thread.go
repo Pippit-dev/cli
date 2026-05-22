@@ -8,6 +8,25 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
+// GetThreadOptions is the stable command-facing request shape for thread lookup.
+type GetThreadOptions struct {
+	ThreadID string `json:"thread_id"`
+	RunID    string `json:"run_id,omitempty"`
+	AfterSeq int    `json:"after_seq"`
+}
+
+// ThreadEntry is a compact message or artifact entry inside a thread run.
+type ThreadEntry struct {
+	ID      string `json:"id"`
+	Role    string `json:"role"`
+	Content []any  `json:"content"`
+}
+
+// GetThreadResult is the JSON envelope printed by `pippit-cli short-drama +get-thread`.
+type GetThreadResult struct {
+	Messages []*ThreadEntry `json:"messages"`
+}
+
 type getThreadResponse struct {
 	Ret    string `json:"ret"`
 	Errmsg string `json:"errmsg"`

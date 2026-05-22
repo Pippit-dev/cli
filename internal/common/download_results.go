@@ -1,4 +1,4 @@
-package short_drama
+package common
 
 import (
 	"context"
@@ -14,9 +14,27 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
+
+// DownloadResultsOptions is the command-facing shape for downloading result URLs.
+type DownloadResultsOptions struct {
+	URLs      []string `json:"urls"`
+	OutputDir string   `json:"output_dir"`
+	Workers   int      `json:"workers"`
+}
+
+type DownloadResultsError struct {
+	File  string `json:"file"`
+	Error string `json:"error"`
+}
+
+// DownloadResultsResult is the JSON envelope printed by `pippit-cli short-drama +download-results`.
+type DownloadResultsResult struct {
+	OutputDir  string                  `json:"output_dir"`
+	Downloaded []string                `json:"downloaded"`
+	Total      int                     `json:"total"`
+	Errors     []*DownloadResultsError `json:"errors,omitempty"`
+}
 
 const (
 	defaultDownloadOutputDir = "./xyq_short_drama_output"
@@ -34,7 +52,7 @@ type downloadTaskResult struct {
 	err      error
 }
 
-func DownloadResults(ctx context.Context, opts DownloadResultsOptions, _ *common.Runner) (*DownloadResultsResult, error) {
+func DownloadResults(ctx context.Context, opts DownloadResultsOptions, _ *Runner) (*DownloadResultsResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

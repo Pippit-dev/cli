@@ -16,6 +16,7 @@ const (
 	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
 	GetThreadPath               = "/api/biz/v1/skill/get_thread"
 	UploadFilePath              = "/api/biz/v1/skill/upload_file"
+	ListThreadFilePath          = "/api/biz/v1/skill/list_thread_file"
 	EnvXYQAccessKey             = "XYQ_ACCESS_KEY"
 )
 
@@ -38,9 +39,10 @@ type OAuth struct {
 }
 
 type Paths struct {
-	SubmitRun  string
-	GetThread  string
-	UploadFile string
+	SubmitRun      string
+	GetThread      string
+	UploadFile     string
+	ListThreadFile string
 }
 
 // Load resolves the built-in runtime config.
@@ -52,9 +54,10 @@ func Load() *Config {
 		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
 		OAuth:       resolveOAuth(),
 		Paths: &Paths{
-			SubmitRun:  SubmitRunPath,
-			GetThread:  GetThreadPath,
-			UploadFile: UploadFilePath,
+			SubmitRun:      SubmitRunPath,
+			GetThread:      GetThreadPath,
+			UploadFile:     UploadFilePath,
+			ListThreadFile: ListThreadFilePath,
 		},
 	}
 }

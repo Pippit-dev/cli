@@ -25,6 +25,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaDownloadResultsCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaGetThreadCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaListThreadFileCommand(stdout, stderr, runner))
 	return cmd
 }
 
@@ -64,7 +65,7 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 }
 
 func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts short_drama.UploadFileOptions
+	var opts common.UploadFileOptions
 
 	cmd := &cobra.Command{
 		Use:   "+upload-file",
@@ -79,7 +80,7 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 			opts.FileName = filepath.Base(opts.Path)
 			opts.Mock = true
 
-			result, err := short_drama.UploadFile(cmd.Context(), opts, runner)
+			result, err := common.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -93,7 +94,7 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 }
 
 func newShortDramaDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts short_drama.DownloadResultsOptions
+	var opts common.DownloadResultsOptions
 
 	cmd := &cobra.Command{
 		Use:   "+download-results [urls...]",
@@ -117,7 +118,7 @@ func newShortDramaDownloadResultsCommand(stdout, stderr io.Writer, runner *commo
 				return fmt.Errorf("--workers must be greater than 0")
 			}
 
-			result, err := short_drama.DownloadResults(cmd.Context(), opts, runner)
+			result, err := common.DownloadResults(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -137,7 +138,7 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 
 	cmd := &cobra.Command{
 		Use:   "+get-thread",
-		Short: "Get a short drama thread summary",
+		Short: "Get a short drama thread detail",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
@@ -158,6 +159,40 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to fetch")
 	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run ID to fetch")
 	cmd.Flags().IntVar(&opts.AfterSeq, "after-seq", 0, "return messages whose sequence is greater than or equal to this value")
+	return cmd
+}
+
+func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts common.ListThreadFileOptions
+
+	cmd := &cobra.Command{
+		Use:   "+list-thread-file",
+		Short: "List files in a short drama thread",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
+			if opts.ThreadID == "" {
+				return fmt.Errorf("--thread-id is required")
+			}
+			if opts.PageSize <= 0 || opts.PageSize > 100 {
+				return fmt.Errorf("--page-size must be between 1 and 100")
+			}
+			if opts.PageNum <= 0 {
+				return fmt.Errorf("--page-num must be greater than 0")
+			}
+
+			result, err := common.ListThreadFile(cmd.Context(), &opts, runner)
+			if err != nil {
+				return err
+			}
+			return writeJSON(stdout, result)
+		},
+	}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to list files for")
+	cmd.Flags().IntVar(&opts.PageNum, "page-num", 1, "page number (1-based)")
+	cmd.Flags().IntVar(&opts.PageSize, "page-size", 100, "number of files per page (between 1 and 100)")
 	return cmd
 }
 
