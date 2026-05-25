@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -40,50 +41,77 @@ func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuth
 }
 
 func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out any) error {
-	if c.authorizer == nil {
-		return fmt.Errorf("authorized request requires authorizer")
+	method := http.MethodPost
+	if body == nil {
+		method = http.MethodGet
 	}
-	req, err := c.newJSONRequest(ctx, path, body)
+
+	reqURL, err := c.resolveURL(path, nil)
 	if err != nil {
 		return err
 	}
-	if err := c.authorizer.Inject(ctx, req); err != nil {
-		return fmt.Errorf("inject auth headers: %w", err)
-	}
-	return c.do(req, out)
-}
 
-func (c *httpClient) newJSONRequest(ctx context.Context, path string, body any) (*http.Request, error) {
-	reqURL, err := c.resolveURL(path, nil)
-	if err != nil {
-		return nil, err
-	}
 	var reader io.Reader
 	if body != nil {
 		payload, err := sonic.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("encode POST body: %w", err)
+			return fmt.Errorf("encode body: %w", err)
 		}
 		reader = bytes.NewReader(payload)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, reader)
+
+	req, err := http.NewRequestWithContext(ctx, method, reqURL, reader)
 	if err != nil {
-		return nil, fmt.Errorf("build POST request: %w", err)
+		return fmt.Errorf("build %s request: %w", method, err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return req, nil
+
+	if c.authorizer == nil {
+		return fmt.Errorf("authorized request requires authorizer")
+	}
+	if err := c.authorizer.Inject(ctx, req); err != nil {
+		return fmt.Errorf("inject auth headers: %w", err)
+	}
+
+	c.injectHeaders(req)
+
+	// If out is **http.Response, return the raw response for streaming (e.g. file download).
+	if out != nil {
+		if rv := reflect.ValueOf(out); rv.Kind() == reflect.Ptr && rv.Elem().Kind() == reflect.Ptr {
+			if rv.Elem().Type().Elem() == reflect.TypeOf(http.Response{}) {
+				resp, err := c.httpClient.Do(req)
+				if err != nil {
+					return fmt.Errorf("%s %s failed: %w", method, reqURL, err)
+				}
+				if resp.StatusCode >= 400 {
+					defer resp.Body.Close()
+					return fmt.Errorf("%s %s returned HTTP %d", method, reqURL, resp.StatusCode)
+				}
+				rv.Elem().Set(reflect.ValueOf(resp))
+				return nil
+			}
+		}
+	}
+
+	req.Header.Set("Accept", "application/json")
+
+	return c.do(req, out)
 }
 
-func (c *httpClient) do(req *http.Request, out any) error {
+func (c *httpClient) injectHeaders(req *http.Request) {
 	for k, values := range c.headers {
 		for _, v := range values {
 			req.Header.Add(k, v)
 		}
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "Pippit-CLI/1.0")
+	req.Header.Set("x-use-ppe", "1")
+	req.Header.Set("x-tt-env", "ppe_harness_novel_v2")
+}
 
+func (c *httpClient) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%s %s failed: %w", req.Method, req.URL.String(), err)

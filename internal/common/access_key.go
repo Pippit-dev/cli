@@ -21,9 +21,11 @@ func (a *accessKeyAuthorizer) Inject(ctx context.Context, req *http.Request) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if a.accessKey == "" {
+	if a.accessKey == "" && req.Method == http.MethodPost {
 		return fmt.Errorf("%s is required for authenticated requests", config.EnvXYQAccessKey)
 	}
-	req.Header.Set("Authorization", "Bearer "+a.accessKey)
+	if a.accessKey != "" {
+		req.Header.Set("Authorization", "Bearer "+a.accessKey)
+	}
 	return nil
 }

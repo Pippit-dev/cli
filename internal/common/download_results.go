@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+// DownloadClient is a minimal interface for downloading files via HTTP GET.
+// It is satisfied by common.Client so that download logic can use the same
+// HTTP infrastructure (headers, auth, timeouts) as API calls.
+
 // DownloadResultOptions is the command-facing shape for downloading one result URL.
 type DownloadResultOptions struct {
 	URL       string `json:"url"`
@@ -51,7 +55,7 @@ type downloadTaskResult struct {
 	err      error
 }
 
-func DownloadResult(ctx context.Context, opts DownloadResultOptions, _ *Runner) (*DownloadResultResponse, error) {
+func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Runner) (*DownloadResultResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -104,7 +108,6 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, _ *Runner) 
 		workers = len(tasks)
 	}
 
-	client := &http.Client{Timeout: 600 * time.Second}
 	taskCh := make(chan downloadTask)
 	resultCh := make(chan downloadTaskResult, len(tasks))
 
@@ -116,7 +119,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, _ *Runner) 
 			for task := range taskCh {
 				resultCh <- downloadTaskResult{
 					filepath: task.filepath,
-					err:      downloadFileWithRetry(ctx, client, task.url, task.filepath),
+					err:      downloadFileWithRetry(ctx, runner.Client, task.url, task.filepath),
 				}
 			}
 		}()
@@ -167,7 +170,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, _ *Runner) 
 	return result, nil
 }
 
-func downloadFileWithRetry(ctx context.Context, client *http.Client, rawURL string, targetPath string) error {
+func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, targetPath string) error {
 	var lastErr error
 	for attempt := 0; attempt <= maxDownloadRetries; attempt++ {
 		if attempt > 0 {
@@ -203,22 +206,12 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func downloadFile(ctx context.Context, client *http.Client, rawURL string, targetPath string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return fmt.Errorf("build download request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Pippit-CLI/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
+func downloadFile(ctx context.Context, client Client, rawURL string, targetPath string) error {
+	var resp *http.Response
+	if err := client.SendRequest(ctx, rawURL, nil, &resp); err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
-	}
 
 	tmpPath := targetPath + ".tmp"
 	out, err := os.Create(tmpPath)
