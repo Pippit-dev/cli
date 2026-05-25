@@ -4,7 +4,8 @@ Minimal demo CLI for Pippit workflows.
 
 ## Short Drama Run Demo
 
-Install from npm after the package is published:
+Install from npm after the package is published. The installer downloads the
+matching prebuilt binary for macOS, Linux, or Windows:
 
 ```bash
 npx @pippit-dev/cli@latest install

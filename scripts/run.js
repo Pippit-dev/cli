@@ -8,6 +8,32 @@ const ext = process.platform === "win32" ? ".exe" : "";
 const bin = path.join(__dirname, "..", "bin", "pippit-cli" + ext);
 const args = process.argv.slice(2);
 
+const oldBin = bin + ".old";
+function restoreOldBinary() {
+  try {
+    if (fs.existsSync(bin)) {
+      fs.rmSync(bin, { force: true });
+    }
+    fs.renameSync(oldBin, bin);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+if (process.platform === "win32" && fs.existsSync(oldBin)) {
+  if (!fs.existsSync(bin)) {
+    restoreOldBinary();
+  } else {
+    try {
+      execFileSync(bin, ["--help"], { stdio: "ignore", timeout: 10000 });
+      fs.rmSync(oldBin, { force: true });
+    } catch (_) {
+      restoreOldBinary();
+    }
+  }
+}
+
 // Match the lark-cli install entry: `npx @pippit-dev/cli@latest install`
 // should run the JS setup flow before the native binary exists.
 if (args[0] === "install") {

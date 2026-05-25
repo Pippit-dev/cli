@@ -1,39 +1,147 @@
 #!/usr/bin/env node
 
-const { execFileSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
+const { isWindows, run } = require("./platform");
+const { installSkillsFromRoot } = require("./skills");
 
+const VERSION = require("../package.json").version.replace(/-.*$/, "");
+const REPO = "Pippit-dev/cli";
 const NAME = "pippit-cli";
 const ROOT = path.join(__dirname, "..");
 const BIN_DIR = path.join(ROOT, "bin");
-const EXT = process.platform === "win32" ? ".exe" : "";
-const DEST = path.join(BIN_DIR, NAME + EXT);
 
-function run(cmd, args, opts = {}) {
-  execFileSync(cmd, args, { stdio: "inherit", ...opts });
+const PLATFORM_MAP = {
+  darwin: "darwin",
+  linux: "linux",
+  win32: "windows",
+};
+
+const ARCH_MAP = {
+  x64: "amd64",
+  arm64: "arm64",
+};
+
+const platform = PLATFORM_MAP[process.platform];
+const arch = ARCH_MAP[process.arch];
+const archiveExt = isWindows ? ".zip" : ".tar.gz";
+const archiveName = `${NAME}-${VERSION}-${platform}-${arch}${archiveExt}`;
+const releaseURL = `https://github.com/${REPO}/releases/download/v${VERSION}/${archiveName}`;
+const dest = path.join(BIN_DIR, NAME + (isWindows ? ".exe" : ""));
+
+function download(url, destPath) {
+  const args = [
+    "--fail",
+    "--location",
+    "--silent",
+    "--show-error",
+    "--connect-timeout",
+    "10",
+    "--max-time",
+    "120",
+    "--max-redirs",
+    "3",
+    "--output",
+    destPath,
+  ];
+  if (isWindows) {
+    args.unshift("--ssl-revoke-best-effort");
+  }
+  args.push(url);
+  run("curl", args);
 }
 
-function ensureGo() {
+function expectedChecksum(name) {
+  const checksumsPath = path.join(ROOT, "checksums.txt");
+  if (!fs.existsSync(checksumsPath)) {
+    console.warn("[WARN] checksums.txt not found, skipping checksum verification");
+    return null;
+  }
+  for (const line of fs.readFileSync(checksumsPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf("  ");
+    if (idx === -1) continue;
+    const hash = trimmed.slice(0, idx);
+    const file = trimmed.slice(idx + 2);
+    if (file === name) return hash;
+  }
+  throw new Error(`Checksum entry not found for ${name}`);
+}
+
+function verifyChecksum(filePath, expectedHash) {
+  if (!expectedHash) return;
+  const hash = crypto.createHash("sha256");
+  const fd = fs.openSync(filePath, "r");
   try {
-    execFileSync("go", ["version"], { stdio: "ignore" });
-  } catch (_) {
-    throw new Error("Go is required to build pippit-cli from the npm package");
+    const buf = Buffer.alloc(64 * 1024);
+    let bytesRead;
+    while ((bytesRead = fs.readSync(fd, buf, 0, buf.length, null)) > 0) {
+      hash.update(buf.subarray(0, bytesRead));
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  const actual = hash.digest("hex");
+  if (actual.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error(`Checksum mismatch for ${path.basename(filePath)}: expected ${expectedHash}, got ${actual}`);
   }
 }
 
+function extractZipWindows(archivePath, destDir) {
+  const env = {
+    ...process.env,
+    PIPPIT_CLI_ARCHIVE: archivePath,
+    PIPPIT_CLI_DEST: destDir,
+  };
+  const ps = [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "$ErrorActionPreference='Stop';Expand-Archive -LiteralPath $env:PIPPIT_CLI_ARCHIVE -DestinationPath $env:PIPPIT_CLI_DEST -Force",
+  ];
+  run("powershell.exe", ps, { env });
+}
+
+function extractArchive(archivePath, destDir) {
+  if (isWindows) {
+    extractZipWindows(archivePath, destDir);
+    return;
+  }
+  run("tar", ["-xzf", archivePath, "-C", destDir]);
+}
+
 function install() {
-  ensureGo();
+  if (!platform || !arch) {
+    throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`);
+  }
+
   fs.mkdirSync(BIN_DIR, { recursive: true });
-  run("go", ["build", "-o", DEST, "."], { cwd: ROOT });
-  fs.chmodSync(DEST, 0o755);
-  console.log(`${NAME} installed successfully`);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pippit-cli-"));
+  const archivePath = path.join(tmpDir, archiveName);
+  try {
+    download(releaseURL, archivePath);
+    verifyChecksum(archivePath, expectedChecksum(archiveName));
+    extractArchive(archivePath, tmpDir);
+
+    const extracted = path.join(tmpDir, NAME + (isWindows ? ".exe" : ""));
+    fs.copyFileSync(extracted, dest);
+    fs.chmodSync(dest, 0o755);
+
+    if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
+      installSkillsFromRoot(ROOT);
+    }
+    console.log(`${NAME} v${VERSION} installed successfully`);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 if (require.main === module) {
-  // Under `npx @pippit-dev/cli@latest install`, the temporary package only
-  // needs run.js + install-wizard.js. The wizard performs the real global
-  // install, whose postinstall then builds the persistent binary.
   const isNpxPostinstall =
     process.env.npm_command === "exec" && !process.env.PIPPIT_CLI_RUN;
 
@@ -47,11 +155,16 @@ if (require.main === module) {
     console.error(`Failed to install ${NAME}: ${err.message || err}`);
     console.error(
       "\nTry:\n" +
-      "  go version\n" +
-      "  npm install -g @pippit-dev/cli\n"
+      "  npm install -g @pippit-dev/cli\n" +
+      `  node "${path.join(__dirname, "install.js")}"\n`
     );
     process.exit(1);
   }
 }
 
-module.exports = { install };
+module.exports = {
+  archiveName,
+  expectedChecksum,
+  install,
+  verifyChecksum,
+};

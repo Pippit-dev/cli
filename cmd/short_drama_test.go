@@ -79,6 +79,18 @@ func TestShortDramaSubmitRun(t *testing.T) {
 	}
 }
 
+func TestRootIncludesUpdateCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	cmd, _, err := root.Find([]string{"update"})
+	if err != nil {
+		t.Fatalf("Find(update) error = %v", err)
+	}
+	if cmd == nil || cmd.Name() != "update" {
+		t.Fatalf("Find(update) = %#v, want update command", cmd)
+	}
+}
+
 func TestShortDramaSubmitRunRequiresMessage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)

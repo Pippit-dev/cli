@@ -2,22 +2,10 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { isWindows, run, runSilent } = require("./platform");
+const { DEFAULT_PKG, installGlobalPackageSkills } = require("./skills");
 
-const DEFAULT_PKG = "@pippit-dev/cli";
 const PKG = process.env.PIPPIT_CLI_INSTALL_PACKAGE || DEFAULT_PKG;
-const isWindows = process.platform === "win32";
-
-function runSilent(cmd, args, opts = {}) {
-  return execFileSync(cmd, args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    ...opts,
-  });
-}
-
-function run(cmd, args, opts = {}) {
-  execFileSync(cmd, args, { stdio: "inherit", ...opts });
-}
 
 function getGloballyInstalledVersion() {
   try {
@@ -55,6 +43,18 @@ function main() {
   } else {
     console.log(`Installing ${PKG} globally...`);
     run("npm", ["install", "-g", PKG], { timeout: 120000 });
+  }
+
+  console.log("Installing pippit-cli skills...");
+  try {
+    installGlobalPackageSkills(DEFAULT_PKG);
+  } catch (err) {
+    if (!installed) {
+      throw err;
+    }
+    console.log("Existing global package does not contain skills; reinstalling...");
+    run("npm", ["install", "-g", PKG], { timeout: 120000 });
+    installGlobalPackageSkills(DEFAULT_PKG);
   }
 
   const bin = whichPippitCli();

@@ -29,12 +29,13 @@
   "files": [
     "cmd",
     "internal",
+    "skills",
     "scripts/install.js",
     "scripts/install-wizard.js",
+    "scripts/platform.js",
     "scripts/run.js",
-    "go.mod",
-    "go.sum",
-    "main.go",
+    "scripts/skills.js",
+    "checksums.txt",
     "README.md",
     "LICENSE"
   ],
