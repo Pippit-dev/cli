@@ -23,7 +23,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newShortDramaSubmitRunCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaDownloadResultsCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaDownloadResultCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaGetThreadCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaListThreadFileCommand(stdout, stderr, runner))
 	return cmd
@@ -88,32 +88,27 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 	return cmd
 }
 
-func newShortDramaDownloadResultsCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.DownloadResultsOptions
+func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts common.DownloadResultOptions
 
 	cmd := &cobra.Command{
-		Use:   "+download-results [urls...]",
-		Short: "Download generated result URLs",
-		Args:  cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		Use:   "+download-result",
+		Short: "Download a generated result URL",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.OutputDir = strings.TrimSpace(opts.OutputDir)
-
-			urls := make([]string, 0, len(opts.URLs)+len(args))
-			for _, rawURL := range append(opts.URLs, args...) {
-				rawURL = strings.TrimSpace(rawURL)
-				if rawURL != "" {
-					urls = append(urls, rawURL)
-				}
+			if opts.OutputDir == "" {
+				return fmt.Errorf("--output-dir is required")
 			}
-			opts.URLs = urls
-			if len(opts.URLs) == 0 {
-				return fmt.Errorf("--urls is required")
+			opts.URL = strings.TrimSpace(opts.URL)
+			if opts.URL == "" {
+				return fmt.Errorf("--url is required")
 			}
 			if opts.Workers <= 0 {
 				return fmt.Errorf("--workers must be greater than 0")
 			}
 
-			result, err := common.DownloadResults(cmd.Context(), opts, runner)
+			result, err := common.DownloadResult(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
@@ -122,8 +117,8 @@ func newShortDramaDownloadResultsCommand(stdout, stderr io.Writer, runner *commo
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.Flags().StringArrayVar(&opts.URLs, "urls", nil, "URL to download; repeat or pass additional URLs after the flag")
-	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output directory; defaults to ./xyq_short_drama_output")
+	cmd.Flags().StringVar(&opts.URL, "url", "", "URL to download")
+	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output file path")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
 	return cmd
 }

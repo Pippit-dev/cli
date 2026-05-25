@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,30 +15,30 @@ import (
 	"time"
 )
 
-// DownloadResultsOptions is the command-facing shape for downloading result URLs.
-type DownloadResultsOptions struct {
-	URLs      []string `json:"urls"`
-	OutputDir string   `json:"output_dir"`
-	Workers   int      `json:"workers"`
+// DownloadResultOptions is the command-facing shape for downloading one result URL.
+type DownloadResultOptions struct {
+	URL       string `json:"url"`
+	OutputDir string `json:"output_dir"`
+	Workers   int    `json:"workers"`
 }
 
-type DownloadResultsError struct {
+type DownloadResultError struct {
 	File  string `json:"file"`
 	Error string `json:"error"`
 }
 
-// DownloadResultsResult is the JSON envelope printed by `pippit-cli short-drama +download-results`.
-type DownloadResultsResult struct {
-	OutputDir  string                  `json:"output_dir"`
-	Downloaded []string                `json:"downloaded"`
-	Total      int                     `json:"total"`
-	Errors     []*DownloadResultsError `json:"errors,omitempty"`
+// DownloadResultResponse is the JSON envelope printed by `pippit-cli short-drama +download-result`.
+type DownloadResultResponse struct {
+	OutputDir    string                 `json:"output_dir"`
+	Downloaded   []string               `json:"downloaded"`
+	AlreadyExist []string               `json:"already_exist,omitempty"`
+	Total        int                    `json:"total"`
+	Errors       []*DownloadResultError `json:"errors,omitempty"`
 }
 
 const (
-	defaultDownloadOutputDir = "./xyq_short_drama_output"
-	maxDownloadRetries       = 3
-	retryBaseDelay           = 500 * time.Millisecond
+	maxDownloadRetries = 3
+	retryBaseDelay     = 500 * time.Millisecond
 )
 
 type downloadTask struct {
@@ -52,37 +51,49 @@ type downloadTaskResult struct {
 	err      error
 }
 
-func DownloadResults(ctx context.Context, opts DownloadResultsOptions, _ *Runner) (*DownloadResultsResult, error) {
+func DownloadResult(ctx context.Context, opts DownloadResultOptions, _ *Runner) (*DownloadResultResponse, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if len(opts.URLs) == 0 {
-		return nil, fmt.Errorf("download urls are required")
+	rawURL := strings.TrimSpace(opts.URL)
+	if rawURL == "" {
+		return nil, fmt.Errorf("download url is required")
 	}
 
-	outputDir := strings.TrimSpace(opts.OutputDir)
-	if outputDir == "" {
-		outputDir = defaultDownloadOutputDir
+	outputPath := strings.TrimSpace(opts.OutputDir)
+	if outputPath == "" {
+		return nil, fmt.Errorf("output_dir is required")
 	}
+	// check if the output path exists and is a file
+	if info, err := os.Stat(outputPath); err == nil {
+		if info.IsDir() {
+			return nil, fmt.Errorf("output path %q is a directory", outputPath)
+		}
+		return &DownloadResultResponse{
+			OutputDir:    outputPath,
+			AlreadyExist: []string{outputPath},
+			Total:        0,
+		}, nil
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("stat output path: %w", err)
+	}
+	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create output dir: %w", err)
 	}
 
-	tasks := make([]downloadTask, 0, len(opts.URLs))
-	for i, rawURL := range opts.URLs {
-		parsed, err := url.Parse(rawURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid url %q: %w", rawURL, err)
-		}
-		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return nil, fmt.Errorf("invalid url scheme %q in %q, only http and https are allowed", parsed.Scheme, rawURL)
-		}
-		ext := downloadExtension(parsed)
-		filename := fmt.Sprintf("%02d%s", i+1, ext)
-		tasks = append(tasks, downloadTask{
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid url %q: %w", rawURL, err)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("invalid url scheme %q in %q, only http and https are allowed", parsed.Scheme, rawURL)
+	}
+	tasks := []downloadTask{
+		{
 			url:      rawURL,
-			filepath: filepath.Join(outputDir, filename),
-		})
+			filepath: outputPath,
+		},
 	}
 
 	workers := opts.Workers
@@ -128,10 +139,10 @@ func DownloadResults(ctx context.Context, opts DownloadResultsOptions, _ *Runner
 	}()
 
 	downloaded := make([]string, 0, len(tasks))
-	errorList := make([]*DownloadResultsError, 0)
+	errorList := make([]*DownloadResultError, 0)
 	for result := range resultCh {
 		if result.err != nil {
-			errorList = append(errorList, &DownloadResultsError{
+			errorList = append(errorList, &DownloadResultError{
 				File:  result.filepath,
 				Error: result.err.Error(),
 			})
@@ -144,8 +155,8 @@ func DownloadResults(ctx context.Context, opts DownloadResultsOptions, _ *Runner
 		return errorList[i].File < errorList[j].File
 	})
 
-	result := &DownloadResultsResult{
-		OutputDir:  outputDir,
+	result := &DownloadResultResponse{
+		OutputDir:  outputPath,
 		Downloaded: downloaded,
 		Total:      len(downloaded),
 		Errors:     errorList,
@@ -229,17 +240,4 @@ func downloadFile(ctx context.Context, client *http.Client, rawURL string, targe
 		return fmt.Errorf("replace target file: %w", err)
 	}
 	return nil
-}
-
-func downloadExtension(parsed *url.URL) string {
-	filename := parsed.Query().Get("filename")
-	if filename != "" {
-		if ext := filepath.Ext(filename); ext != "" {
-			return ext
-		}
-	}
-	if ext := path.Ext(parsed.Path); ext != "" {
-		return ext
-	}
-	return ".bin"
 }

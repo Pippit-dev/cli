@@ -42,8 +42,8 @@ func TestShortDramaSubmitRun(t *testing.T) {
 		if body["thread_id"] != "thread_123" {
 			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
 		}
-		if body["agent_name"] != "pippit_nest_short_drama_agent" {
-			t.Fatalf("agent_name = %v, want pippit_nest_short_drama_agent", body["agent_name"])
+		if body["agent_name"] != "pippit_nest_novel_agent" {
+			t.Fatalf("agent_name = %v, want pippit_nest_novel_agent", body["agent_name"])
 		}
 		assetIDs, ok := body["asset_ids"].([]any)
 		if !ok || len(assetIDs) != 2 || assetIDs[0] != "asset_1" || assetIDs[1] != "asset_2" {
@@ -59,7 +59,6 @@ func TestShortDramaSubmitRun(t *testing.T) {
 		"short-drama", "+submit-run",
 		"--message", "write a cyberpunk opening",
 		"--thread-id", "thread_123",
-		"--agent-name", " pippit_nest_short_drama_agent ",
 		"--asset-ids", "asset_1",
 		"--asset-ids", "asset_2",
 	})
@@ -94,20 +93,6 @@ func TestShortDramaSubmitRunRequiresMessage(t *testing.T) {
 	}
 }
 
-func TestShortDramaSubmitRunRequiresAgentName(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+submit-run", "--message", "write a cyberpunk opening"})
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want validation error")
-	}
-	if !strings.Contains(err.Error(), "--agent-name is required") {
-		t.Fatalf("error = %q, want agent-name validation", err)
-	}
-}
-
 func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
@@ -119,7 +104,6 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	root.SetArgs([]string{
 		"short-drama", "+submit-run",
 		"--message", "write a cyberpunk opening",
-		"--agent-name", "pippit_nest_short_drama_agent",
 	})
 
 	err := root.Execute()
@@ -166,7 +150,7 @@ func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResults(t *testing.T) {
+func TestShortDramaDownloadResult(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") != "Pippit-CLI/1.0" {
 			t.Fatalf("User-Agent = %q, want Pippit-CLI/1.0", r.Header.Get("User-Agent"))
@@ -174,23 +158,21 @@ func TestShortDramaDownloadResults(t *testing.T) {
 		switch r.URL.Path {
 		case "/image":
 			_, _ = w.Write([]byte("image-data"))
-		case "/clip.mp4":
-			_, _ = w.Write([]byte("video-data"))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	outputDir := t.TempDir()
+	chdirTemp(t)
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
+	outputPath := filepath.Join("results", "cover.jpeg")
 	root.SetArgs([]string{
-		"short-drama", "+download-results",
-		"--output-dir", outputDir,
+		"short-drama", "+download-result",
+		"--output-dir", outputPath,
 		"--workers", "2",
-		"--urls", server.URL + "/image?filename=cover.jpeg",
-		server.URL + "/clip.mp4",
+		"--url", server.URL + "/image?filename=ignored.jpeg",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -198,19 +180,18 @@ func TestShortDramaDownloadResults(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != outputDir {
-		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputDir)
+	if got["output_dir"] != outputPath {
+		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
 	}
-	if got["total"] != float64(2) {
-		t.Fatalf("total = %v, want 2", got["total"])
+	if got["total"] != float64(1) {
+		t.Fatalf("total = %v, want 1", got["total"])
 	}
 	downloaded, ok := got["downloaded"].([]any)
-	if !ok || len(downloaded) != 2 {
-		t.Fatalf("downloaded = %#v, want two files", got["downloaded"])
+	if !ok || len(downloaded) != 1 {
+		t.Fatalf("downloaded = %#v, want one file", got["downloaded"])
 	}
 	wantFiles := []string{
-		filepath.Join(outputDir, "01.jpeg"),
-		filepath.Join(outputDir, "02.mp4"),
+		outputPath,
 	}
 	for i, want := range wantFiles {
 		if downloaded[i] != want {
@@ -218,27 +199,86 @@ func TestShortDramaDownloadResults(t *testing.T) {
 		}
 	}
 	assertFileContent(t, wantFiles[0], "image-data")
-	assertFileContent(t, wantFiles[1], "video-data")
 }
 
-func TestShortDramaDownloadResultsRequiresURLs(t *testing.T) {
+func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
+	serverCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverCalled = true
+		t.Fatal("server should not receive request when target file already exists")
+	}))
+	defer server.Close()
+
+	chdirTemp(t)
+	outputPath := filepath.Join("results", "cover.jpeg")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(outputPath, []byte("existing-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-results"})
+	root.SetArgs([]string{
+		"short-drama", "+download-result",
+		"--output-dir", outputPath,
+		"--url", server.URL + "/image",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if serverCalled {
+		t.Fatal("server was called, want existing file to skip download")
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	if got["output_dir"] != outputPath {
+		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
+	}
+	if got["total"] != float64(0) {
+		t.Fatalf("total = %v, want 0", got["total"])
+	}
+	alreadyExist, ok := got["already_exist"].([]any)
+	if !ok || len(alreadyExist) != 1 || alreadyExist[0] != outputPath {
+		t.Fatalf("already_exist = %#v, want existing output path", got["already_exist"])
+	}
+	assertFileContent(t, outputPath, "existing-data")
+}
+
+func TestShortDramaDownloadResultRequiresOutputDir(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"short-drama", "+download-result", "--url", "https://example.com/image.png"})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--urls is required") {
-		t.Fatalf("error = %q, want urls validation", err)
+	if !strings.Contains(err.Error(), "--output-dir is required") {
+		t.Fatalf("error = %q, want output-dir validation", err)
 	}
 }
 
-func TestShortDramaDownloadResultsRejectsInvalidScheme(t *testing.T) {
+func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-results", "--urls", "file:///etc/passwd"})
+	root.SetArgs([]string{"short-drama", "+download-result", "--output-dir", filepath.Join("results", "image.png")})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "--url is required") {
+		t.Fatalf("error = %q, want url validation", err)
+	}
+}
+
+func TestShortDramaDownloadResultRejectsInvalidScheme(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"short-drama", "+download-result", "--output-dir", filepath.Join("results", "image.png"), "--url", "file:///etc/passwd"})
 
 	err := root.Execute()
 	if err == nil {
@@ -249,19 +289,19 @@ func TestShortDramaDownloadResultsRejectsInvalidScheme(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultsAllFailed(t *testing.T) {
+func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer server.Close()
 
-	outputDir := t.TempDir()
+	chdirTemp(t)
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-results",
-		"--output-dir", outputDir,
-		"--urls", server.URL + "/notfound",
+		"short-drama", "+download-result",
+		"--output-dir", filepath.Join("results", "missing.png"),
+		"--url", server.URL + "/notfound",
 	})
 
 	err := root.Execute()
@@ -273,31 +313,21 @@ func TestShortDramaDownloadResultsAllFailed(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultsDefaultOutputDir(t *testing.T) {
+func TestShortDramaDownloadResultOutputPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("image-data"))
 	}))
 	defer server.Close()
 
-	cwd := t.TempDir()
-	oldWD, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Getwd(): %v", err)
-	}
-	if err := os.Chdir(cwd); err != nil {
-		t.Fatalf("Chdir(%s): %v", cwd, err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldWD); err != nil {
-			t.Fatalf("restore working dir: %v", err)
-		}
-	})
+	chdirTemp(t)
 
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
+	outputPath := filepath.Join("custom", "nested", "cover.png")
 	root.SetArgs([]string{
-		"short-drama", "+download-results",
-		"--urls", server.URL + "/image.png",
+		"short-drama", "+download-result",
+		"--output-dir", outputPath,
+		"--url", server.URL + "/image.png",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -305,10 +335,10 @@ func TestShortDramaDownloadResultsDefaultOutputDir(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != "./xyq_short_drama_output" {
-		t.Fatalf("output_dir = %v, want ./xyq_short_drama_output", got["output_dir"])
+	if got["output_dir"] != outputPath {
+		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
 	}
-	assertFileContent(t, filepath.Join(cwd, "xyq_short_drama_output", "01.png"), "image-data")
+	assertFileContent(t, outputPath, "image-data")
 }
 
 func TestShortDramaGetThread(t *testing.T) {
@@ -407,6 +437,89 @@ func TestShortDramaGetThreadRequiresAccessKey(t *testing.T) {
 	}
 }
 
+func TestShortDramaListThreadFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/biz/v1/skill/list_thread_file" {
+			t.Fatalf("path = %s, want list_thread_file path", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
+		}
+		data, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		var body map[string]any
+		if err := sonic.Unmarshal(data, &body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["thread_id"] != "thread_123" {
+			t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
+		}
+		if body["page_num"] != float64(2) {
+			t.Fatalf("page_num = %v, want 2", body["page_num"])
+		}
+		if body["page_size"] != float64(10) {
+			t.Fatalf("page_size = %v, want 10", body["page_size"])
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":1,"files":[{"file_name":"ignored.png","file_path":"results/images/cover.png","download_url":"https://example.com/cover.png"}]}}`))
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"short-drama", "+list-thread-file",
+		"--thread-id", "thread_123",
+		"--page-num", "2",
+		"--page-size", "10",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	if got["total"] != float64(1) {
+		t.Fatalf("total = %v, want 1", got["total"])
+	}
+	files, ok := got["files"].([]any)
+	if !ok || len(files) != 1 {
+		t.Fatalf("files = %#v, want one file", got["files"])
+	}
+	file, ok := files[0].(map[string]any)
+	if !ok {
+		t.Fatalf("file = %#v, want object", files[0])
+	}
+	if _, ok := file["file_name"]; ok {
+		t.Fatalf("file_name should not be returned: %#v", file)
+	}
+	wantPath := "." + string(os.PathSeparator) + filepath.Join("thread_123", "results/images/cover.png")
+	if file["file_path"] != wantPath {
+		t.Fatalf("file_path = %v, want %s", file["file_path"], wantPath)
+	}
+	if file["download_url"] != "https://example.com/cover.png" {
+		t.Fatalf("download_url = %v, want returned url", file["download_url"])
+	}
+}
+
+func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"short-drama", "+list-thread-file"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "--thread-id is required") {
+		t.Fatalf("error = %q, want thread-id validation", err)
+	}
+}
+
 func newTestRootCommand(t *testing.T, stdout, stderr io.Writer, baseURL string) *cobra.Command {
 	t.Helper()
 	return newTestRootCommandWithAccessKey(t, stdout, stderr, baseURL, "test-token")
@@ -430,6 +543,24 @@ func decodeJSON(t *testing.T, data []byte) map[string]any {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, string(data))
 	}
 	return got
+}
+
+func chdirTemp(t *testing.T) string {
+	t.Helper()
+	cwd := t.TempDir()
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd(): %v", err)
+	}
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatalf("Chdir(%s): %v", cwd, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("restore working dir: %v", err)
+		}
+	})
+	return cwd
 }
 
 func assertFileContent(t *testing.T, path string, want string) {

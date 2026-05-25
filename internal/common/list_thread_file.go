@@ -3,6 +3,8 @@ package common
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
@@ -16,7 +18,6 @@ type ListThreadFileOptions struct {
 
 // ThreadFile is a file entry in a thread.
 type ThreadFile struct {
-	FileName    string `json:"file_name"`
 	FilePath    string `json:"file_path"`
 	DownloadURL string `json:"download_url"`
 }
@@ -33,9 +34,14 @@ type listThreadFileResponse struct {
 	SvrTime int64  `json:"svr_time"`
 	LogID   string `json:"log_id"`
 	Data    struct {
-		Files []*ThreadFile `json:"files"`
-		Total int64         `json:"total"`
+		Files []*threadFileResponse `json:"files"`
+		Total int64                 `json:"total"`
 	} `json:"data"`
+}
+
+type threadFileResponse struct {
+	FilePath    string `json:"file_path"`
+	DownloadURL string `json:"download_url"`
 }
 
 func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Runner) (*ListThreadFileResult, error) {
@@ -64,10 +70,30 @@ func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Ru
 		return nil, fmt.Errorf("list_thread_file failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 
+	files := make([]*ThreadFile, 0, len(resp.Data.Files))
+	for _, file := range resp.Data.Files {
+		if file == nil {
+			continue
+		}
+		files = append(files, &ThreadFile{
+			FilePath:    threadFilePath(opts.ThreadID, file.FilePath),
+			DownloadURL: file.DownloadURL,
+		})
+	}
+
 	return &ListThreadFileResult{
-		Files: resp.Data.Files,
+		Files: files,
 		Total: resp.Data.Total,
 	}, nil
+}
+
+func threadFilePath(threadID string, filePath string) string {
+	parts := []string{strings.TrimSpace(threadID)}
+	trimmedFilePath := strings.Trim(strings.TrimSpace(filePath), `/\`)
+	if trimmedFilePath != "" {
+		parts = append(parts, trimmedFilePath)
+	}
+	return "." + string(filepath.Separator) + filepath.Join(parts...)
 }
 
 func listThreadFilePath(runner *Runner) string {
