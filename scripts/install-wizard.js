@@ -39,11 +39,14 @@ function whichPippitCli() {
 function main() {
   const installed = getGloballyInstalledVersion();
   if (installed) {
-    console.log(`pippit-cli is already installed globally (${installed}).`);
+    console.log(`Updating global pippit-cli (${installed}) via ${PKG}...`);
   } else {
     console.log(`Installing ${PKG} globally...`);
-    run("npm", ["install", "-g", PKG], { timeout: 120000 });
   }
+  run("npm", ["install", "-g", PKG], {
+    timeout: 120000,
+    env: { ...process.env, PIPPIT_CLI_SKIP_SKILLS: "1" },
+  });
 
   console.log("Installing pippit-cli skills...");
   try {
