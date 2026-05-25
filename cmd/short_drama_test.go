@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
@@ -542,9 +541,8 @@ func newTestRootCommandWithAccessKey(t *testing.T, stdout, stderr io.Writer, bas
 	cfg := config.Load()
 	cfg.BaseURL = baseURL
 	cfg.AccessKey = accessKey
-	authAuthorizer := auth.NewManager(cfg)
 	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
-	runner := common.NewRunner(cfg, client, authAuthorizer)
+	runner := common.NewRunner(cfg, client)
 	return newRootCommand(stdout, stderr, runner)
 }
 
