@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"code.byted.org/passport/auth_client/go/authsdk"
+	//"code.byted.org/passport/auth_client/go/authsdk"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
