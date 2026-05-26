@@ -164,8 +164,8 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 			if opts.ThreadID == "" {
 				return fmt.Errorf("--thread-id is required")
 			}
-			if opts.PageSize <= 0 || opts.PageSize > 100 {
-				return fmt.Errorf("--page-size must be between 1 and 100")
+			if opts.PageSize <= 0 || opts.PageSize > 1000 {
+				return fmt.Errorf("--page-size must be between 1 and 1000")
 			}
 			if opts.PageNum <= 0 {
 				return fmt.Errorf("--page-num must be greater than 0")
@@ -182,7 +182,7 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to list files for")
 	cmd.Flags().IntVar(&opts.PageNum, "page-num", 1, "page number (1-based)")
-	cmd.Flags().IntVar(&opts.PageSize, "page-size", 100, "number of files per page (between 1 and 100)")
+	cmd.Flags().IntVar(&opts.PageSize, "page-size", 1000, "number of files per page (between 1 and 1000)")
 	return cmd
 }
 

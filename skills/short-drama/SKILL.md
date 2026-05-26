@@ -17,17 +17,19 @@ metadata:
 
 # 小云雀短剧创作
 
-通过 `pippit-cli short-drama` 命令提交短剧创作任务、上传参考文件，并查询任务进展，获取会话产物文件。
+通过 `pippit-cli short-drama` 命令提交短剧创作任务、上传参考文件，并行查询任务进展和会话产物文件，及时把重要资产下载到用户本地。
 
-短剧场景面向剧情、人物、分集与画面化叙事创作，用户的原始需求通过 `--message` 发送给后端 Agent。后端 Agent 负责理解任务、编排流程和生成内容；用户侧 Agent 只负责提交任务、查询进展和展示结果。
+短剧场景面向剧情、人物、分集与画面化叙事创作，用户的原始需求通过 `--message` 发送给后端 Agent。后端 Agent 负责理解任务、编排流程和生成内容；用户侧 Agent 负责提交任务、并行查询进展与产物、主动下载重要资产并展示结果。
 
 ## 功能
 
 1. **提交短剧 Run 任务** - 创建新会话或向已有会话发送短剧创作需求。
 2. **查询会话进展** - 根据 `thread_id`、`run_id`、`after_seq` 拉取短剧任务消息列表。
 3. **上传文件** - 上传短剧相关参考文件，得到文件 ID，供后续任务引用。
-4. **获取会话文件** - 根据 `thread_id` 拉取会话文件列表，得到 `file_path`、`file_name`、`download_url`。
-5. **下载文件资源** - 使用文件列表中的 `download_url` 下载资源，并按 `file_path` 写入用户本地目标文件路径。
+4. **获取会话文件** - 根据 `thread_id` 拉取会话文件列表，得到 `file_path`、`download_url`。这和查询会话进展同等重要。
+5. **下载重要资产** - 使用文件列表中的 `download_url` 下载资源，并按 `file_path` 写入用户本地目标文件路径。
+
+重要资产包括但不限于：剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物。只要 `+list-thread-file` 返回了这些资产的 `download_url`，就要及时调用下载工具落盘，不要只展示文件元信息。
 
 ## 前置要求
 
@@ -73,7 +75,7 @@ pippit-cli short-drama +upload-file --path /path/to/outline.md
 
 ```bash
 # 获取会话文件列表
-pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 100
+pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 1000
 ```
 
 `+list-thread-file` 返回的每个文件对象包含：
@@ -85,7 +87,7 @@ pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --pa
 }
 ```
 
-`+list-thread-file` 只负责获取会话文件列表，不负责下载文件。
+`+list-thread-file` 只负责获取会话文件列表，不负责下载文件，也不需要判断本地文件是否已存在。
 
 ### 5. 下载文件资源
 
@@ -104,20 +106,25 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 1. pippit-cli short-drama +submit-run --message "用户的原始短剧需求"
    → 拿到 thread_id、run_id 和 web_thread_link
 2. 立即将 web_thread_link 展示给用户
-3. 并行发起：
+3. 并行发起，二者同等重要：
    a. pippit-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
-   b. pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 100
+   b. pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 1000
 4. 检查 `get-thread` 返回的 messages：
    - 如果任务仍在进行中：展示过程消息，继续查询
    - 如果后端 Agent 提出问题：展示问题，等待用户回复
-5. 解析 `list-thread-file` 返回的 files，只获取文件元信息：
-   - 对每个文件取 file_path、file_name、download_url
+5. 检查 `list-thread-file` 返回的 files：
+   - 对每个文件取 file_path、download_url
    - 将 file_path 作为本地目标文件路径，包含文件名
-   - 如果 file_path 已存在：跳过下载
-6. 对缺失的本地文件，调用 +download-result 并行下载资源：
+   - 有 download_url 的重要资产：加入本轮下载队列
+   - 不判断 file_path 在本地是否已存在，是否跳过由 +download-result 内部处理
+   - 如果本轮 total 达到 1000：下一轮将 PAGE_NUM 加 1，继续查询新一页文件
+6. 对重要资产，立即调用 +download-result 并行下载资源：
    - 使用第 5 步获取的 download_url 作为 --url
    - 使用第 5 步获取的完整 file_path 作为 --output-path
-7. 如用户继续追加需求，使用同一 thread_id 再次 submit-run
+   - 剧本设计、场景设计、场景图、人物角色设计、人物图、最终视频产物都属于重要资产
+7. 查询或下载失败时，不要直接放弃；记录失败项，并在后续轮询中主动重试
+8. 只有会话进展已处理，且已发现的重要资产均已下载或明确重试失败后，才向用户汇总最终结果
+9. 如用户继续追加需求，使用同一 thread_id 再次 submit-run
 ```
 
 ### 场景 2：用户提供参考文件要求创作
@@ -127,7 +134,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
    → 拿到 file_id
 2. pippit-cli short-drama +submit-run --message "用户的原始短剧需求" --asset-ids file_id
    → 拿到 thread_id、run_id 和 web_thread_link
-3. 后续同场景 1 的并行查询和文件下载流程
+3. 后续同场景 1 的并行查询、重要资产发现和文件下载流程
 ```
 
 ### 场景 3：在已有短剧会话中续写或修改
@@ -135,18 +142,30 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 ```
 1. pippit-cli short-drama +submit-run --message "用户的新需求" --thread-id THREAD_ID
    → 拿到新的 run_id 和 web_thread_link
-2. 继续按场景 1 展示进展、处理用户补充问题、获取新增会话文件列表，并按需下载新增文件资源
+2. 继续按场景 1 展示进展、处理用户补充问题、获取新增会话文件列表，并及时下载新增重要资产
 ```
 
 ## 轮询策略
 
 - **间隔**：每 10 秒查询一次。
 - **增量拉取**：首次使用 `--after-seq 0`，后续根据已读消息进度调整 `after-seq`。
-- **并行查询**：每次 `+submit-run` 返回 `thread_id` 后，同时发起 `+get-thread` 和 `+list-thread-file`；会话信息展示流程保持不变，`+list-thread-file` 只用于获取文件元信息。
-- **文件下载**：解析 `+list-thread-file` 的结果后，只有目标本地文件不存在时才调用 `+download-result` 下载资源。
+- **并行查询**：每次 `+submit-run` 返回 `thread_id` 后，同时发起 `+get-thread` 和 `+list-thread-file`；二者同等重要，不能只查询会话进展而忽略会话文件。
+- **文件分页**：`+list-thread-file` 使用 `--page-size 1000`。如果本轮返回的 `total` 达到 1000，下一轮使用 `--page-num` 加 1 查询新一页结果；如果未达到 1000，保持当前页继续轮询新增产物。
+- **重要资产识别**：每轮都检查 `+list-thread-file` 返回的文件。剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物都是重要资产。
+- **文件下载**：解析 `+list-thread-file` 的结果后，对带 `download_url` 的重要资产立即调用 `+download-result` 下载资源；不要在 `list-thread-file` 阶段检查文件是否已存在，存在性检查由下载工具内部处理。
+- **下载完成标准**：不要把文件元信息展示当成下载完成；必须拿到本地 `file_path`，或明确记录该文件在重试后仍下载失败。
 - **用户确认**：如果消息中出现需要用户确认、补充设定或回答问题的内容，先展示给用户，等待用户回复。
 - **超时**：如果长时间无结果，告知用户任务仍在生成中，可稍后通过 `web_thread_link` 查看。
-- **错误处理**：单次查询失败可重试；连续失败时停止轮询并向用户说明错误。
+- **错误处理**：`+get-thread`、`+list-thread-file` 或 `+download-result` 任一调用失败时，记录失败原因和参数，在后续轮询中主动重试；重试期间继续处理其他成功返回的消息和文件。连续多轮失败后再向用户说明仍未完成的查询或下载项。
+
+## 完成标准
+
+一次短剧任务不能只以 `+get-thread` 返回完成消息作为结束条件。完成前必须同时检查：
+
+1. 已处理 `+get-thread` 返回的最新会话进展、用户确认问题和最终消息。
+2. 已用 `--page-size 1000` 调用 `+list-thread-file` 获取会话文件列表；如果本轮 `total` 达到 1000，已在后续轮询中递增 `page-num` 查询新一页。
+3. 对所有带 `download_url` 的重要资产，已调用 `+download-result` 下载到本地 `file_path`。
+4. 对查询失败或下载失败的资产，已在后续轮询中主动重试，并在最终回复中列出仍失败的文件或命令。
 
 ## 输出格式
 
@@ -220,35 +239,41 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 
 ## 会话文件与资源下载
 
-先用 `+list-thread-file` 获取会话文件列表，再按需用 `+download-result` 并行下载文件资源。
+先用 `+list-thread-file` 获取会话文件列表，再用 `+download-result` 并行下载重要资产。获取文件元信息不是最终目标，重要资产落盘才是核心目标。文件是否已存在由下载工具内部检查，`+list-thread-file` 阶段不要做本地存在性判断。
 
 ### 获取会话文件
 
-从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`download_url`。
+从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`file_name`、`download_url`。重点识别剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物等重要资产。
 
 ```
-1. file_path在本地已存在
-   → 跳过
-2. file_path在本地不存在
+1. 有download_url的重要资产
    → 记录该file_path和URL
    → 使用 +download-result 将URL资源下载到该file_path
+2. 本轮total达到1000
+   → 下一轮page-num加1，继续查询新一页结果
+3. 本轮total未达到1000
+   → 后续轮询保持当前页，继续发现新增产物
+4. list-thread-file或download-result失败
+   → 记录失败参数和错误
+   → 后续轮询主动重试，不要直接结束任务
 ```
 
 ### 并行下载文件资源
 
-只对目标路径不存在的文件调用下载工具，可并行：
+对带 `download_url` 的重要资产调用下载工具，可并行。重要资产必须主动下载，不要等用户再次要求，也不要在调用下载工具前先检查本地文件是否存在。
 
 1. 调用 `pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH`。
-2. 下载完成后，向用户展示本地文件路径；如果某个文件下载失败，只报告该文件错误，不阻塞已成功落盘的文件展示。
+2. 下载完成后，向用户展示本地文件路径；如果某个文件下载失败，记录失败项并在后续轮询中重试，不阻塞已成功落盘的文件展示。
 
 ## 向用户展示内容
 
 - 任务提交后：立即展示 `web_thread_link`。
 - 任务进行中：展示后端 Agent 返回的过程消息。
 - 需要用户补充信息时：原样展示后端 Agent 的问题，等待用户回复。
-- 任务完成后：展示短剧内容、分集草稿、设定说明或其他结果信息。
+- 任务完成后：展示短剧内容、分集草稿、设定说明或其他结果信息，同时检查是否有未下载的重要资产。
 - 获取会话文件后：展示或记录文件元信息，不把它当成已下载结果。
 - 文件资源下载后：展示已落盘的本地文件路径；已存在而跳过下载的文件也要标明。
+- 如果仍有重要资产下载失败：说明失败文件、失败命令和已进行的重试，不要把它描述为已完成下载。
 
 ## 核心原则：用户侧不做创作，只做传话
 
@@ -275,6 +300,6 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 - 查询进展时优先使用 `+submit-run` 返回的 `thread_id` 和 `run_id`。
 - `--after-seq` 用于增量拉取消息，首次查询可设置为 `0`。
 - `+upload-file` 当前用于短剧场景文件上传链路，上传后将返回可传给 `+submit-run` 的文件 ID。
-- `+list-thread-file` 只需要 `thread_id`；分页参数默认 `--page-num 1 --page-size 100`。
+- `+list-thread-file` 只需要 `thread_id`；分页参数使用 `--page-num 1 --page-size 1000` 起步，`total` 达到 1000 时下一轮递增 `page-num`。
 - `+list-thread-file` 和 `+download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目标文件路径。
 - `+download-result` 接收 `--url`、`--output-path`、`--workers`；`--output-path` 必须是包含文件名的目标文件路径。
