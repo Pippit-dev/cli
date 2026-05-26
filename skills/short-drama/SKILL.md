@@ -27,7 +27,7 @@ metadata:
 2. **查询会话进展** - 根据 `thread_id`、`run_id`、`after_seq` 拉取短剧任务消息列表。
 3. **上传文件** - 上传短剧相关参考文件，得到文件 ID，供后续任务引用。
 4. **获取会话文件** - 根据 `thread_id` 拉取会话文件列表，得到 `file_path`、`file_name`、`download_url`。
-5. **下载文件资源** - 使用文件列表中的 `download_url` 下载资源，并按 `file_path` 写入用户本地目录。
+5. **下载文件资源** - 使用文件列表中的 `download_url` 下载资源，并按 `file_path` 写入用户本地目标文件路径。
 
 ## 前置要求
 
@@ -90,11 +90,11 @@ pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --pa
 ### 5. 下载文件资源
 
 ```bash
-# 下载文件资源到指定目录
-pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PATH 
+# 下载文件资源到指定文件路径
+pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH
 ```
 
-`+download-result` 负责把会话产生的文件，通过URL下载到 `file_path`目录中，如果目标文件已存在，跳过下载。
+`FILE_PATH` 必须直接使用 `+list-thread-file` 返回的完整 `file_path`，包含文件名，不要取父目录。`+download-result` 负责把会话产生的文件通过 URL 下载到该目标文件路径；如果目标文件已存在，跳过下载。
 
 ## 典型工作流
 
@@ -112,11 +112,11 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PAT
    - 如果后端 Agent 提出问题：展示问题，等待用户回复
 5. 解析 `list-thread-file` 返回的 files，只获取文件元信息：
    - 对每个文件取 file_path、file_name、download_url
-   - 按 file_path 在用户本地环境构建目录
-   - 如果在工作目录中 file_name 已存在：跳过下载
+   - 将 file_path 作为本地目标文件路径，包含文件名
+   - 如果 file_path 已存在：跳过下载
 6. 对缺失的本地文件，调用 +download-result 并行下载资源：
    - 使用第 5 步获取的 download_url 作为 --url
-   - 使用第 5 步获取的 file_path 作为 --output-dir
+   - 使用第 5 步获取的完整 file_path 作为 --output-path
 7. 如用户继续追加需求，使用同一 thread_id 再次 submit-run
 ```
 
@@ -212,8 +212,8 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PAT
 
 ```json
 {
-  "output_dir": "/path/to/output-dir",
-  "downloaded": ["/path/to/output-dir/01.md"],
+  "output_path": "./{thread-id}/{file_path}/{file_name}",
+  "downloaded": ["./{thread-id}/{file_path}/{file_name}"],
   "total": 1
 }
 ```
@@ -231,14 +231,14 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PAT
    → 跳过
 2. file_path在本地不存在
    → 记录该file_path和URL
-   → 多个待下载的文件 → 使用 +download-result 工具并行下载文件到本地
+   → 使用 +download-result 将URL资源下载到该file_path
 ```
 
 ### 并行下载文件资源
 
 只对目标路径不存在的文件调用下载工具，可并行：
 
-1. 调用 `pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PATH`。
+1. 调用 `pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH`。
 2. 下载完成后，向用户展示本地文件路径；如果某个文件下载失败，只报告该文件错误，不阻塞已成功落盘的文件展示。
 
 ## 向用户展示内容
@@ -276,5 +276,5 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-dir FILE_PAT
 - `--after-seq` 用于增量拉取消息，首次查询可设置为 `0`。
 - `+upload-file` 当前用于短剧场景文件上传链路，上传后将返回可传给 `+submit-run` 的文件 ID。
 - `+list-thread-file` 只需要 `thread_id`；分页参数默认 `--page-num 1 --page-size 100`。
-- `+list-thread-file` 和 `+download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目录。
-- `+download-result` 接收 `--url`、`--output-dir`、`--workers`。
+- `+list-thread-file` 和 `+download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目标文件路径。
+- `+download-result` 接收 `--url`、`--output-path`、`--workers`；`--output-path` 必须是包含文件名的目标文件路径。

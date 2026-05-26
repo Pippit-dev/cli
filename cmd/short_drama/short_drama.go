@@ -96,9 +96,9 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 		Short: "Download a generated result URL",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			opts.OutputDir = strings.TrimSpace(opts.OutputDir)
-			if opts.OutputDir == "" {
-				return fmt.Errorf("--output-dir is required")
+			opts.OutputPath = strings.TrimSpace(opts.OutputPath)
+			if opts.OutputPath == "" {
+				return fmt.Errorf("--output-path is required")
 			}
 			opts.URL = strings.TrimSpace(opts.URL)
 			if opts.URL == "" {
@@ -118,7 +118,7 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.URL, "url", "", "URL to download")
-	cmd.Flags().StringVar(&opts.OutputDir, "output-dir", "", "output file path")
+	cmd.Flags().StringVar(&opts.OutputPath, "output-path", "", "local output file path")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
 	return cmd
 }

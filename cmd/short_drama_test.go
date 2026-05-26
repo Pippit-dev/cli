@@ -181,7 +181,7 @@ func TestShortDramaDownloadResult(t *testing.T) {
 	outputPath := filepath.Join("results", "cover.jpeg")
 	root.SetArgs([]string{
 		"short-drama", "+download-result",
-		"--output-dir", outputPath,
+		"--output-path", outputPath,
 		"--workers", "2",
 		"--url", server.URL + "/image?filename=ignored.jpeg",
 	})
@@ -191,8 +191,8 @@ func TestShortDramaDownloadResult(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != outputPath {
-		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
+	if got["output_path"] != outputPath {
+		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
 	if got["total"] != float64(1) {
 		t.Fatalf("total = %v, want 1", got["total"])
@@ -233,7 +233,7 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
 		"short-drama", "+download-result",
-		"--output-dir", outputPath,
+		"--output-path", outputPath,
 		"--url", server.URL + "/image",
 	})
 
@@ -245,8 +245,8 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != outputPath {
-		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
+	if got["output_path"] != outputPath {
+		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
 	if got["total"] != float64(0) {
 		t.Fatalf("total = %v, want 0", got["total"])
@@ -258,7 +258,7 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	assertFileContent(t, outputPath, "existing-data")
 }
 
-func TestShortDramaDownloadResultRequiresOutputDir(t *testing.T) {
+func TestShortDramaDownloadResultRequiresOutputPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{"short-drama", "+download-result", "--url", "https://example.com/image.png"})
@@ -267,15 +267,33 @@ func TestShortDramaDownloadResultRequiresOutputDir(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--output-dir is required") {
-		t.Fatalf("error = %q, want output-dir validation", err)
+	if !strings.Contains(err.Error(), "--output-path is required") {
+		t.Fatalf("error = %q, want output-path validation", err)
+	}
+}
+
+func TestShortDramaDownloadResultRejectsOutputDirFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"short-drama", "+download-result",
+		"--output-dir", filepath.Join("results", "image.png"),
+		"--url", "https://example.com/image.png",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want unknown flag error")
+	}
+	if !strings.Contains(err.Error(), "unknown flag: --output-dir") {
+		t.Fatalf("error = %q, want output-dir rejection", err)
 	}
 }
 
 func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-result", "--output-dir", filepath.Join("results", "image.png")})
+	root.SetArgs([]string{"short-drama", "+download-result", "--output-path", filepath.Join("results", "image.png")})
 
 	err := root.Execute()
 	if err == nil {
@@ -289,7 +307,7 @@ func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
 func TestShortDramaDownloadResultRejectsInvalidScheme(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-result", "--output-dir", filepath.Join("results", "image.png"), "--url", "file:///etc/passwd"})
+	root.SetArgs([]string{"short-drama", "+download-result", "--output-path", filepath.Join("results", "image.png"), "--url", "file:///etc/passwd"})
 
 	err := root.Execute()
 	if err == nil {
@@ -311,7 +329,7 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
 		"short-drama", "+download-result",
-		"--output-dir", filepath.Join("results", "missing.png"),
+		"--output-path", filepath.Join("results", "missing.png"),
 		"--url", server.URL + "/notfound",
 	})
 
@@ -337,7 +355,7 @@ func TestShortDramaDownloadResultOutputPath(t *testing.T) {
 	outputPath := filepath.Join("custom", "nested", "cover.png")
 	root.SetArgs([]string{
 		"short-drama", "+download-result",
-		"--output-dir", outputPath,
+		"--output-path", outputPath,
 		"--url", server.URL + "/image.png",
 	})
 
@@ -346,8 +364,8 @@ func TestShortDramaDownloadResultOutputPath(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["output_dir"] != outputPath {
-		t.Fatalf("output_dir = %v, want %s", got["output_dir"], outputPath)
+	if got["output_path"] != outputPath {
+		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
 	assertFileContent(t, outputPath, "image-data")
 }

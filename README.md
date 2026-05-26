@@ -13,7 +13,7 @@ export XYQ_ACCESS_KEY="<access-key>"
 pippit-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-cli short-drama +upload-file --path ./story.md
 pippit-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
-pippit-cli short-drama +download-result --output-dir ./thread_123/results/result.mp4 --url URL
+pippit-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
 
 NPM package names must be lowercase, so the publishable package name is
@@ -26,7 +26,7 @@ export XYQ_ACCESS_KEY="<access-key>"
 go run . short-drama +submit-run --message "写一个赛博朋克短剧开头"
 go run . short-drama +upload-file --path ./story.md
 go run . short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
-go run . short-drama +download-result --output-dir ./thread_123/results/result.mp4 --url URL
+go run . short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
 
 `+submit-run` calls `/api/biz/v1/skill/submit_run` and prints `thread_id`,
@@ -34,7 +34,7 @@ go run . short-drama +download-result --output-dir ./thread_123/results/result.m
 `+get-thread` calls
 `/api/biz/v1/skill/get_thread` and prints extracted `messages`.
 `+download-result` downloads the result URL to
-the `--output-dir` file path. `+upload-file` is still mocked while
+the `--output-path` file path. `+upload-file` is still mocked while
 its real service contract is wired.
 
 ## HTTP Client

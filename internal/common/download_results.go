@@ -21,9 +21,9 @@ import (
 
 // DownloadResultOptions is the command-facing shape for downloading one result URL.
 type DownloadResultOptions struct {
-	URL       string `json:"url"`
-	OutputDir string `json:"output_dir"`
-	Workers   int    `json:"workers"`
+	URL        string `json:"url"`
+	OutputPath string `json:"output_path"`
+	Workers    int    `json:"workers"`
 }
 
 type DownloadResultError struct {
@@ -33,7 +33,7 @@ type DownloadResultError struct {
 
 // DownloadResultResponse is the JSON envelope printed by `pippit-cli short-drama +download-result`.
 type DownloadResultResponse struct {
-	OutputDir    string                 `json:"output_dir"`
+	OutputPath   string                 `json:"output_path"`
 	Downloaded   []string               `json:"downloaded"`
 	AlreadyExist []string               `json:"already_exist,omitempty"`
 	Total        int                    `json:"total"`
@@ -64,9 +64,9 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 		return nil, fmt.Errorf("download url is required")
 	}
 
-	outputPath := strings.TrimSpace(opts.OutputDir)
+	outputPath := strings.TrimSpace(opts.OutputPath)
 	if outputPath == "" {
-		return nil, fmt.Errorf("output_dir is required")
+		return nil, fmt.Errorf("output_path is required")
 	}
 	// check if the output path exists and is a file
 	if info, err := os.Stat(outputPath); err == nil {
@@ -74,7 +74,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 			return nil, fmt.Errorf("output path %q is a directory", outputPath)
 		}
 		return &DownloadResultResponse{
-			OutputDir:    outputPath,
+			OutputPath:   outputPath,
 			AlreadyExist: []string{outputPath},
 			Total:        0,
 		}, nil
@@ -159,7 +159,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	})
 
 	result := &DownloadResultResponse{
-		OutputDir:  outputPath,
+		OutputPath: outputPath,
 		Downloaded: downloaded,
 		Total:      len(downloaded),
 		Errors:     errorList,
