@@ -223,9 +223,12 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
       "download_url": "https://..."
     }
   ],
-  "total": 1
+  "total": 1,
+  "message": "<system-remind>\n- total reached 1000; query the next page with --page-num {page-num} + 1\n</system-remind>"
 }
 ```
+
+当 `total` 达到 1000 时，`message` 会用 `<system-remind>` 提示下一轮将 `page-num` 加 1 查询新一页。
 
 **+download-result** 返回：
 

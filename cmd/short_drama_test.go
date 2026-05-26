@@ -515,6 +515,10 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	if got["total"] != float64(1) {
 		t.Fatalf("total = %v, want 1", got["total"])
 	}
+	wantMessage := "<system-remind>\n- total is below 1000; continue querying with current --page-num 2\n</system-remind>"
+	if got["message"] != wantMessage {
+		t.Fatalf("message = %v, want current page hint", got["message"])
+	}
 	files, ok := got["files"].([]any)
 	if !ok || len(files) != 1 {
 		t.Fatalf("files = %#v, want one file", got["files"])
@@ -532,6 +536,35 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	}
 	if file["download_url"] != "https://example.com/cover.png" {
 		t.Fatalf("download_url = %v, want returned url", file["download_url"])
+	}
+}
+
+func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "list_thread_file") {
+			t.Fatalf("path = %s, want list_thread_file path", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":1000,"files":[]}}`))
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"short-drama", "+list-thread-file",
+		"--thread-id", "thread_123",
+		"--page-num", "2",
+		"--page-size", "1000",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	wantMessage := "<system-remind>\n- total reached 1000; query the next page with --page-num 3\n</system-remind>"
+	if got["message"] != wantMessage {
+		t.Fatalf("message = %v, want next page hint", got["message"])
 	}
 }
 

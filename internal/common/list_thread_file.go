@@ -24,8 +24,9 @@ type ThreadFile struct {
 
 // ListThreadFileResult is the JSON envelope printed by `pippit-cli short-drama +list-thread-file`.
 type ListThreadFileResult struct {
-	Files []*ThreadFile `json:"files"`
-	Total int64         `json:"total"`
+	Files   []*ThreadFile `json:"files"`
+	Total   int64         `json:"total"`
+	Message string        `json:"message"`
 }
 
 type listThreadFileResponse struct {
@@ -82,9 +83,22 @@ func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Ru
 	}
 
 	return &ListThreadFileResult{
-		Files: files,
-		Total: resp.Data.Total,
+		Files:   files,
+		Total:   resp.Data.Total,
+		Message: listThreadFileMessage(resp.Data.Total, opts.PageNum),
 	}, nil
+}
+
+func listThreadFileMessage(total int64, pageNum int) string {
+	start, end := "<system-remind>", "</system-remind>"
+	if pageNum <= 0 {
+		pageNum = 1
+	}
+	var message string
+	if total >= 1000 {
+		message = fmt.Sprintf("total reached 1000; query the next page with --page-num %d", pageNum+1)
+	}
+	return fmt.Sprintf("%s\n- %s\n%s", start, message, end)
 }
 
 func threadFilePath(threadID string, filePath string) string {
