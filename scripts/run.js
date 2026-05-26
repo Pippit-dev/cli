@@ -3,6 +3,7 @@
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { maybeWarnNewVersion } = require("./version-check");
 
 const ext = process.platform === "win32" ? ".exe" : "";
 const bin = path.join(__dirname, "..", "bin", "pippit-cli" + ext);
@@ -39,6 +40,8 @@ if (process.platform === "win32" && fs.existsSync(oldBin)) {
 if (args[0] === "install") {
   require("./install-wizard.js");
 } else {
+  maybeWarnNewVersion(args);
+
   if (!fs.existsSync(bin)) {
     try {
       execFileSync(process.execPath, [path.join(__dirname, "install.js")], {
