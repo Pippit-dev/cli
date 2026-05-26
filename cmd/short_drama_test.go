@@ -12,6 +12,7 @@ import (
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	"github.com/Pippit-dev/pippit-cli/internal/version"
 	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
 )
@@ -87,6 +88,44 @@ func TestRootIncludesUpdateCommand(t *testing.T) {
 	}
 	if cmd == nil || cmd.Name() != "update" {
 		t.Fatalf("Find(update) = %#v, want update command", cmd)
+	}
+}
+
+func TestRootIncludesVersionCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	cmd, _, err := root.Find([]string{"version"})
+	if err != nil {
+		t.Fatalf("Find(version) error = %v", err)
+	}
+	if cmd == nil || cmd.Name() != "version" {
+		t.Fatalf("Find(version) = %#v, want version command", cmd)
+	}
+}
+
+func TestVersionCommandPrintsVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"version"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if got := strings.TrimSpace(stdout.String()); got != version.Current() {
+		t.Fatalf("version output = %q, want %s", got, version.Current())
+	}
+}
+
+func TestVersionFlagPrintsVersion(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"--version"})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if got := stdout.String(); !strings.Contains(got, version.Current()) {
+		t.Fatalf("version flag output = %q, want version", got)
 	}
 }
 

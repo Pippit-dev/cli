@@ -4,6 +4,8 @@ builds:
   - binary: pippit-cli
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/Pippit-dev/pippit-cli/internal/version.Version={{ .Version }}
     goos:
       - darwin
       - linux
