@@ -91,28 +91,38 @@ func TestRootIncludesUpdateCommand(t *testing.T) {
 	}
 }
 
-func TestRootIncludesVersionCommand(t *testing.T) {
+func TestRootDoesNotIncludeVersionCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	cmd, _, err := root.Find([]string{"version"})
-	if err != nil {
-		t.Fatalf("Find(version) error = %v", err)
-	}
-	if cmd == nil || cmd.Name() != "version" {
-		t.Fatalf("Find(version) = %#v, want version command", cmd)
+	if err == nil || cmd != root {
+		t.Fatalf("Find(version) = (%#v, %v), want unknown command", cmd, err)
 	}
 }
 
-func TestVersionCommandPrintsVersion(t *testing.T) {
+func TestRootHelpListsSupportedCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"version"})
+	root.SetArgs([]string{"--help"})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if got := strings.TrimSpace(stdout.String()); got != version.Current() {
-		t.Fatalf("version output = %q, want %s", got, version.Current())
+	got := stdout.String()
+	for _, want := range []string{
+		"Pippit CLI submits short-drama workflows",
+		"short-drama",
+		"update",
+		"--version",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("help output = %q, want %q", got, want)
+		}
+	}
+	for _, unwanted := range []string{"completion", "version     "} {
+		if strings.Contains(got, unwanted) {
+			t.Fatalf("help output = %q, should not contain %q", got, unwanted)
+		}
 	}
 }
 
@@ -124,8 +134,8 @@ func TestVersionFlagPrintsVersion(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if got := stdout.String(); !strings.Contains(got, version.Current()) {
-		t.Fatalf("version flag output = %q, want version", got)
+	if got := strings.TrimSpace(stdout.String()); got != version.Current() {
+		t.Fatalf("version flag output = %q, want %s", got, version.Current())
 	}
 }
 

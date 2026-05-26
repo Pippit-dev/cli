@@ -10,7 +10,7 @@ matching prebuilt binary for macOS, Linux, or Windows:
 ```bash
 npx @pippit-dev/cli@latest install
 export XYQ_ACCESS_KEY="<access-key>"
-pippit-cli version
+pippit-cli --version
 pippit-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-cli short-drama +upload-file --path ./story.md
 pippit-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
@@ -24,7 +24,7 @@ Submit a Run task for the short drama scene:
 
 ```bash
 export XYQ_ACCESS_KEY="<access-key>"
-go run . version
+go run . --version
 go run . short-drama +submit-run --message "写一个赛博朋克短剧开头"
 go run . short-drama +upload-file --path ./story.md
 go run . short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
