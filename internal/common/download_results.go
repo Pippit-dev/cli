@@ -37,7 +37,6 @@ type DownloadResultResponse struct {
 	Downloaded   []string               `json:"downloaded"`
 	AlreadyExist []string               `json:"already_exist,omitempty"`
 	Skipped      []string               `json:"skipped,omitempty"`
-	Total        int                    `json:"total"`
 	Errors       []*DownloadResultError `json:"errors,omitempty"`
 }
 
@@ -73,7 +72,6 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 		return &DownloadResultResponse{
 			OutputPath: outputPath,
 			Skipped:    []string{outputPath},
-			Total:      0,
 		}, nil
 	}
 	// check if the output path exists and is a file
@@ -84,7 +82,6 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 		return &DownloadResultResponse{
 			OutputPath:   outputPath,
 			AlreadyExist: []string{outputPath},
-			Total:        0,
 		}, nil
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("stat output path: %w", err)
@@ -169,7 +166,6 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	result := &DownloadResultResponse{
 		OutputPath: outputPath,
 		Downloaded: downloaded,
-		Total:      len(downloaded),
 		Errors:     errorList,
 	}
 	if len(downloaded) == 0 && len(errorList) > 0 {

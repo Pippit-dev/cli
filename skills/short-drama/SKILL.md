@@ -235,8 +235,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 ```json
 {
   "output_path": "./{thread-id}/{file_path}/{file_name}",
-  "downloaded": ["./{thread-id}/{file_path}/{file_name}"],
-  "total": 1
+  "downloaded": ["./{thread-id}/{file_path}/{file_name}"]
 }
 ```
 

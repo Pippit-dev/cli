@@ -194,8 +194,8 @@ func TestShortDramaDownloadResult(t *testing.T) {
 	if got["output_path"] != outputPath {
 		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
-	if got["total"] != float64(1) {
-		t.Fatalf("total = %v, want 1", got["total"])
+	if _, ok := got["total"]; ok {
+		t.Fatalf("total should not be returned: %#v", got)
 	}
 	downloaded, ok := got["downloaded"].([]any)
 	if !ok || len(downloaded) != 1 {
@@ -248,8 +248,8 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	if got["output_path"] != outputPath {
 		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
-	if got["total"] != float64(0) {
-		t.Fatalf("total = %v, want 0", got["total"])
+	if _, ok := got["total"]; ok {
+		t.Fatalf("total should not be returned: %#v", got)
 	}
 	alreadyExist, ok := got["already_exist"].([]any)
 	if !ok || len(alreadyExist) != 1 || alreadyExist[0] != outputPath {
@@ -291,8 +291,8 @@ func TestShortDramaDownloadResultSkipsMetaJSON(t *testing.T) {
 	if got["output_path"] != outputPath {
 		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
 	}
-	if got["total"] != float64(0) {
-		t.Fatalf("total = %v, want 0", got["total"])
+	if _, ok := got["total"]; ok {
+		t.Fatalf("total should not be returned: %#v", got)
 	}
 	skipped, ok := got["skipped"].([]any)
 	if !ok || len(skipped) != 1 || skipped[0] != outputPath {
