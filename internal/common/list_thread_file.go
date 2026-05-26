@@ -9,7 +9,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
-const MaxListThreadFilePageSize = 100
+const MaxListThreadFilePageSize = 200
 
 // ListThreadFileOptions is the command-facing request shape for listing thread files.
 type ListThreadFileOptions struct {
