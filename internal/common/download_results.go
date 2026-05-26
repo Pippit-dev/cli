@@ -36,6 +36,7 @@ type DownloadResultResponse struct {
 	OutputPath   string                 `json:"output_path"`
 	Downloaded   []string               `json:"downloaded"`
 	AlreadyExist []string               `json:"already_exist,omitempty"`
+	Skipped      []string               `json:"skipped,omitempty"`
 	Total        int                    `json:"total"`
 	Errors       []*DownloadResultError `json:"errors,omitempty"`
 }
@@ -67,6 +68,13 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	outputPath := strings.TrimSpace(opts.OutputPath)
 	if outputPath == "" {
 		return nil, fmt.Errorf("output_path is required")
+	}
+	if shouldSkipDownload(outputPath) {
+		return &DownloadResultResponse{
+			OutputPath: outputPath,
+			Skipped:    []string{outputPath},
+			Total:      0,
+		}, nil
 	}
 	// check if the output path exists and is a file
 	if info, err := os.Stat(outputPath); err == nil {
@@ -168,6 +176,10 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 		return result, fmt.Errorf("all %d download(s) failed", len(errorList))
 	}
 	return result, nil
+}
+
+func shouldSkipDownload(outputPath string) bool {
+	return filepath.Base(outputPath) == "meta.json"
 }
 
 func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, targetPath string) error {

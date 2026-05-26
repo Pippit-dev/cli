@@ -258,6 +258,48 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	assertFileContent(t, outputPath, "existing-data")
 }
 
+func TestShortDramaDownloadResultSkipsMetaJSON(t *testing.T) {
+	serverCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverCalled = true
+		t.Fatal("server should not receive request for meta.json")
+	}))
+	defer server.Close()
+
+	chdirTemp(t)
+	outputPath := filepath.Join("results", "meta.json")
+
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"short-drama", "+download-result",
+		"--output-path", outputPath,
+		"--url", server.URL + "/meta.json",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if serverCalled {
+		t.Fatal("server was called, want meta.json to skip download")
+	}
+	if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
+		t.Fatalf("meta.json stat err = %v, want file to be absent", err)
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	if got["output_path"] != outputPath {
+		t.Fatalf("output_path = %v, want %s", got["output_path"], outputPath)
+	}
+	if got["total"] != float64(0) {
+		t.Fatalf("total = %v, want 0", got["total"])
+	}
+	skipped, ok := got["skipped"].([]any)
+	if !ok || len(skipped) != 1 || skipped[0] != outputPath {
+		t.Fatalf("skipped = %#v, want meta.json output path", got["skipped"])
+	}
+}
+
 func TestShortDramaDownloadResultRequiresOutputPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
