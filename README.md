@@ -12,7 +12,7 @@ npx @pippit-dev/cli@latest install
 export XYQ_ACCESS_KEY="<access-key>"
 pippit-cli --version
 pippit-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
-pippit-cli short-drama +upload-file --path ./story.md
+pippit-cli short-drama +upload-file --path ./reference.doc
 pippit-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
 pippit-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
@@ -26,7 +26,7 @@ Submit a Run task for the short drama scene:
 export XYQ_ACCESS_KEY="<access-key>"
 go run . --version
 go run . short-drama +submit-run --message "写一个赛博朋克短剧开头"
-go run . short-drama +upload-file --path ./story.md
+go run . short-drama +upload-file --path ./reference.doc
 go run . short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
 go run . short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
@@ -35,9 +35,11 @@ go run . short-drama +download-result --output-path ./thread_123/results/result.
 `run_id`, and `web_thread_link`; `--message` is required.
 `+get-thread` calls
 `/api/biz/v1/skill/get_thread` and prints extracted `messages`.
+`+upload-file` calls `/api/biz/v1/skill/upload_file` with
+`multipart/form-data` and prints the returned `asset_id`.
+Only `.doc` and `.txt` file extensions are supported.
 `+download-result` downloads the result URL to
-the `--output-path` file path. `+upload-file` is still mocked while
-its real service contract is wired.
+the `--output-path` file path.
 
 ## HTTP Client
 
@@ -47,6 +49,6 @@ settings such as base URL, HTTP timeout, and API paths are loaded by
 
 ## Auth
 
-`short-drama +submit-run` and `short-drama +get-thread` authenticate with
+`short-drama +submit-run`, `short-drama +get-thread`, and `short-drama +upload-file` authenticate with
 `Authorization: Bearer <XYQ_ACCESS_KEY>`. OAuth command code remains available,
 but runtime short drama requests do not use it.

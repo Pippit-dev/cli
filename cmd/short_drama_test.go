@@ -176,23 +176,65 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 }
 
 func TestShortDramaUploadFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/biz/v1/skill/upload_file" {
+			t.Fatalf("path = %s, want upload_file path", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Fatalf("ParseMultipartForm(): %v", err)
+		}
+		if got := r.FormValue("accessKey"); got != "" {
+			t.Fatalf("accessKey = %q, want empty (auth via header only)", got)
+		}
+		files := r.MultipartForm.File["file"]
+		if len(files) != 1 {
+			t.Fatalf("file parts = %d, want 1", len(files))
+		}
+		if files[0].Filename != "story.txt" {
+			t.Fatalf("filename = %q, want story.txt", files[0].Filename)
+		}
+		if got := files[0].Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
+			t.Fatalf("Content-Type = %q, want text/plain; charset=utf-8", got)
+		}
+		file, err := files[0].Open()
+		if err != nil {
+			t.Fatalf("Open multipart file: %v", err)
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			t.Fatalf("ReadAll multipart file: %v", err)
+		}
+		if string(data) != "txt-data" {
+			t.Fatalf("file content = %q, want txt-data", string(data))
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"asset_123"}}`))
+	}))
+	defer server.Close()
+
+	cwd := chdirTemp(t)
+	path := filepath.Join(cwd, "story.txt")
+	if err := os.WriteFile(path, []byte("txt-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
 	var stdout, stderr bytes.Buffer
-	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+upload-file", "--path", "/tmp/story.md"})
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	if got["scene"] != "short-drama" {
-		t.Fatalf("scene = %v, want short-drama", got["scene"])
-	}
-	if got["status"] != "uploaded" {
-		t.Fatalf("status = %v, want uploaded", got["status"])
-	}
-	if !strings.HasPrefix(got["file_id"].(string), "file_mock_") {
-		t.Fatalf("file_id = %v, want mock file id", got["file_id"])
+	if got["asset_id"] != "asset_123" {
+		t.Fatalf("asset_id = %v, want asset_123", got["asset_id"])
 	}
 }
 
@@ -207,6 +249,51 @@ func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--path is required") {
 		t.Fatalf("error = %q, want path validation", err)
+	}
+}
+
+func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request without access key")
+	}))
+	defer server.Close()
+
+	cwd := chdirTemp(t)
+	path := filepath.Join(cwd, "story.txt")
+	if err := os.WriteFile(path, []byte("txt-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want access key error")
+	}
+	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
+		t.Fatalf("error = %q, want access key guidance", err)
+	}
+}
+
+func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
+	cwd := chdirTemp(t)
+	path := filepath.Join(cwd, "story.png")
+	if err := os.WriteFile(path, []byte("png-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want file type validation error")
+	}
+	if !strings.Contains(err.Error(), "only .doc and .txt uploads are supported") {
+		t.Fatalf("error = %q, want unsupported type validation", err)
 	}
 }
 

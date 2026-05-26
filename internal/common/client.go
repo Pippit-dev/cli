@@ -5,8 +5,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -16,10 +20,18 @@ import (
 
 type Client interface {
 	SendRequest(ctx context.Context, path string, body any, out any) error
+	SendMultipartRequest(ctx context.Context, path string, fields map[string]string, file MultipartFile, out any) error
 }
 
 type RequestAuthorizer interface {
 	Inject(ctx context.Context, req *http.Request) error
+}
+
+type MultipartFile struct {
+	FieldName   string
+	Path        string
+	FileName    string
+	ContentType string
 }
 
 type httpClient struct {
@@ -98,6 +110,89 @@ func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out
 	req.Header.Set("Accept", "application/json")
 
 	return c.do(req, out)
+}
+
+func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fields map[string]string, file MultipartFile, out any) error {
+	reqURL, err := c.resolveURL(path, nil)
+	if err != nil {
+		return err
+	}
+	if file.FieldName == "" {
+		return fmt.Errorf("multipart file field name is required")
+	}
+	if file.FileName == "" {
+		file.FileName = filepath.Base(file.Path)
+	}
+	if file.ContentType == "" {
+		file.ContentType = "application/octet-stream"
+	}
+
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, pr)
+	if err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return fmt.Errorf("build POST request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	if c.authorizer == nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return fmt.Errorf("authorized request requires authorizer")
+	}
+	if err := c.authorizer.Inject(ctx, req); err != nil {
+		_ = pr.Close()
+		_ = pw.Close()
+		return fmt.Errorf("inject auth headers: %w", err)
+	}
+	c.injectHeaders(req)
+
+	go func() {
+		err := writeMultipartBody(writer, fields, file)
+		closeErr := writer.Close()
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			return
+		}
+		_ = pw.CloseWithError(closeErr)
+	}()
+
+	return c.do(req, out)
+}
+
+func writeMultipartBody(writer *multipart.Writer, fields map[string]string, file MultipartFile) error {
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			return err
+		}
+	}
+
+	f, err := os.Open(file.Path)
+	if err != nil {
+		return fmt.Errorf("open upload file: %w", err)
+	}
+	defer f.Close()
+
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(file.FieldName), escapeQuotes(file.FileName)))
+	header.Set("Content-Type", file.ContentType)
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, f); err != nil {
+		return fmt.Errorf("write upload file: %w", err)
+	}
+	return nil
+}
+
+var quotesReplacer = strings.NewReplacer("\\", "\\\\", `"`, `\"`)
+
+func escapeQuotes(s string) string {
+	return quotesReplacer.Replace(s)
 }
 
 func (c *httpClient) injectHeaders(req *http.Request) {

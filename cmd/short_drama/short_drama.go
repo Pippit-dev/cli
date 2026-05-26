@@ -3,7 +3,6 @@ package short_drama
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -72,8 +71,6 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 			if opts.Path == "" {
 				return fmt.Errorf("--path is required")
 			}
-			opts.FileName = filepath.Base(opts.Path)
-			opts.Mock = true
 
 			result, err := common.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {

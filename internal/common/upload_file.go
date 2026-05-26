@@ -2,48 +2,103 @@ package common
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
-	"time"
+	"fmt"
+	"mime"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 // UploadFileOptions is the stable command-facing request shape for file upload.
 type UploadFileOptions struct {
 	Path     string `json:"path"`
 	FileName string `json:"file_name"`
-	Purpose  string `json:"purpose"`
-	Mock     bool   `json:"mock"`
 }
 
 // UploadFileResult is the JSON envelope printed by `pippit-cli short-drama +upload-file`.
 type UploadFileResult struct {
-	Scene    string            `json:"scene"`
-	FileID   string            `json:"file_id"`
-	Status   string            `json:"status"`
-	Uploaded string            `json:"uploaded_at"`
-	Request  UploadFileOptions `json:"request"`
+	AssetID string `json:"asset_id"`
 }
 
-func UploadFile(ctx context.Context, opts UploadFileOptions, _ *Runner) (*UploadFileResult, error) {
+type uploadFileResponse struct {
+	Ret     string `json:"ret"`
+	Errmsg  string `json:"errmsg"`
+	SvrTime int64  `json:"svr_time"`
+	LogID   string `json:"log_id"`
+	Data    struct {
+		PippitAssetID string `json:"pippit_asset_id"`
+		AssetID       string `json:"asset_id"`
+	} `json:"data"`
+}
+
+const uploadFileFieldName = "file"
+
+var allowedUploadExtensions = map[string]bool{
+	".doc": true,
+	".txt": true,
+}
+
+func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*UploadFileResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	key := opts.Purpose + "\x00" + opts.FileName + "\x00" + opts.Path
-	id := stableID(key, 10)
+	if runner == nil || runner.Client == nil {
+		return nil, fmt.Errorf("upload_file runner client is required")
+	}
+
+	path := strings.TrimSpace(opts.Path)
+	if path == "" {
+		return nil, fmt.Errorf("upload file path is required")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat upload file: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("upload path %q is a directory", path)
+	}
+
+	ext := strings.ToLower(filepath.Ext(path))
+	if !allowedUploadExtensions[ext] {
+		return nil, fmt.Errorf("unsupported file extension %q; only .doc and .txt uploads are supported", ext)
+	}
+	fileName := filepath.Base(path)
+	contentType := mime.TypeByExtension(ext)
+
+	var resp uploadFileResponse
+	if err := runner.Client.SendMultipartRequest(ctx, uploadFilePath(runner), nil, MultipartFile{
+		FieldName:   uploadFileFieldName,
+		Path:        path,
+		FileName:    fileName,
+		ContentType: contentType,
+	}, &resp); err != nil {
+		return nil, fmt.Errorf("upload_file request failed: %w", err)
+	}
+	if resp.Ret != "0" {
+		if resp.Errmsg == "" {
+			resp.Errmsg = "unknown error"
+		}
+		return nil, fmt.Errorf("upload_file failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+	}
+
+	assetID := strings.TrimSpace(resp.Data.PippitAssetID)
+	if assetID == "" {
+		assetID = strings.TrimSpace(resp.Data.AssetID)
+	}
+	if assetID == "" {
+		return nil, fmt.Errorf("upload_file response missing pippit_asset_id")
+	}
+
 	return &UploadFileResult{
-		Scene:    "short-drama",
-		FileID:   "file_mock_" + id,
-		Status:   "uploaded",
-		Uploaded: time.Now().UTC().Format(time.RFC3339),
-		Request:  opts,
+		AssetID: assetID,
 	}, nil
 }
 
-func stableID(key string, n int) string {
-	sum := sha1.Sum([]byte(key))
-	id := hex.EncodeToString(sum[:])
-	if n > len(id) {
-		return id
+func uploadFilePath(runner *Runner) string {
+	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.UploadFile != "" {
+		return runner.Config.Paths.UploadFile
 	}
-	return id[:n]
+	return config.UploadFilePath
 }
