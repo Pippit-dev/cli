@@ -75,7 +75,7 @@ pippit-cli short-drama +upload-file --path /path/to/outline.md
 
 ```bash
 # 获取会话文件列表
-pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 1000
+pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 100
 ```
 
 `+list-thread-file` 返回的每个文件对象包含：
@@ -108,7 +108,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 2. 立即将 web_thread_link 展示给用户
 3. 并行发起，二者同等重要：
    a. pippit-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
-   b. pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 1000
+   b. pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 100
 4. 检查 `get-thread` 返回的 messages：
    - 如果任务仍在进行中：展示过程消息，继续查询
    - 如果后端 Agent 提出问题：展示问题，等待用户回复
@@ -117,7 +117,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
    - 将 file_path 作为本地目标文件路径，包含文件名
    - 有 download_url 的重要资产：加入本轮下载队列
    - 不判断 file_path 在本地是否已存在，是否跳过由 +download-result 内部处理
-   - 如果本轮 total 达到 1000：下一轮将 PAGE_NUM 加 1，继续查询新一页文件
+   - 如果本轮 total 达到 100：下一轮将 PAGE_NUM 加 1，继续查询新一页文件
 6. 对重要资产，立即调用 +download-result 并行下载资源：
    - 使用第 5 步获取的 download_url 作为 --url
    - 使用第 5 步获取的完整 file_path 作为 --output-path
@@ -150,7 +150,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 - **间隔**：每 10 秒查询一次。
 - **增量拉取**：首次使用 `--after-seq 0`，后续根据已读消息进度调整 `after-seq`。
 - **并行查询**：每次 `+submit-run` 返回 `thread_id` 后，同时发起 `+get-thread` 和 `+list-thread-file`；二者同等重要，不能只查询会话进展而忽略会话文件。
-- **文件分页**：`+list-thread-file` 使用 `--page-size 1000`。如果本轮返回的 `total` 达到 1000，下一轮使用 `--page-num` 加 1 查询新一页结果；如果未达到 1000，保持当前页继续轮询新增产物。
+- **文件分页**：`+list-thread-file` 使用 `--page-size 100`。如果本轮返回的 `total` 达到 100，下一轮使用 `--page-num` 加 1 查询新一页结果；如果未达到 100，保持当前页继续轮询新增产物。
 - **重要资产识别**：每轮都检查 `+list-thread-file` 返回的文件。剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物都是重要资产。
 - **文件下载**：解析 `+list-thread-file` 的结果后，对带 `download_url` 的重要资产立即调用 `+download-result` 下载资源；不要在 `list-thread-file` 阶段检查文件是否已存在，存在性检查由下载工具内部处理。
 - **下载完成标准**：不要把文件元信息展示当成下载完成；必须拿到本地 `file_path`，或明确记录该文件在重试后仍下载失败。
@@ -163,7 +163,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 一次短剧任务不能只以 `+get-thread` 返回完成消息作为结束条件。完成前必须同时检查：
 
 1. 已处理 `+get-thread` 返回的最新会话进展、用户确认问题和最终消息。
-2. 已用 `--page-size 1000` 调用 `+list-thread-file` 获取会话文件列表；如果本轮 `total` 达到 1000，已在后续轮询中递增 `page-num` 查询新一页。
+2. 已用 `--page-size 100` 调用 `+list-thread-file` 获取会话文件列表；如果本轮 `total` 达到 100，已在后续轮询中递增 `page-num` 查询新一页。
 3. 对所有带 `download_url` 的重要资产，已调用 `+download-result` 下载到本地 `file_path`。
 4. 对查询失败或下载失败的资产，已在后续轮询中主动重试，并在最终回复中列出仍失败的文件或命令。
 
@@ -224,11 +224,11 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
     }
   ],
   "total": 1,
-  "message": "<system-remind>\n- total reached 1000; query the next page with --page-num {page-num} + 1\n</system-remind>"
+  "message": "<system-remind>\n- total reached 100; query the next page with --page-num {page-num} + 1\n</system-remind>"
 }
 ```
 
-当 `total` 达到 1000 时，`message` 会用 `<system-remind>` 提示下一轮将 `page-num` 加 1 查询新一页。
+当 `total` 达到 100 时，`message` 会用 `<system-remind>` 提示下一轮将 `page-num` 加 1 查询新一页。
 
 **+download-result** 返回：
 
@@ -251,9 +251,9 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 1. 有download_url的重要资产
    → 记录该file_path和URL
    → 使用 +download-result 将URL资源下载到该file_path
-2. 本轮total达到1000
+2. 本轮total达到100
    → 下一轮page-num加1，继续查询新一页结果
-3. 本轮total未达到1000
+3. 本轮total未达到100
    → 后续轮询保持当前页，继续发现新增产物
 4. list-thread-file或download-result失败
    → 记录失败参数和错误
@@ -302,6 +302,6 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 - 查询进展时优先使用 `+submit-run` 返回的 `thread_id` 和 `run_id`。
 - `--after-seq` 用于增量拉取消息，首次查询可设置为 `0`。
 - `+upload-file` 当前用于短剧场景文件上传链路，上传后将返回可传给 `+submit-run` 的文件 ID。
-- `+list-thread-file` 只需要 `thread_id`；分页参数使用 `--page-num 1 --page-size 1000` 起步，`total` 达到 1000 时下一轮递增 `page-num`。
+- `+list-thread-file` 只需要 `thread_id`；分页参数使用 `--page-num 1 --page-size 100` 起步，`total` 达到 100 时下一轮递增 `page-num`。
 - `+list-thread-file` 和 `+download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目标文件路径。
 - `+download-result` 接收 `--url`、`--output-path`、`--workers`；`--output-path` 必须是包含文件名的目标文件路径。

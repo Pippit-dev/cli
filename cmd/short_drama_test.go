@@ -553,7 +553,7 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	if got["total"] != float64(1) {
 		t.Fatalf("total = %v, want 1", got["total"])
 	}
-	wantMessage := "<system-remind>\n- total is below 1000; continue querying with current --page-num 2\n</system-remind>"
+	wantMessage := "<system-remind>\n- total is below 100; continue querying with current --page-num 2\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want current page hint", got["message"])
 	}
@@ -582,7 +582,7 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "list_thread_file") {
 			t.Fatalf("path = %s, want list_thread_file path", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":1000,"files":[]}}`))
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":100,"files":[]}}`))
 	}))
 	defer server.Close()
 
@@ -592,7 +592,7 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 		"short-drama", "+list-thread-file",
 		"--thread-id", "thread_123",
 		"--page-num", "2",
-		"--page-size", "1000",
+		"--page-size", "100",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -600,7 +600,7 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	wantMessage := "<system-remind>\n- total reached 1000; query the next page with --page-num 3\n</system-remind>"
+	wantMessage := "<system-remind>\n- total reached 100; query the next page with --page-num 3\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want next page hint", got["message"])
 	}
@@ -617,6 +617,24 @@ func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--thread-id is required") {
 		t.Fatalf("error = %q, want thread-id validation", err)
+	}
+}
+
+func TestShortDramaListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"short-drama", "+list-thread-file",
+		"--thread-id", "thread_123",
+		"--page-size", "101",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want validation error")
+	}
+	if !strings.Contains(err.Error(), "--page-size must be between 1 and 100") {
+		t.Fatalf("error = %q, want page-size validation", err)
 	}
 }
 

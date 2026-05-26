@@ -9,6 +9,8 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
+const MaxListThreadFilePageSize = 100
+
 // ListThreadFileOptions is the command-facing request shape for listing thread files.
 type ListThreadFileOptions struct {
 	ThreadID string `json:"thread_id"`
@@ -95,8 +97,10 @@ func listThreadFileMessage(total int64, pageNum int) string {
 		pageNum = 1
 	}
 	var message string
-	if total >= 1000 {
-		message = fmt.Sprintf("total reached 1000; query the next page with --page-num %d", pageNum+1)
+	if total >= MaxListThreadFilePageSize {
+		message = fmt.Sprintf("total reached %d; query the next page with --page-num %d", MaxListThreadFilePageSize, pageNum+1)
+	} else {
+		message = fmt.Sprintf("total is below %d; continue querying with current --page-num %d", MaxListThreadFilePageSize, pageNum)
 	}
 	return fmt.Sprintf("%s\n- %s\n%s", start, message, end)
 }
