@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Execute runs the pippit-cli command tree.
+// Execute runs the pippit-tool-cli command tree.
 func Execute() error {
 	return NewRootCommand(os.Stdout, os.Stderr).Execute()
 }
@@ -27,7 +27,7 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 
 func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "pippit-cli",
+		Use:           "pippit-tool-cli",
 		Short:         "Pippit CLI",
 		Long:          "Pippit CLI submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
 		Version:       version.Current(),

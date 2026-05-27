@@ -31,7 +31,7 @@ type DownloadResultError struct {
 	Error string `json:"error"`
 }
 
-// DownloadResultResponse is the JSON envelope printed by `pippit-cli short-drama +download-result`.
+// DownloadResultResponse is the JSON envelope printed by `pippit-tool-cli short-drama +download-result`.
 type DownloadResultResponse struct {
 	OutputPath   string                 `json:"output_path"`
 	Downloaded   []string               `json:"downloaded"`

@@ -9,7 +9,7 @@ const { installSkillsFromRoot } = require("./skills");
 
 const VERSION = require("../package.json").version.replace(/-.*$/, "");
 const REPO = "Pippit-dev/cli";
-const NAME = "pippit-cli";
+const NAME = "pippit-tool-cli";
 const ROOT = path.join(__dirname, "..");
 const BIN_DIR = path.join(ROOT, "bin");
 
@@ -121,7 +121,7 @@ function install() {
 
   fs.mkdirSync(BIN_DIR, { recursive: true });
 
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pippit-cli-"));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pippit-tool-cli-"));
   const archivePath = path.join(tmpDir, archiveName);
   try {
     download(releaseURL, archivePath);

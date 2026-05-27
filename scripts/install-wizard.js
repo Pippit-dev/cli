@@ -17,12 +17,12 @@ function getGloballyInstalledVersion() {
   }
 }
 
-function whichPippitCli() {
+function whichPippitToolCli() {
   try {
     const prefix = runSilent("npm", ["prefix", "-g"], { timeout: 15000 }).toString().trim();
     const bin = isWindows
-      ? path.join(prefix, "pippit-cli.cmd")
-      : path.join(prefix, "bin", "pippit-cli");
+      ? path.join(prefix, "pippit-tool-cli.cmd")
+      : path.join(prefix, "bin", "pippit-tool-cli");
     if (fs.existsSync(bin)) return bin;
   } catch (_) {
     // Fall back to PATH lookup.
@@ -30,7 +30,7 @@ function whichPippitCli() {
 
   try {
     const cmd = isWindows ? "where" : "which";
-    return runSilent(cmd, ["pippit-cli"]).toString().split("\n")[0].trim();
+    return runSilent(cmd, ["pippit-tool-cli"]).toString().split("\n")[0].trim();
   } catch (_) {
     return null;
   }
@@ -39,7 +39,7 @@ function whichPippitCli() {
 function main() {
   const installed = getGloballyInstalledVersion();
   if (installed) {
-    console.log(`Updating global pippit-cli (${installed}) via ${PKG}...`);
+    console.log(`Updating global pippit-tool-cli (${installed}) via ${PKG}...`);
   } else {
     console.log(`Installing ${PKG} globally...`);
   }
@@ -48,7 +48,7 @@ function main() {
     env: { ...process.env, PIPPIT_CLI_SKIP_SKILLS: "1" },
   });
 
-  console.log("Installing pippit-cli skills...");
+  console.log("Installing pippit-tool-cli skills...");
   try {
     installGlobalPackageSkills(DEFAULT_PKG);
   } catch (err) {
@@ -60,15 +60,15 @@ function main() {
     installGlobalPackageSkills(DEFAULT_PKG);
   }
 
-  const bin = whichPippitCli();
+  const bin = whichPippitToolCli();
   if (!bin) {
-    console.error("pippit-cli was installed, but no global command was found in npm prefix.");
+    console.error("pippit-tool-cli was installed, but no global command was found in npm prefix.");
     console.error("Check that npm's global bin directory is in PATH.");
     process.exit(1);
   }
 
-  console.log(`pippit-cli is ready: ${bin}`);
-  console.log("Try: pippit-cli short-drama +submit-run --message \"写一个短剧开头\"");
+  console.log(`pippit-tool-cli is ready: ${bin}`);
+  console.log("Try: pippit-tool-cli short-drama +submit-run --message \"写一个短剧开头\"");
 }
 
 main();

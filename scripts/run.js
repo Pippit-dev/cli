@@ -6,7 +6,7 @@ const path = require("path");
 const { maybeWarnNewVersion } = require("./version-check");
 
 const ext = process.platform === "win32" ? ".exe" : "";
-const bin = path.join(__dirname, "..", "bin", "pippit-cli" + ext);
+const bin = path.join(__dirname, "..", "bin", "pippit-tool-cli" + ext);
 const args = process.argv.slice(2);
 
 const oldBin = bin + ".old";
@@ -50,7 +50,7 @@ if (args[0] === "install") {
       });
     } catch (_) {
       console.error(
-        "\nFailed to prepare pippit-cli binary.\n" +
+        "\nFailed to prepare pippit-tool-cli binary.\n" +
         "Make sure Go is installed and available in PATH, then retry.\n"
       );
       process.exit(1);

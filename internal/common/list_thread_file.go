@@ -24,7 +24,7 @@ type ThreadFile struct {
 	DownloadURL string `json:"download_url"`
 }
 
-// ListThreadFileResult is the JSON envelope printed by `pippit-cli short-drama +list-thread-file`.
+// ListThreadFileResult is the JSON envelope printed by `pippit-tool-cli short-drama +list-thread-file`.
 type ListThreadFileResult struct {
 	Files   []*ThreadFile `json:"files"`
 	Total   int64         `json:"total"`

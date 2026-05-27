@@ -1,7 +1,7 @@
 version: 2
 
 builds:
-  - binary: pippit-cli
+  - binary: pippit-tool-cli
     env:
       - CGO_ENABLED=0
     ldflags:
@@ -15,7 +15,7 @@ builds:
       - arm64
 
 archives:
-  - name_template: "pippit-cli-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+  - name_template: "pippit-tool-cli-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip

@@ -1,4 +1,4 @@
-# pippit-cli
+# pippit-tool-cli
 
 Minimal demo CLI for Pippit workflows.
 
@@ -10,11 +10,11 @@ matching prebuilt binary for macOS, Linux, or Windows:
 ```bash
 npx @pippit-dev/cli@latest install
 export XYQ_ACCESS_KEY="<access-key>"
-pippit-cli --version
-pippit-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
-pippit-cli short-drama +upload-file --path ./reference.doc
-pippit-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
-pippit-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
+pippit-tool-cli --version
+pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
+pippit-tool-cli short-drama +upload-file --path ./reference.doc
+pippit-tool-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
+pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
 
 NPM package names must be lowercase, so the publishable package name is

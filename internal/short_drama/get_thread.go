@@ -22,7 +22,7 @@ type ThreadEntry struct {
 	Content []any  `json:"content"`
 }
 
-// GetThreadResult is the JSON envelope printed by `pippit-cli short-drama +get-thread`.
+// GetThreadResult is the JSON envelope printed by `pippit-tool-cli short-drama +get-thread`.
 type GetThreadResult struct {
 	Messages []*ThreadEntry `json:"messages"`
 }

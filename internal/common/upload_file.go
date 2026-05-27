@@ -17,7 +17,7 @@ type UploadFileOptions struct {
 	FileName string `json:"file_name"`
 }
 
-// UploadFileResult is the JSON envelope printed by `pippit-cli short-drama +upload-file`.
+// UploadFileResult is the JSON envelope printed by `pippit-tool-cli short-drama +upload-file`.
 type UploadFileResult struct {
 	AssetID string `json:"asset_id"`
 }

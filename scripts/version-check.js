@@ -85,7 +85,7 @@ function maybeWarnNewVersion(args = [], opts = {}) {
   if (compareSemver(latest, current) <= 0) return;
 
   const warn = opts.warn || console.error;
-  warn(`[pippit-cli] New version available: ${current} -> ${latest}. Run: pippit-cli update`);
+  warn(`[pippit-tool-cli] New version available: ${current} -> ${latest}. Run: pippit-tool-cli update`);
 }
 
 module.exports = {

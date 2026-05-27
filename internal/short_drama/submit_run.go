@@ -15,7 +15,7 @@ type SubmitRunOptions struct {
 	AssetIDs []string `json:"asset_ids,omitempty"`
 }
 
-// SubmitRunResult is the JSON envelope printed by `pippit-cli short-drama +submit-run`.
+// SubmitRunResult is the JSON envelope printed by `pippit-tool-cli short-drama +submit-run`.
 type SubmitRunResult struct {
 	ThreadID      string `json:"thread_id"`
 	RunID         string `json:"run_id"`

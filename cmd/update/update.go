@@ -18,7 +18,7 @@ const defaultPackage = "@pippit-dev/cli"
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",
-		Short: "Update pippit-cli and bundled skills",
+		Short: "Update pippit-tool-cli and bundled skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runUpdate(stdout, stderr)
 		},
@@ -32,14 +32,14 @@ func runUpdate(stdout, stderr io.Writer) error {
 		pkg = defaultPackage + "@latest"
 	}
 
-	fmt.Fprintf(stderr, "Updating pippit-cli via npm: %s\n", pkg)
+	fmt.Fprintf(stderr, "Updating pippit-tool-cli via npm: %s\n", pkg)
 	restore, err := prepareSelfReplace()
 	if err != nil {
 		return fmt.Errorf("prepare self replace: %w", err)
 	}
 	if err := runInheritEnv(stderr, []string{"PIPPIT_CLI_SKIP_SKILLS=1"}, "npm", "install", "-g", pkg); err != nil {
 		restore()
-		return fmt.Errorf("update pippit-cli: %w", err)
+		return fmt.Errorf("update pippit-tool-cli: %w", err)
 	}
 
 	root, err := globalPackageRoot(defaultPackage)
@@ -47,12 +47,12 @@ func runUpdate(stdout, stderr io.Writer) error {
 		return fmt.Errorf("locate global package: %w", err)
 	}
 
-	fmt.Fprintln(stderr, "Updating pippit-cli skills...")
+	fmt.Fprintln(stderr, "Updating pippit-tool-cli skills...")
 	if err := installSkills(root, stderr); err != nil {
-		return fmt.Errorf("update pippit-cli skills: %w", err)
+		return fmt.Errorf("update pippit-tool-cli skills: %w", err)
 	}
 
-	fmt.Fprintln(stdout, "pippit-cli and skills updated")
+	fmt.Fprintln(stdout, "pippit-tool-cli and skills updated")
 	return nil
 }
 
@@ -107,7 +107,7 @@ func prepareSelfReplace() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if filepath.Base(exe) != "pippit-cli.exe" || !strings.Contains(exe, "node_modules") {
+	if filepath.Base(exe) != "pippit-tool-cli.exe" || !strings.Contains(exe, "node_modules") {
 		return func() {}, nil
 	}
 	old := exe + ".old"

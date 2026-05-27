@@ -1,6 +1,6 @@
 ---
 name: pippit-short-drama-skill
-description: 使用 pippit-cli 的短剧场景能力提交和查询短剧创作任务。覆盖短剧生成、续写、改写、剧情扩展、人物设定、分集草稿、世界观设定、会话文件获取、文件资源下载等创作场景。当用户要求创作短剧、写短剧剧本、续写故事、修改剧情、补充角色设定、查询短剧任务进展、获取短剧会话文件或下载短剧文件资源，或提到 pippit-cli short-drama / 小云雀短剧时触发。
+description: 使用 pippit-tool-cli 的短剧场景能力提交和查询短剧创作任务。覆盖短剧生成、续写、改写、剧情扩展、人物设定、分集草稿、世界观设定、会话文件获取、文件资源下载等创作场景。当用户要求创作短剧、写短剧剧本、续写故事、修改剧情、补充角色设定、查询短剧任务进展、获取短剧会话文件或下载短剧文件资源，或提到 pippit-tool-cli short-drama / 小云雀短剧时触发。
 user-invocable: true
 metadata:
   {
@@ -9,7 +9,7 @@ metadata:
         "emoji": "📖",
         "requires":
           {
-            "bins": ["pippit-cli"]
+            "bins": ["pippit-tool-cli"]
           }
       }
   }
@@ -17,7 +17,7 @@ metadata:
 
 # 小云雀短剧创作
 
-通过 `pippit-cli short-drama` 命令提交短剧创作任务、上传参考文件，并行查询任务进展和会话产物文件，及时把重要资产下载到用户本地。
+通过 `pippit-tool-cli short-drama` 命令提交短剧创作任务、上传参考文件，并行查询任务进展和会话产物文件，及时把重要资产下载到用户本地。
 
 短剧场景面向剧情、人物、分集与画面化叙事创作，用户的原始需求通过 `--message` 发送给后端 Agent。后端 Agent 负责理解任务、编排流程和生成内容；用户侧 Agent 负责提交任务、并行查询进展与产物、主动下载重要资产并展示结果。
 
@@ -33,7 +33,7 @@ metadata:
 
 ## 前置要求
 
-需要已安装 `pippit-cli`：
+需要已安装 `pippit-tool-cli`：
 
 ```bash
 npx @pippit-dev/cli@latest install
@@ -45,20 +45,20 @@ npx @pippit-dev/cli@latest install
 
 ```bash
 # 创建新会话并提交短剧创作需求
-pippit-cli short-drama +submit-run --message "创作一个赛博朋克短剧开头"
+pippit-tool-cli short-drama +submit-run --message "创作一个赛博朋克短剧开头"
 
 # 向已有会话追加新的短剧需求
-pippit-cli short-drama +submit-run --message "继续写下一集，重点描写主角的逃亡" --thread-id THREAD_ID
+pippit-tool-cli short-drama +submit-run --message "继续写下一集，重点描写主角的逃亡" --thread-id THREAD_ID
 
 # 携带已上传文件 ID 提交任务
-pippit-cli short-drama +submit-run --message "参考这个大纲写第一集" --asset-ids ASSET_ID
+pippit-tool-cli short-drama +submit-run --message "参考这个大纲写第一集" --asset-ids ASSET_ID
 ```
 
 ### 2. 查询短剧任务进展
 
 ```bash
 # 查询会话消息列表
-pippit-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq 0
+pippit-tool-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq 0
 ```
 
 > `thread_id` 和 `run_id` 由 `+submit-run` 返回。`after-seq` 用于增量拉取消息，首次查询可使用 `0`。
@@ -68,14 +68,14 @@ pippit-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after
 当用户提供短剧大纲、人物设定、世界观设定、已有分集或剧本等本地文件路径时，可先上传文件。
 
 ```bash
-pippit-cli short-drama +upload-file --path /path/to/outline.md
+pippit-tool-cli short-drama +upload-file --path /path/to/outline.md
 ```
 
 ### 4. 获取会话文件
 
 ```bash
 # 获取会话文件列表
-pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 200
+pippit-tool-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --page-size 200
 ```
 
 `+list-thread-file` 返回的每个文件对象包含：
@@ -93,7 +93,7 @@ pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1 --pa
 
 ```bash
 # 下载文件资源到指定文件路径
-pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH
+pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH
 ```
 
 `FILE_PATH` 必须直接使用 `+list-thread-file` 返回的完整 `file_path`，包含文件名，不要取父目录。`+download-result` 负责把会话产生的文件通过 URL 下载到该目标文件路径；如果目标文件已存在，跳过下载。
@@ -103,12 +103,12 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 ### 场景 1：用户要求生成短剧内容
 
 ```
-1. pippit-cli short-drama +submit-run --message "用户的原始短剧需求"
+1. pippit-tool-cli short-drama +submit-run --message "用户的原始短剧需求"
    → 拿到 thread_id、run_id 和 web_thread_link
 2. 立即将 web_thread_link 展示给用户
 3. 并行发起，二者同等重要：
-   a. pippit-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
-   b. pippit-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 200
+   a. pippit-tool-cli short-drama +get-thread --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
+   b. pippit-tool-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 200
 4. 检查 `get-thread` 返回的 messages：
    - 如果任务仍在进行中：展示过程消息，继续查询
    - 如果后端 Agent 提出问题：展示问题，等待用户回复
@@ -130,9 +130,9 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 ### 场景 2：用户提供参考文件要求创作
 
 ```
-1. pippit-cli short-drama +upload-file --path /path/to/file
+1. pippit-tool-cli short-drama +upload-file --path /path/to/file
    → 拿到 file_id
-2. pippit-cli short-drama +submit-run --message "用户的原始短剧需求" --asset-ids file_id
+2. pippit-tool-cli short-drama +submit-run --message "用户的原始短剧需求" --asset-ids file_id
    → 拿到 thread_id、run_id 和 web_thread_link
 3. 后续同场景 1 的并行查询、重要资产发现和文件下载流程
 ```
@@ -140,7 +140,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 ### 场景 3：在已有短剧会话中续写或修改
 
 ```
-1. pippit-cli short-drama +submit-run --message "用户的新需求" --thread-id THREAD_ID
+1. pippit-tool-cli short-drama +submit-run --message "用户的新需求" --thread-id THREAD_ID
    → 拿到新的 run_id 和 web_thread_link
 2. 继续按场景 1 展示进展、处理用户补充问题、获取新增会话文件列表，并及时下载新增重要资产
 ```
@@ -264,7 +264,7 @@ pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PA
 
 对带 `download_url` 的重要资产调用下载工具，可并行。重要资产必须主动下载，不要等用户再次要求，也不要在调用下载工具前先检查本地文件是否存在。
 
-1. 调用 `pippit-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH`。
+1. 调用 `pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH`。
 2. 下载完成后，向用户展示本地文件路径；如果某个文件下载失败，记录失败项并在后续轮询中重试，不阻塞已成功落盘的文件展示。
 
 ## 向用户展示内容
