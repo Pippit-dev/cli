@@ -253,7 +253,7 @@ pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FI
 
 ### 获取会话文件
 
-从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`file_name`、`download_url`。重点识别剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物等重要资产。
+从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`download_url`。重点识别剧本大纲、故事线设计、场景设计说明、场景图、人物角色设计说明、人物图、分集草稿、分镜片段视频、故事板、最终视频产物等重要资产。
 
 ```
 1. 有download_url的重要资产
