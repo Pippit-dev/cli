@@ -145,7 +145,6 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to fetch")
 	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run ID to fetch")
-	cmd.Flags().IntVar(&opts.AfterSeq, "after-seq", 0, "return messages whose sequence is greater than or equal to this value")
 	return cmd
 }
 

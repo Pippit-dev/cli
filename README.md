@@ -13,7 +13,7 @@ export XYQ_ACCESS_KEY="<access-key>"
 pippit-tool-cli --version
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-tool-cli short-drama +upload-file --path ./reference.doc
-pippit-tool-cli short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
+pippit-tool-cli short-drama +get-thread --thread-id thread_123 --run-id run_456
 pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
 
@@ -27,14 +27,14 @@ export XYQ_ACCESS_KEY="<access-key>"
 go run . --version
 go run . short-drama +submit-run --message "写一个赛博朋克短剧开头"
 go run . short-drama +upload-file --path ./reference.doc
-go run . short-drama +get-thread --thread-id thread_123 --run-id run_456 --after-seq 0
+go run . short-drama +get-thread --thread-id thread_123 --run-id run_456
 go run . short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL
 ```
 
 `+submit-run` calls `/api/biz/v1/skill/submit_run` and prints `thread_id`,
 `run_id`, and `web_thread_link`; `--message` is required.
 `+get-thread` calls
-`/api/biz/v1/skill/get_thread` and prints extracted `messages`.
+`/api/biz/v1/skill/get_thread` with `version=v2` and prints `readable_text`.
 `+upload-file` calls `/api/biz/v1/skill/upload_file` with
 `multipart/form-data` and prints the returned `asset_id`.
 Only `.doc` and `.txt` file extensions are supported.

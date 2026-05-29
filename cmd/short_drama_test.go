@@ -569,10 +569,13 @@ func TestShortDramaGetThread(t *testing.T) {
 		if body["run_id"] != "run_456" {
 			t.Fatalf("run_id = %v, want run_456", body["run_id"])
 		}
-		if body["after_seq"] != float64(7) {
-			t.Fatalf("after_seq = %v, want 7", body["after_seq"])
+		if _, ok := body["after_seq"]; ok {
+			t.Fatalf("after_seq = %v, want omitted", body["after_seq"])
 		}
-		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"run_list":[{"state":3,"entry_list":[{"message":{"message_id":"msg_1","role":"assistant","content":[{"text":"hello"}],"client_tool_calls":[{"name":"tool_call"}]}},{"artifact":{"artifact_id":"artifact_1","role":"assistant","content":[{"type":"image"}]}}]}]}}}`))
+		if body["version"] != "v2" {
+			t.Fatalf("version = %v, want v2", body["version"])
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"readable_text":"Thread: thread_123\n       [assistant] hello"}}`))
 	}))
 	defer server.Close()
 
@@ -582,7 +585,6 @@ func TestShortDramaGetThread(t *testing.T) {
 		"short-drama", "+get-thread",
 		"--thread-id", "thread_123",
 		"--run-id", "run_456",
-		"--after-seq", "7",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -590,20 +592,8 @@ func TestShortDramaGetThread(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	messages, ok := got["messages"].([]any)
-	if !ok || len(messages) != 2 {
-		t.Fatalf("messages = %#v, want two entries", got["messages"])
-	}
-	first, ok := messages[0].(map[string]any)
-	if !ok {
-		t.Fatalf("first message = %#v, want object", messages[0])
-	}
-	if first["id"] != "msg_1" {
-		t.Fatalf("first id = %v, want msg_1", first["id"])
-	}
-	content, ok := first["content"].([]any)
-	if !ok || len(content) != 2 {
-		t.Fatalf("first content = %#v, want message content plus tool call", first["content"])
+	if got["readable_text"] != "Thread: thread_123\n       [assistant] hello" {
+		t.Fatalf("readable_text = %#v, want API readable text", got["readable_text"])
 	}
 }
 
