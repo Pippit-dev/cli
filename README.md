@@ -37,7 +37,7 @@ go run . short-drama +download-result --output-path ./thread_123/results/result.
 `/api/biz/v1/skill/get_thread` with `version=v2` and prints `readable_text`.
 `+upload-file` calls `/api/biz/v1/skill/upload_file` with
 `multipart/form-data` and prints the returned `asset_id`.
-Only `.doc` and `.txt` file extensions are supported.
+Only `.doc`, `.docx`, and `.txt` file extensions are supported.
 `+download-result` downloads the result URL to
 the `--output-path` file path.
 

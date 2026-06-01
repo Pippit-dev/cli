@@ -196,11 +196,11 @@ func TestShortDramaUploadFile(t *testing.T) {
 		if len(files) != 1 {
 			t.Fatalf("file parts = %d, want 1", len(files))
 		}
-		if files[0].Filename != "story.txt" {
-			t.Fatalf("filename = %q, want story.txt", files[0].Filename)
+		if files[0].Filename != "story.docx" {
+			t.Fatalf("filename = %q, want story.docx", files[0].Filename)
 		}
-		if got := files[0].Header.Get("Content-Type"); got != "text/plain; charset=utf-8" {
-			t.Fatalf("Content-Type = %q, want text/plain; charset=utf-8", got)
+		if got := files[0].Header.Get("Content-Type"); got != "application/vnd.openxmlformats-officedocument.wordprocessingml.document" {
+			t.Fatalf("Content-Type = %q, want docx content type", got)
 		}
 		file, err := files[0].Open()
 		if err != nil {
@@ -211,16 +211,16 @@ func TestShortDramaUploadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("ReadAll multipart file: %v", err)
 		}
-		if string(data) != "txt-data" {
-			t.Fatalf("file content = %q, want txt-data", string(data))
+		if string(data) != "docx-data" {
+			t.Fatalf("file content = %q, want docx-data", string(data))
 		}
 		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"asset_123"}}`))
 	}))
 	defer server.Close()
 
 	cwd := chdirTemp(t)
-	path := filepath.Join(cwd, "story.txt")
-	if err := os.WriteFile(path, []byte("txt-data"), 0o644); err != nil {
+	path := filepath.Join(cwd, "story.docx")
+	if err := os.WriteFile(path, []byte("docx-data"), 0o644); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
 
@@ -292,7 +292,7 @@ func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want file type validation error")
 	}
-	if !strings.Contains(err.Error(), "only .doc and .txt uploads are supported") {
+	if !strings.Contains(err.Error(), "only .doc, .docx, and .txt uploads are supported") {
 		t.Fatalf("error = %q, want unsupported type validation", err)
 	}
 }

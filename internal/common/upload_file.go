@@ -36,8 +36,9 @@ type uploadFileResponse struct {
 const uploadFileFieldName = "file"
 
 var allowedUploadExtensions = map[string]bool{
-	".doc": true,
-	".txt": true,
+	".doc":  true,
+	".docx": true,
+	".txt":  true,
 }
 
 func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*UploadFileResult, error) {
@@ -62,7 +63,7 @@ func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*U
 
 	ext := strings.ToLower(filepath.Ext(path))
 	if !allowedUploadExtensions[ext] {
-		return nil, fmt.Errorf("unsupported file extension %q; only .doc and .txt uploads are supported", ext)
+		return nil, fmt.Errorf("unsupported file extension %q; only .doc, .docx, and .txt uploads are supported", ext)
 	}
 	fileName := filepath.Base(path)
 	contentType := mime.TypeByExtension(ext)
