@@ -138,7 +138,8 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			_, err = fmt.Fprintln(stdout, result.ReadableText)
+			return err
 		},
 	}
 	cmd.SetOut(stdout)

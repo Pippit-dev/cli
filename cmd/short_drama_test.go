@@ -591,9 +591,8 @@ func TestShortDramaGetThread(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
-	got := decodeJSON(t, stdout.Bytes())
-	if got["readable_text"] != "Thread: thread_123\n       [assistant] hello" {
-		t.Fatalf("readable_text = %#v, want API readable text", got["readable_text"])
+	if got := stdout.String(); got != "Thread: thread_123\n       [assistant] hello\n" {
+		t.Fatalf("stdout = %#v, want API readable text", got)
 	}
 }
 

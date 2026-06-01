@@ -194,10 +194,13 @@ pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FI
 
 **+get-thread** 返回：
 
-```json
-{
-  "readable_text": "Thread: thread_...\n     标题: ...\n     状态: ...\n\n     -- Run #1 --\n       [assistant] ..."
-}
+```text
+Thread: thread_...
+     标题: ...
+     状态: ...
+
+     -- Run #1 --
+       [assistant] ...
 ```
 
 **+upload-file** 返回：

@@ -16,7 +16,7 @@ type GetThreadOptions struct {
 	RunID    string `json:"run_id,omitempty"`
 }
 
-// GetThreadResult is the JSON envelope printed by `pippit-tool-cli short-drama +get-thread`.
+// GetThreadResult is the parsed get_thread response used by `pippit-tool-cli short-drama +get-thread`.
 type GetThreadResult struct {
 	ReadableText string `json:"readable_text"`
 }
