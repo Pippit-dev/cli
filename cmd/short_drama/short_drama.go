@@ -3,6 +3,8 @@ package short_drama
 import (
 	"fmt"
 	"io"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -35,7 +37,12 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 		Use:   "+submit-run",
 		Short: "Submit a Run task for the short drama scene",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: withErrorLog("short-drama +submit-run", func() map[string]string {
+			return map[string]string{
+				"thread_id":   opts.ThreadID,
+				"asset_count": strconv.Itoa(len(opts.AssetIDs)),
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
 			opts.Message = strings.TrimSpace(opts.Message)
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 
@@ -48,7 +55,7 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 				return err
 			}
 			return writeJSON(stdout, result)
-		},
+		}),
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -65,7 +72,11 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 		Use:   "+upload-file",
 		Short: "Upload a file for the short drama scene",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: withErrorLog("short-drama +upload-file", func() map[string]string {
+			return map[string]string{
+				"file_name": fileNameForLog(opts.Path),
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
 			opts.Path = strings.TrimSpace(opts.Path)
 
 			if opts.Path == "" {
@@ -77,7 +88,7 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 				return err
 			}
 			return writeJSON(stdout, result)
-		},
+		}),
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -92,7 +103,13 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 		Use:   "+download-result",
 		Short: "Download a generated result URL",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: withErrorLog("short-drama +download-result", func() map[string]string {
+			return map[string]string{
+				"output_path": opts.OutputPath,
+				"has_url":     strconv.FormatBool(strings.TrimSpace(opts.URL) != ""),
+				"workers":     strconv.Itoa(opts.Workers),
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
 			opts.OutputPath = strings.TrimSpace(opts.OutputPath)
 			if opts.OutputPath == "" {
 				return fmt.Errorf("--output-path is required")
@@ -110,7 +127,7 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 				return err
 			}
 			return writeJSON(stdout, result)
-		},
+		}),
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -127,7 +144,12 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 		Use:   "+get-thread",
 		Short: "Get a short drama thread detail",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: withErrorLog("short-drama +get-thread", func() map[string]string {
+			return map[string]string{
+				"thread_id": opts.ThreadID,
+				"run_id":    opts.RunID,
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 			if opts.ThreadID == "" {
 				return fmt.Errorf("--thread-id is required")
@@ -140,7 +162,7 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 			}
 			_, err = fmt.Fprintln(stdout, result.ReadableText)
 			return err
-		},
+		}),
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -156,7 +178,13 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 		Use:   "+list-thread-file",
 		Short: "List files in a short drama thread",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: withErrorLog("short-drama +list-thread-file", func() map[string]string {
+			return map[string]string{
+				"thread_id": opts.ThreadID,
+				"page_num":  strconv.Itoa(opts.PageNum),
+				"page_size": strconv.Itoa(opts.PageSize),
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 			if opts.ThreadID == "" {
 				return fmt.Errorf("--thread-id is required")
@@ -173,7 +201,7 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 				return err
 			}
 			return writeJSON(stdout, result)
-		},
+		}),
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
@@ -181,6 +209,28 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 	cmd.Flags().IntVar(&opts.PageNum, "page-num", 1, "page number (1-based)")
 	cmd.Flags().IntVar(&opts.PageSize, "page-size", common.MaxListThreadFilePageSize, fmt.Sprintf("number of files per page (between 1 and %d)", common.MaxListThreadFilePageSize))
 	return cmd
+}
+
+func withErrorLog(command string, fields func() map[string]string, run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		if err != nil {
+			logFields := map[string]string(nil)
+			if fields != nil {
+				logFields = fields()
+			}
+			_ = common.AppendDailyErrorLog(command, err, logFields)
+		}
+		return err
+	}
+}
+
+func fileNameForLog(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	return filepath.Base(path)
 }
 
 func writeJSON(w io.Writer, v any) error {

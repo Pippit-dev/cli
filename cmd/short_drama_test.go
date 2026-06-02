@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
@@ -16,6 +17,19 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
 )
+
+func TestMain(m *testing.M) {
+	home, err := os.MkdirTemp("", "pippit-cli-test-home")
+	if err != nil {
+		panic(err)
+	}
+	_ = os.Setenv("HOME", home)
+	_ = os.Setenv("USERPROFILE", home)
+
+	code := m.Run()
+	_ = os.RemoveAll(home)
+	os.Exit(code)
+}
 
 func TestShortDramaSubmitRun(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -597,6 +611,8 @@ func TestShortDramaGetThread(t *testing.T) {
 }
 
 func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
+	clearDailyErrorLog(t)
+
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{"short-drama", "+get-thread"})
@@ -607,6 +623,17 @@ func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--thread-id is required") {
 		t.Fatalf("error = %q, want thread-id validation", err)
+	}
+
+	entries := readDailyErrorLog(t)
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1: %#v", len(entries), entries)
+	}
+	if entries[0]["command"] != "short-drama +get-thread" {
+		t.Fatalf("command = %v, want get-thread", entries[0]["command"])
+	}
+	if entries[0]["error"] != "--thread-id is required" {
+		t.Fatalf("error = %v, want thread-id validation", entries[0]["error"])
 	}
 }
 
@@ -785,6 +812,41 @@ func decodeJSON(t *testing.T, data []byte) map[string]any {
 		t.Fatalf("stdout is not JSON: %v\n%s", err, string(data))
 	}
 	return got
+}
+
+func clearDailyErrorLog(t *testing.T) {
+	t.Helper()
+	if err := os.RemoveAll(filepath.Join(testHomeDir(t), ".pippit_tool_cli", "logs")); err != nil {
+		t.Fatalf("RemoveAll logs: %v", err)
+	}
+}
+
+func readDailyErrorLog(t *testing.T) []map[string]any {
+	t.Helper()
+	path := filepath.Join(testHomeDir(t), ".pippit_tool_cli", "logs", time.Now().Format("2006-01-02")+".log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	entries := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		var entry map[string]any
+		if err := sonic.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("decode log line: %v\n%s", err, line)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
+}
+
+func testHomeDir(t *testing.T) string {
+	t.Helper()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir(): %v", err)
+	}
+	return home
 }
 
 func chdirTemp(t *testing.T) string {

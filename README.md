@@ -41,6 +41,11 @@ Only `.doc`, `.docx`, and `.txt` file extensions are supported.
 `+download-result` downloads the result URL to
 the `--output-path` file path.
 
+Short drama command errors are appended to a daily local log file under
+`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`. The path is built with the current
+user home directory and the platform path separator, so it works on macOS,
+Linux, and Windows.
+
 ## HTTP Client
 
 Command modules should receive `common.Runner` for service calls. Runtime
