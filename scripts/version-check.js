@@ -7,7 +7,7 @@ const { DEFAULT_PKG } = require("./skills");
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function defaultCacheFile() {
-  return path.join(os.homedir(), ".pippit-cli", "version-check.json");
+  return path.join(os.homedir(), ".pippit_tool_cli", "version-check.json");
 }
 
 function currentVersion() {
@@ -91,6 +91,7 @@ function maybeWarnNewVersion(args = [], opts = {}) {
 module.exports = {
   CHECK_INTERVAL_MS,
   compareSemver,
+  defaultCacheFile,
   maybeWarnNewVersion,
   parseSemver,
 };
