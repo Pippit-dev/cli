@@ -74,7 +74,7 @@ func installSkills(root string, stderr io.Writer) error {
 	} else if !info.IsDir() {
 		return fmt.Errorf("%s is not a directory", filepath.Join(root, "skills"))
 	}
-	return runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y")
+	return runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y", "--skill", "*")
 }
 
 func runInherit(stderr io.Writer, name string, args ...string) error {

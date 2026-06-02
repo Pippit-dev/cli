@@ -10,7 +10,7 @@ function installSkillsFromRoot(root, opts = {}) {
   if (!fs.existsSync(skillsDir)) {
     throw new Error(`skills directory not found: ${skillsDir}`);
   }
-  run("npx", ["-y", "skills", "add", source, "-g", "-y"], {
+  run("npx", ["-y", "skills", "add", source, "-g", "-y", "--skill", "*"], {
     timeout: opts.timeout || 120000,
   });
 }
