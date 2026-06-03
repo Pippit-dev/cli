@@ -14,6 +14,11 @@ import (
 
 const defaultPackage = "@pippit-dev/cli"
 
+var legacyGlobalSkills = []string{
+	"pippit-short-drama-skill",
+	"xyq-nest-skill",
+}
+
 // NewCommand builds the update command.
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
@@ -74,7 +79,30 @@ func installSkills(root string, stderr io.Writer) error {
 	} else if !info.IsDir() {
 		return fmt.Errorf("%s is not a directory", filepath.Join(root, "skills"))
 	}
-	return runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y", "--skill", "*")
+	if err := runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y", "--skill", "*"); err != nil {
+		return err
+	}
+	return cleanupLegacyGlobalSkills(defaultGlobalSkillsDir())
+}
+
+func defaultGlobalSkillsDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".agents", "skills")
+}
+
+func cleanupLegacyGlobalSkills(globalSkillsDir string) error {
+	if globalSkillsDir == "" {
+		return nil
+	}
+	for _, skillName := range legacyGlobalSkills {
+		if err := os.RemoveAll(filepath.Join(globalSkillsDir, skillName)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runInherit(stderr io.Writer, name string, args ...string) error {

@@ -8,12 +8,12 @@
 
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
-| `pippit-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-nest-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
+| `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
+| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
 
 ## 通用 NestAgent 技能
 
-`xyq-nest-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、文件上传、进度查询和结果下载。
+`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、文件上传、进度查询和结果下载。
 
 ### 功能特性
 
@@ -32,7 +32,7 @@
 
 ### 配置
 
-所有 `xyq-nest-skill` 脚本都使用 Bearer 令牌鉴权：
+所有 `xyq-skill` 脚本都使用 Bearer 令牌鉴权：
 
 ```bash
 export XYQ_ACCESS_KEY="<access-key>"
@@ -214,4 +214,4 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 
 ## 鉴权
 
-`short-drama +submit-run`、`short-drama +get-thread`、`short-drama +upload-file` 以及 `xyq-nest-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
+`short-drama +submit-run`、`short-drama +get-thread`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
