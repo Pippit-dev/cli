@@ -121,7 +121,8 @@ pippit-tool-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1
 ```json
 {
   "file_path": "./{thread-id}/路径/文件名", // 文件完整路径，包含文件名
-  "download_url": "https://..." // URL
+  "download_url": "https://...", // URL
+  "updated_at": 1779716734 // 文件更新时间，Unix 秒级时间戳
 }
 ```
 
@@ -131,10 +132,10 @@ pippit-tool-cli short-drama +list-thread-file --thread-id THREAD_ID --page-num 1
 
 ```bash
 # 下载文件资源到指定文件路径
-pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH
+pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH --updated-at UPDATED_AT
 ```
 
-`FILE_PATH` 必须直接使用 `+list-thread-file` 返回的完整 `file_path`，包含文件名，不要取父目录。`+download-result` 负责把会话产生的文件通过 URL 下载到该目标文件路径；如果目标文件已存在，跳过下载。
+`FILE_PATH` 必须直接使用 `+list-thread-file` 返回的完整 `file_path`，包含文件名，不要取父目录。`UPDATED_AT` 使用同一文件对象返回的 `updated_at`；如果没有 `updated_at`，可省略 `--updated-at`。`+download-result` 负责把会话产生的文件通过 URL 下载到该目标文件路径；如果目标文件已存在且本地修改时间不早于 `updated_at`，跳过下载；如果本地文件早于 `updated_at`，覆盖更新。
 
 ## 典型工作流
 
@@ -151,7 +152,7 @@ pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FI
    - 如果任务仍在进行中：展示可读进展，继续查询
    - 如果后端 Agent 提出问题：从 readable_text 中提取问题并展示，等待用户回复
 5. 检查 `list-thread-file` 返回的 files：
-   - 对每个文件取 file_path、download_url
+   - 对每个文件取 file_path、download_url、updated_at
    - 将 file_path 作为本地目标文件路径，包含文件名
    - 有 download_url 的重要资产：加入本轮下载队列
    - 不判断 file_path 在本地是否已存在，是否跳过由 +download-result 内部处理
@@ -159,6 +160,7 @@ pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FI
 6. 对重要资产，立即调用 +download-result 并行下载资源：
    - 使用第 5 步获取的 download_url 作为 --url
    - 使用第 5 步获取的完整 file_path 作为 --output-path
+   - 如果第 5 步返回 updated_at，作为 --updated-at 传入
    - 剧本设计、场景设计、场景图、人物角色设计、人物图、最终视频产物都属于重要资产
 7. 查询或下载失败时，不要直接放弃；记录失败项，并在后续轮询中主动重试
 8. 只有会话进展已处理，且已发现的重要资产均已下载或明确重试失败后，才向用户汇总最终结果
@@ -249,7 +251,8 @@ Thread: thread_...
   "files": [
     {
       "file_path": "./{thread-id}/{file_path}/{file_name}",
-      "download_url": "https://..."
+      "download_url": "https://...",
+      "updated_at": 1779716734
     }
   ],
   "total": 1,
@@ -274,12 +277,12 @@ Thread: thread_...
 
 ### 获取会话文件
 
-从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`file_name`、`download_url`。重点识别剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物等重要资产。
+从 `+list-thread-file` 的 `files` 中逐个读取文件元信息：`file_path`、`file_name`、`download_url`、`updated_at`。重点识别剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物等重要资产。
 
 ```
 1. 有download_url的重要资产
-   → 记录该file_path和URL
-   → 使用 +download-result 将URL资源下载到该file_path
+   → 记录该file_path、URL和updated_at
+   → 使用 +download-result 将URL资源下载到该file_path；有updated_at时传入--updated-at
 2. 本轮total达到200
    → 下一轮page-num加1，继续查询新一页结果
 3. 本轮total未达到200
@@ -293,7 +296,7 @@ Thread: thread_...
 
 对带 `download_url` 的重要资产调用下载工具，可并行。重要资产必须主动下载，不要等用户再次要求，也不要在调用下载工具前先检查本地文件是否存在。
 
-1. 调用 `pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH`。
+1. 调用 `pippit-tool-cli short-drama +download-result --url DOWNLOAD_URL --output-path FILE_PATH --updated-at UPDATED_AT`；如果文件对象没有 `updated_at`，省略 `--updated-at`。
 2. 下载完成后，向用户展示本地文件路径；如果某个文件下载失败，记录失败项并在后续轮询中重试，不阻塞已成功落盘的文件展示。
 
 ## 向用户展示内容
@@ -335,4 +338,4 @@ Thread: thread_...
 - 单次创作会话中（相同 `thread_id`），`+submit-run` 只支持绑定一个剧本文件。不要在同一 `thread_id` 下重复上传并追加第二个剧本 `asset_id`；用户给多个剧本时，先让用户选择一个，或分别开启新的创作会话。
 - `+list-thread-file` 只需要 `thread_id`；分页参数使用 `--page-num 1 --page-size 200` 起步，`total` 达到 200 时下一轮递增 `page-num`。
 - `+list-thread-file` 和 `+download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目标文件路径。
-- `+download-result` 接收 `--url`、`--output-path`、`--workers`；`--output-path` 必须是包含文件名的目标文件路径。
+- `+download-result` 接收 `--url`、`--output-path`、`--updated-at`、`--workers`；`--output-path` 必须是包含文件名的目标文件路径。

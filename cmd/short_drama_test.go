@@ -408,6 +408,111 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	assertFileContent(t, outputPath, "existing-data")
 }
 
+func TestShortDramaDownloadResultSkipsExistingFileWhenLocalIsFresh(t *testing.T) {
+	serverCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverCalled = true
+		t.Fatal("server should not receive request when target file is fresh")
+	}))
+	defer server.Close()
+
+	chdirTemp(t)
+	outputPath := filepath.Join("results", "cover.jpeg")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(outputPath, []byte("existing-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	remoteUpdatedAt := int64(1779716734)
+	localUpdatedAt := time.Unix(remoteUpdatedAt+10, 0)
+	if err := os.Chtimes(outputPath, localUpdatedAt, localUpdatedAt); err != nil {
+		t.Fatalf("Chtimes(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"short-drama", "+download-result",
+		"--output-path", outputPath,
+		"--updated-at", "1779716734",
+		"--url", server.URL + "/image",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if serverCalled {
+		t.Fatal("server was called, want fresh existing file to skip download")
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	alreadyExist, ok := got["already_exist"].([]any)
+	if !ok || len(alreadyExist) != 1 || alreadyExist[0] != outputPath {
+		t.Fatalf("already_exist = %#v, want existing output path", got["already_exist"])
+	}
+	assertFileContent(t, outputPath, "existing-data")
+}
+
+func TestShortDramaDownloadResultOverwritesStaleExistingFile(t *testing.T) {
+	serverCalled := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverCalled = true
+		if r.URL.Path != "/image" {
+			t.Fatalf("path = %s, want /image", r.URL.Path)
+		}
+		_, _ = w.Write([]byte("new-data"))
+	}))
+	defer server.Close()
+
+	chdirTemp(t)
+	outputPath := filepath.Join("results", "cover.jpeg")
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(): %v", err)
+	}
+	if err := os.WriteFile(outputPath, []byte("existing-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	remoteUpdatedAt := int64(1779716734)
+	staleUpdatedAt := time.Unix(remoteUpdatedAt-10, 0)
+	if err := os.Chtimes(outputPath, staleUpdatedAt, staleUpdatedAt); err != nil {
+		t.Fatalf("Chtimes(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	root.SetArgs([]string{
+		"short-drama", "+download-result",
+		"--output-path", outputPath,
+		"--updated-at", "1779716734",
+		"--url", server.URL + "/image",
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if !serverCalled {
+		t.Fatal("server was not called, want stale existing file to be downloaded")
+	}
+
+	got := decodeJSON(t, stdout.Bytes())
+	downloaded, ok := got["downloaded"].([]any)
+	if !ok || len(downloaded) != 1 || downloaded[0] != outputPath {
+		t.Fatalf("downloaded = %#v, want output path", got["downloaded"])
+	}
+	if _, ok := got["overwritten"]; ok {
+		t.Fatalf("overwritten should not be returned: %#v", got)
+	}
+	assertFileContent(t, outputPath, "new-data")
+	info, err := os.Stat(outputPath)
+	if err != nil {
+		t.Fatalf("Stat(%s): %v", outputPath, err)
+	}
+	if info.ModTime().Unix() != remoteUpdatedAt {
+		t.Fatalf("mtime = %d, want %d", info.ModTime().Unix(), remoteUpdatedAt)
+	}
+}
+
 func TestShortDramaDownloadResultDownloadsMetaJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/meta.json" {
@@ -513,6 +618,7 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	defer server.Close()
 
 	chdirTemp(t)
+	clearDailyErrorLog(t)
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
@@ -527,6 +633,17 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "all 1 download(s) failed") {
 		t.Fatalf("error = %q, want all-failed message", err)
+	}
+	logs := readDailyErrorLog(t)
+	if len(logs) != 1 {
+		t.Fatalf("logs = %#v, want one error log", logs)
+	}
+	fields, ok := logs[0]["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("fields = %#v, want object", logs[0]["fields"])
+	}
+	if _, ok := fields["updated_at"]; ok {
+		t.Fatalf("updated_at should be omitted when --updated-at is not provided: %#v", fields)
 	}
 }
 
@@ -684,7 +801,7 @@ func TestShortDramaListThreadFile(t *testing.T) {
 		if body["page_size"] != float64(10) {
 			t.Fatalf("page_size = %v, want 10", body["page_size"])
 		}
-		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":1,"files":[{"file_name":"ignored.png","file_path":"results/images/cover.png","download_url":"https://example.com/cover.png"}]}}`))
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"total":1,"files":[{"file_name":"ignored.png","file_path":"results/images/cover.png","download_url":"https://example.com/cover.png","updated_at":1779716734}]}}`))
 	}))
 	defer server.Close()
 
@@ -726,6 +843,9 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	}
 	if file["download_url"] != "https://example.com/cover.png" {
 		t.Fatalf("download_url = %v, want returned url", file["download_url"])
+	}
+	if file["updated_at"] != float64(1779716734) {
+		t.Fatalf("updated_at = %v, want 1779716734", file["updated_at"])
 	}
 }
 

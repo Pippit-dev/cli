@@ -22,6 +22,7 @@ type ListThreadFileOptions struct {
 type ThreadFile struct {
 	FilePath    string `json:"file_path"`
 	DownloadURL string `json:"download_url"`
+	UpdatedAt   *int64 `json:"updated_at,omitempty"`
 }
 
 // ListThreadFileResult is the JSON envelope printed by `pippit-tool-cli short-drama +list-thread-file`.
@@ -45,6 +46,7 @@ type listThreadFileResponse struct {
 type threadFileResponse struct {
 	FilePath    string `json:"file_path"`
 	DownloadURL string `json:"download_url"`
+	UpdatedAt   *int64 `json:"updated_at,omitempty"`
 }
 
 func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Runner) (*ListThreadFileResult, error) {
@@ -81,6 +83,7 @@ func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Ru
 		files = append(files, &ThreadFile{
 			FilePath:    threadFilePath(opts.ThreadID, file.FilePath),
 			DownloadURL: file.DownloadURL,
+			UpdatedAt:   file.UpdatedAt,
 		})
 	}
 

@@ -23,6 +23,7 @@ import (
 type DownloadResultOptions struct {
 	URL        string `json:"url"`
 	OutputPath string `json:"output_path"`
+	UpdatedAt  int64  `json:"updated_at,omitempty"`
 	Workers    int    `json:"workers"`
 }
 
@@ -45,8 +46,9 @@ const (
 )
 
 type downloadTask struct {
-	url      string
-	filepath string
+	url       string
+	filepath  string
+	updatedAt int64
 }
 
 type downloadTaskResult struct {
@@ -67,15 +69,16 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	if outputPath == "" {
 		return nil, fmt.Errorf("output_path is required")
 	}
-	// check if the output path exists and is a file
 	if info, err := os.Stat(outputPath); err == nil {
 		if info.IsDir() {
 			return nil, fmt.Errorf("output path %q is a directory", outputPath)
 		}
-		return &DownloadResultResponse{
-			OutputPath:   outputPath,
-			AlreadyExist: []string{outputPath},
-		}, nil
+		if shouldSkipExistingFile(info, opts.UpdatedAt) {
+			return &DownloadResultResponse{
+				OutputPath:   outputPath,
+				AlreadyExist: []string{outputPath},
+			}, nil
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("stat output path: %w", err)
 	}
@@ -93,8 +96,9 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	}
 	tasks := []downloadTask{
 		{
-			url:      rawURL,
-			filepath: outputPath,
+			url:       rawURL,
+			filepath:  outputPath,
+			updatedAt: opts.UpdatedAt,
 		},
 	}
 
@@ -117,7 +121,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 			for task := range taskCh {
 				resultCh <- downloadTaskResult{
 					filepath: task.filepath,
-					err:      downloadFileWithRetry(ctx, runner.Client, task.url, task.filepath),
+					err:      downloadFileWithRetry(ctx, runner.Client, task.url, task.filepath, task.updatedAt),
 				}
 			}
 		}()
@@ -167,7 +171,14 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 	return result, nil
 }
 
-func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, targetPath string) error {
+func shouldSkipExistingFile(info os.FileInfo, updatedAt int64) bool {
+	if updatedAt <= 0 {
+		return true
+	}
+	return info.ModTime().Unix() >= updatedAt
+}
+
+func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, targetPath string, updatedAt int64) error {
 	var lastErr error
 	for attempt := 0; attempt <= maxDownloadRetries; attempt++ {
 		if attempt > 0 {
@@ -180,7 +191,7 @@ func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, ta
 			case <-timer.C:
 			}
 		}
-		err := downloadFile(ctx, client, rawURL, targetPath)
+		err := downloadFile(ctx, client, rawURL, targetPath, updatedAt)
 		if err == nil {
 			return nil
 		}
@@ -203,7 +214,7 @@ func isRetryableError(err error) bool {
 	return false
 }
 
-func downloadFile(ctx context.Context, client Client, rawURL string, targetPath string) error {
+func downloadFile(ctx context.Context, client Client, rawURL string, targetPath string, updatedAt int64) error {
 	var resp *http.Response
 	if err := client.SendRequest(ctx, rawURL, nil, &resp); err != nil {
 		return err
@@ -211,6 +222,12 @@ func downloadFile(ctx context.Context, client Client, rawURL string, targetPath 
 	defer resp.Body.Close()
 
 	tmpPath := targetPath + ".tmp"
+	tempActive := true
+	defer func() {
+		if tempActive {
+			_ = os.Remove(tmpPath)
+		}
+	}()
 	out, err := os.Create(tmpPath)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
@@ -218,16 +235,18 @@ func downloadFile(ctx context.Context, client Client, rawURL string, targetPath 
 	_, copyErr := io.Copy(out, resp.Body)
 	closeErr := out.Close()
 	if copyErr != nil {
-		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write temp file: %w", copyErr)
 	}
 	if closeErr != nil {
-		_ = os.Remove(tmpPath)
 		return fmt.Errorf("close temp file: %w", closeErr)
 	}
 	if err := os.Rename(tmpPath, targetPath); err != nil {
-		_ = os.Remove(tmpPath)
 		return fmt.Errorf("replace target file: %w", err)
+	}
+	tempActive = false
+	if updatedAt > 0 {
+		modTime := time.Unix(updatedAt, 0)
+		_ = os.Chtimes(targetPath, time.Now(), modTime)
 	}
 	return nil
 }

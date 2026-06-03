@@ -104,11 +104,15 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 		Short: "Download a generated result URL",
 		Args:  cobra.NoArgs,
 		RunE: withErrorLog("short-drama +download-result", func() map[string]string {
-			return map[string]string{
+			fields := map[string]string{
 				"output_path": opts.OutputPath,
 				"has_url":     strconv.FormatBool(strings.TrimSpace(opts.URL) != ""),
 				"workers":     strconv.Itoa(opts.Workers),
 			}
+			if opts.UpdatedAt > 0 {
+				fields["updated_at"] = strconv.FormatInt(opts.UpdatedAt, 10)
+			}
+			return fields
 		}, func(cmd *cobra.Command, _ []string) error {
 			opts.OutputPath = strings.TrimSpace(opts.OutputPath)
 			if opts.OutputPath == "" {
@@ -133,6 +137,7 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.URL, "url", "", "URL to download")
 	cmd.Flags().StringVar(&opts.OutputPath, "output-path", "", "local output file path")
+	cmd.Flags().Int64Var(&opts.UpdatedAt, "updated-at", 0, "remote file update time as a Unix timestamp")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
 	return cmd
 }
