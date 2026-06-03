@@ -11,7 +11,7 @@ import urllib.request
 import urllib.error
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import XYQ_BASE, ACCESS_KEY, UPLOAD_FILE_PATH, parse_response
+from xyq_common import XYQ_BASE, ACCESS_KEY, UPLOAD_FILE_PATH, parse_response
 
 # 允许的 MIME 类型前缀
 ALLOWED_PREFIXES = ("image/", "video/")

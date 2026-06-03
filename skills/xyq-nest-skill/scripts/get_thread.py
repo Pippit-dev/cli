@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """查询会话进展：POST /api/biz/v1/skill/get_thread，返回消息列表"""
 
-from _common import extract_entries_from_run
 import argparse
 import json
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import get_thread
+from xyq_common import extract_entries_from_run
+from xyq_common import get_thread
 
 
 def main():

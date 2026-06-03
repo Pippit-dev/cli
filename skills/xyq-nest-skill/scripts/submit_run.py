@@ -7,7 +7,7 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
-from _common import submit_run
+from xyq_common import submit_run
 
 
 def main():
