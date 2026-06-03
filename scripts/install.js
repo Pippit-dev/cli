@@ -5,7 +5,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { isWindows, run } = require("./platform");
-const { installSkillsFromRoot } = require("./skills");
+const { cleanupLegacyGlobalSkills, installSkillsFromRoot } = require("./skills");
 
 const VERSION = require("../package.json").version.replace(/-.*$/, "");
 const REPO = "Pippit-dev/cli";
@@ -134,6 +134,8 @@ function install() {
 
     if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
       installSkillsFromRoot(ROOT);
+    } else {
+      cleanupLegacyGlobalSkills();
     }
     console.log(`${NAME} v${VERSION} installed successfully`);
   } finally {
