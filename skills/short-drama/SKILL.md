@@ -67,6 +67,14 @@ metadata:
 npx @pippit-dev/cli@latest install
 ```
 
+部分功能需要先配置 `XYQ_ACCESS_KEY`。缺失时 CLI 会直接提示用户先创建 Access Key，此时请等待用户给与Access Key后再继续运行。
+
+Access Key 创建地址：https://xyq.jianying.com/home?tab_name=home
+
+```bash
+export XYQ_ACCESS_KEY="<access-key>"
+```
+
 ## 使用方法
 
 ### 1. 提交短剧任务

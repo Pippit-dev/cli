@@ -184,9 +184,7 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want access key error")
 	}
-	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
-		t.Fatalf("error = %q, want access key guidance", err)
-	}
+	assertAccessKeyGuidance(t, err)
 }
 
 func TestShortDramaUploadFile(t *testing.T) {
@@ -286,9 +284,7 @@ func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want access key error")
 	}
-	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
-		t.Fatalf("error = %q, want access key guidance", err)
-	}
+	assertAccessKeyGuidance(t, err)
 }
 
 func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
@@ -768,9 +764,7 @@ func TestShortDramaGetThreadRequiresAccessKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want access key error")
 	}
-	if !strings.Contains(err.Error(), "XYQ_ACCESS_KEY is required") {
-		t.Fatalf("error = %q, want access key guidance", err)
-	}
+	assertAccessKeyGuidance(t, err)
 }
 
 func TestShortDramaListThreadFile(t *testing.T) {
@@ -892,6 +886,23 @@ func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
 	}
 }
 
+func TestShortDramaListThreadFileRequiresAccessKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request without access key")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
+	root.SetArgs([]string{"short-drama", "+list-thread-file", "--thread-id", "thread_123"})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want access key error")
+	}
+	assertAccessKeyGuidance(t, err)
+}
+
 func TestShortDramaListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
@@ -923,6 +934,23 @@ func newTestRootCommandWithAccessKey(t *testing.T, stdout, stderr io.Writer, bas
 	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
 	runner := common.NewRunner(cfg, client)
 	return newRootCommand(stdout, stderr, runner)
+}
+
+func assertAccessKeyGuidance(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("error = nil, want access key guidance")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "XYQ_ACCESS_KEY is required") {
+		t.Fatalf("error = %q, want access key guidance", err)
+	}
+	if !strings.Contains(msg, "https://xyq.jianying.com/home?tab_name=home") {
+		t.Fatalf("error = %q, want access key settings URL", err)
+	}
+	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<access-key>"`) {
+		t.Fatalf("error = %q, want setup command guidance", err)
+	}
 }
 
 func decodeJSON(t *testing.T, data []byte) map[string]any {
