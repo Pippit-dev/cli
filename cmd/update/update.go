@@ -1,23 +1,41 @@
 package updatecmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/version"
 	"github.com/spf13/cobra"
 )
 
 const defaultPackage = "@pippit-dev/cli"
 
+const (
+	defaultTelemetryBaseURL = "https://xyq.jianying.com"
+	telemetryPath           = "/api/biz/v1/skill/report_telemetry"
+	telemetryAuthHeader     = "Bearer pippit-cli-skill-telemetry"
+)
+
 var legacyGlobalSkills = []string{
 	"pippit-short-drama-skill",
 	"xyq-nest-skill",
 }
+
+var telemetrySkillNames = []string{
+	"xyq-skill",
+	"xyq-short-drama-skill",
+}
+
+var telemetryHTTPClient = &http.Client{Timeout: 2 * time.Second}
 
 // NewCommand builds the update command.
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
@@ -57,6 +75,7 @@ func runUpdate(stdout, stderr io.Writer) error {
 		return fmt.Errorf("update pippit-tool-cli skills: %w", err)
 	}
 
+	reportBundledSkillTelemetry("update", "cli_update", stderr)
 	fmt.Fprintln(stdout, "pippit-tool-cli and skills updated")
 	return nil
 }
@@ -103,6 +122,83 @@ func cleanupLegacyGlobalSkills(globalSkillsDir string) error {
 		}
 	}
 	return nil
+}
+
+type telemetryPayload struct {
+	Event      string `json:"event"`
+	SkillName  string `json:"skill_name"`
+	Source     string `json:"source"`
+	CliVersion string `json:"cli_version"`
+	Platform   string `json:"platform"`
+	Arch       string `json:"arch"`
+}
+
+func reportBundledSkillTelemetry(event string, source string, stderr io.Writer) {
+	if os.Getenv("PIPPIT_CLI_DISABLE_TELEMETRY") == "1" {
+		return
+	}
+	for _, skillName := range telemetrySkillNames {
+		payload := telemetryPayload{
+			Event:      event,
+			SkillName:  skillName,
+			Source:     source,
+			CliVersion: telemetryCliVersion(),
+			Platform:   runtime.GOOS,
+			Arch:       runtime.GOARCH,
+		}
+		go func(payload telemetryPayload) {
+			if err := reportSkillTelemetry(payload); err != nil && os.Getenv("PIPPIT_CLI_DEBUG_TELEMETRY") == "1" {
+				fmt.Fprintf(stderr, "[pippit-tool-cli] telemetry failed: %v\n", err)
+			}
+		}(payload)
+	}
+}
+
+func reportSkillTelemetry(payload telemetryPayload) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, telemetryBaseURL()+telemetryPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", telemetryAuthHeader)
+	req.Header.Set("x-use-ppe", "1")
+	req.Header.Set("x-tt-env", "ppe_harness_novel_v2")
+
+	resp, err := telemetryHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("telemetry returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func telemetryBaseURL() string {
+	for _, key := range []string{"PIPPIT_CLI_TELEMETRY_BASE_URL", "XYQ_OPENAPI_BASE", "XYQ_BASE_URL"} {
+		if value := strings.TrimRight(strings.TrimSpace(os.Getenv(key)), "/"); value != "" {
+			return value
+		}
+	}
+	return defaultTelemetryBaseURL
+}
+
+func telemetryCliVersion() string {
+	return stripPrereleaseVersion(version.Current())
+}
+
+func stripPrereleaseVersion(value string) string {
+	if idx := strings.Index(value, "-"); idx >= 0 {
+		return value[:idx]
+	}
+	return value
 }
 
 func runInherit(stderr io.Writer, name string, args ...string) error {

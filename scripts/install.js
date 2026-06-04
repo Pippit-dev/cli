@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const { isWindows, run } = require("./platform");
 const { cleanupLegacyGlobalSkills, installSkillsFromRoot } = require("./skills");
+const { reportBundledSkillTelemetry } = require("./telemetry");
 
 const VERSION = require("../package.json").version.replace(/-.*$/, "");
 const REPO = "Pippit-dev/cli";
@@ -134,6 +135,7 @@ function install() {
 
     if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
       installSkillsFromRoot(ROOT);
+      reportBundledSkillTelemetry("install", "npm_install");
     } else {
       cleanupLegacyGlobalSkills();
     }

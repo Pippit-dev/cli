@@ -2,6 +2,9 @@ package updatecmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -67,6 +70,70 @@ func TestCleanupLegacyGlobalSkills(t *testing.T) {
 	for _, skillName := range []string{"xyq-short-drama-skill", "xyq-skill"} {
 		if _, err := os.Stat(filepath.Join(globalSkillsDir, skillName)); err != nil {
 			t.Fatalf("new skill %s was not preserved: %v", skillName, err)
+		}
+	}
+}
+
+func TestReportSkillTelemetry(t *testing.T) {
+	var gotAuth string
+	var gotHeaders http.Header
+	var gotPayload telemetryPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != telemetryPath {
+			t.Fatalf("path = %q, want %q", r.URL.Path, telemetryPath)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		gotHeaders = r.Header.Clone()
+		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":""}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL+"/")
+	err := reportSkillTelemetry(telemetryPayload{
+		Event:      "update",
+		SkillName:  "xyq-skill",
+		Source:     "cli_update",
+		CliVersion: "0.0.26",
+		Platform:   "darwin",
+		Arch:       "arm64",
+	})
+	if err != nil {
+		t.Fatalf("reportSkillTelemetry() error = %v", err)
+	}
+	if gotAuth != telemetryAuthHeader {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, telemetryAuthHeader)
+	}
+	if got := gotHeaders.Get("x-use-ppe"); got != "1" {
+		t.Fatalf("x-use-ppe = %q, want 1", got)
+	}
+	if got := gotHeaders.Get("x-tt-env"); got != "ppe_harness_novel_v2" {
+		t.Fatalf("x-tt-env = %q, want ppe_harness_novel_v2", got)
+	}
+	if gotPayload.Event != "update" || gotPayload.SkillName != "xyq-skill" || gotPayload.Source != "cli_update" {
+		t.Fatalf("payload = %#v", gotPayload)
+	}
+}
+
+func TestTelemetryBaseURL(t *testing.T) {
+	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", "   ")
+	t.Setenv("XYQ_OPENAPI_BASE", "https://example.com///")
+	if got := telemetryBaseURL(); got != "https://example.com" {
+		t.Fatalf("telemetryBaseURL() = %q, want https://example.com", got)
+	}
+}
+
+func TestStripPrereleaseVersion(t *testing.T) {
+	cases := map[string]string{
+		"0.0.27":       "0.0.27",
+		"0.0.27-rc.1":  "0.0.27",
+		"1.2.3-beta.4": "1.2.3",
+	}
+	for input, want := range cases {
+		if got := stripPrereleaseVersion(input); got != want {
+			t.Fatalf("stripPrereleaseVersion(%q) = %q, want %q", input, got, want)
 		}
 	}
 }
