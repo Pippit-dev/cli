@@ -1,13 +1,13 @@
 {
   "name": "@pippit-dev/cli",
-  "version": "0.0.27",
+  "version": "0.0.28",
   "description": "Pippit CLI",
   "bin": {
     "pippit-tool-cli": "scripts/run.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && go test ./... && go vet ./..."
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && go test ./... && go vet ./..."
   },
   "os": [
     "darwin",

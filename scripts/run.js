@@ -38,7 +38,7 @@ if (process.platform === "win32" && fs.existsSync(oldBin)) {
 // Match the lark-cli install entry: `npx @pippit-dev/cli@latest install`
 // should run the JS setup flow before the native binary exists.
 if (args[0] === "install") {
-  require("./install-wizard.js");
+  require("./install-wizard.js").main();
 } else {
   maybeWarnNewVersion(args);
 

@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestInstallSkillsInstallsAllBundledSkills(t *testing.T) {
@@ -114,6 +115,47 @@ func TestReportSkillTelemetry(t *testing.T) {
 	}
 	if gotPayload.Event != "update" || gotPayload.SkillName != "xyq-skill" || gotPayload.Source != "cli_update" {
 		t.Fatalf("payload = %#v", gotPayload)
+	}
+}
+
+func TestReportBundledSkillTelemetryWaitsBriefly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second)
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":""}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
+	start := time.Now()
+	reportBundledSkillTelemetry("update", "cli_update", &bytes.Buffer{})
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("reportBundledSkillTelemetry() blocked for %v, want <= 1.5s", elapsed)
+	}
+}
+
+func TestReportBundledSkillTelemetryReportsBothSkills(t *testing.T) {
+	skillNames := make(chan string, len(telemetrySkillNames))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload telemetryPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		skillNames <- payload.SkillName
+		_, _ = w.Write([]byte(`{"ret":"0","errmsg":""}`))
+	}))
+	defer server.Close()
+
+	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
+	reportBundledSkillTelemetry("update", "cli_update", &bytes.Buffer{})
+
+	got := map[string]bool{}
+	for i := 0; i < len(telemetrySkillNames); i++ {
+		got[<-skillNames] = true
+	}
+	for _, skillName := range telemetrySkillNames {
+		if !got[skillName] {
+			t.Fatalf("missing telemetry for %s, got %#v", skillName, got)
+		}
 	}
 }
 

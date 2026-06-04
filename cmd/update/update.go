@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/version"
@@ -23,6 +24,7 @@ const (
 	defaultTelemetryBaseURL = "https://xyq.jianying.com"
 	telemetryPath           = "/api/biz/v1/skill/report_telemetry"
 	telemetryAuthHeader     = "Bearer pippit-cli-skill-telemetry"
+	telemetryWaitTimeout    = time.Second
 )
 
 var legacyGlobalSkills = []string{
@@ -35,7 +37,7 @@ var telemetrySkillNames = []string{
 	"xyq-short-drama-skill",
 }
 
-var telemetryHTTPClient = &http.Client{Timeout: 2 * time.Second}
+var telemetryHTTPClient = &http.Client{Timeout: telemetryWaitTimeout}
 
 // NewCommand builds the update command.
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
@@ -137,6 +139,7 @@ func reportBundledSkillTelemetry(event string, source string, stderr io.Writer) 
 	if os.Getenv("PIPPIT_CLI_DISABLE_TELEMETRY") == "1" {
 		return
 	}
+	var wg sync.WaitGroup
 	for _, skillName := range telemetrySkillNames {
 		payload := telemetryPayload{
 			Event:      event,
@@ -146,11 +149,22 @@ func reportBundledSkillTelemetry(event string, source string, stderr io.Writer) 
 			Platform:   runtime.GOOS,
 			Arch:       runtime.GOARCH,
 		}
+		wg.Add(1)
 		go func(payload telemetryPayload) {
+			defer wg.Done()
 			if err := reportSkillTelemetry(payload); err != nil && os.Getenv("PIPPIT_CLI_DEBUG_TELEMETRY") == "1" {
 				fmt.Fprintf(stderr, "[pippit-tool-cli] telemetry failed: %v\n", err)
 			}
 		}(payload)
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(telemetryWaitTimeout):
 	}
 }
 

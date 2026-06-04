@@ -6,7 +6,15 @@ const { isWindows, run, runSilent } = require("./platform");
 const { DEFAULT_PKG, installGlobalPackageSkills } = require("./skills");
 const { reportBundledSkillTelemetry } = require("./telemetry");
 
-const PKG = process.env.PIPPIT_CLI_INSTALL_PACKAGE || DEFAULT_PKG;
+const VERSION = require("../package.json").version.replace(/-.*$/, "");
+
+function defaultInstallPackage() {
+  return `${DEFAULT_PKG}@${VERSION}`;
+}
+
+function installPackage() {
+  return process.env.PIPPIT_CLI_INSTALL_PACKAGE || defaultInstallPackage();
+}
 
 function getGloballyInstalledVersion() {
   try {
@@ -38,13 +46,14 @@ function whichPippitToolCli() {
 }
 
 function main() {
+  const pkg = installPackage();
   const installed = getGloballyInstalledVersion();
   if (installed) {
-    console.log(`Updating global pippit-tool-cli (${installed}) via ${PKG}...`);
+    console.log(`Updating global pippit-tool-cli (${installed}) via ${pkg}...`);
   } else {
-    console.log(`Installing ${PKG} globally...`);
+    console.log(`Installing ${pkg} globally...`);
   }
-  run("npm", ["install", "-g", PKG], {
+  run("npm", ["install", "-g", pkg], {
     timeout: 120000,
     env: { ...process.env, PIPPIT_CLI_SKIP_SKILLS: "1" },
   });
@@ -57,7 +66,7 @@ function main() {
       throw err;
     }
     console.log("Existing global package does not contain skills; reinstalling...");
-    run("npm", ["install", "-g", PKG], { timeout: 120000 });
+    run("npm", ["install", "-g", pkg], { timeout: 120000 });
     installGlobalPackageSkills(DEFAULT_PKG);
   }
 
@@ -73,4 +82,12 @@ function main() {
   console.log("Try: pippit-tool-cli short-drama +submit-run --message \"写一个短剧开头\"");
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  defaultInstallPackage,
+  installPackage,
+  main,
+};
