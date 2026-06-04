@@ -143,7 +143,7 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 }
 
 func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts short_drama.GetThreadOptions
+	var opts common.GetThreadOptions
 
 	cmd := &cobra.Command{
 		Use:   "+get-thread",
@@ -161,7 +161,7 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 			}
 			opts.RunID = strings.TrimSpace(opts.RunID)
 
-			result, err := short_drama.GetThread(cmd.Context(), &opts, runner)
+			result, err := common.GetThread(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}

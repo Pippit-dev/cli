@@ -1,10 +1,9 @@
-package short_drama
+package common
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
@@ -29,7 +28,7 @@ type getThreadResponse struct {
 	} `json:"data"`
 }
 
-func GetThread(ctx context.Context, opts *GetThreadOptions, runner *common.Runner) (*GetThreadResult, error) {
+func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*GetThreadResult, error) {
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("get_thread runner client is required")
 	}
@@ -61,7 +60,7 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *common.Runne
 	}, nil
 }
 
-func getThreadPath(runner *common.Runner) string {
+func getThreadPath(runner *Runner) string {
 	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.GetThread != "" {
 		return runner.Config.Paths.GetThread
 	}
