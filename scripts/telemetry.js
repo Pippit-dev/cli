@@ -48,8 +48,6 @@ function reportSkillTelemetry(payload) {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body),
         "Authorization": AUTH_HEADER,
-        "x-use-ppe": "1",
-        "x-tt-env": "ppe_harness_novel_v2",
       },
     }, (res) => {
       res.resume();

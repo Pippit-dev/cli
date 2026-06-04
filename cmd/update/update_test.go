@@ -77,14 +77,12 @@ func TestCleanupLegacyGlobalSkills(t *testing.T) {
 
 func TestReportSkillTelemetry(t *testing.T) {
 	var gotAuth string
-	var gotHeaders http.Header
 	var gotPayload telemetryPayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != telemetryPath {
 			t.Fatalf("path = %q, want %q", r.URL.Path, telemetryPath)
 		}
 		gotAuth = r.Header.Get("Authorization")
-		gotHeaders = r.Header.Clone()
 		if err := json.NewDecoder(r.Body).Decode(&gotPayload); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
@@ -106,12 +104,6 @@ func TestReportSkillTelemetry(t *testing.T) {
 	}
 	if gotAuth != telemetryAuthHeader {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, telemetryAuthHeader)
-	}
-	if got := gotHeaders.Get("x-use-ppe"); got != "1" {
-		t.Fatalf("x-use-ppe = %q, want 1", got)
-	}
-	if got := gotHeaders.Get("x-tt-env"); got != "ppe_harness_novel_v2" {
-		t.Fatalf("x-tt-env = %q, want ppe_harness_novel_v2", got)
 	}
 	if gotPayload.Event != "update" || gotPayload.SkillName != "xyq-skill" || gotPayload.Source != "cli_update" {
 		t.Fatalf("payload = %#v", gotPayload)

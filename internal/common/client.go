@@ -202,8 +202,6 @@ func (c *httpClient) injectHeaders(req *http.Request) {
 		}
 	}
 	req.Header.Set("User-Agent", "Pippit-CLI/1.0")
-	req.Header.Set("x-use-ppe", "1")
-	req.Header.Set("x-tt-env", "ppe_harness_novel_v2")
 }
 
 func (c *httpClient) do(req *http.Request, out any) error {

@@ -180,8 +180,6 @@ func reportSkillTelemetry(payload telemetryPayload) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", telemetryAuthHeader)
-	req.Header.Set("x-use-ppe", "1")
-	req.Header.Set("x-tt-env", "ppe_harness_novel_v2")
 
 	resp, err := telemetryHTTPClient.Do(req)
 	if err != nil {
