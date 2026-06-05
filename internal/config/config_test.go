@@ -38,8 +38,8 @@ func TestLoadUsesDefaultConfig(t *testing.T) {
 	if cfg.Paths.SubmitRun != SubmitRunPath {
 		t.Fatalf("SubmitRun path = %q, want %q", cfg.Paths.SubmitRun, SubmitRunPath)
 	}
-	if cfg.Paths.GenerateVideoSubmitRun != AgentSubmitRunPath {
-		t.Fatalf("GenerateVideoSubmitRun path = %q, want %q", cfg.Paths.GenerateVideoSubmitRun, AgentSubmitRunPath)
+	if cfg.Paths.GenerateVideoSubmitRun != SubmitRunPath {
+		t.Fatalf("GenerateVideoSubmitRun path = %q, want %q", cfg.Paths.GenerateVideoSubmitRun, SubmitRunPath)
 	}
 }
 

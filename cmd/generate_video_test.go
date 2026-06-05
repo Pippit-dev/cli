@@ -37,7 +37,7 @@ func TestGenerateVideo(t *testing.T) {
 			}
 			uploadIndex++
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"` + assetIDs[uploadIndex-1] + `"}}`))
-		case "/api/biz/v1/agent/submit_run":
+		case "/api/biz/v1/skill/submit_run":
 			if uploadIndex != len(assetIDs) {
 				t.Fatalf("submit called after %d uploads, want %d", uploadIndex, len(assetIDs))
 			}
@@ -52,42 +52,12 @@ func TestGenerateVideo(t *testing.T) {
 			if body["agent_name"] != "pippit_video_part_agent" {
 				t.Fatalf("agent_name = %v, want video part agent", body["agent_name"])
 			}
-			message, ok := body["message"].(map[string]any)
+			if body["message"] != "做个小猫视频" {
+				t.Fatalf("message = %v, want submitted prompt", body["message"])
+			}
+			param, ok := body["video_part_tool_param"].(map[string]any)
 			if !ok {
-				t.Fatalf("message = %#v, want object", body["message"])
-			}
-			if message["role"] != "user" {
-				t.Fatalf("message.role = %v, want user", message["role"])
-			}
-			content, ok := message["content"].([]any)
-			if !ok || len(content) != 1 {
-				t.Fatalf("message.content = %#v, want one part", message["content"])
-			}
-			part, ok := content[0].(map[string]any)
-			if !ok {
-				t.Fatalf("part = %#v, want object", content[0])
-			}
-			if part["type"] != "data" || part["sub_type"] != "biz/x_data_direct_tool_call_req" {
-				t.Fatalf("part = %#v, want direct tool call data part", part)
-			}
-			toolData, ok := part["data"].(string)
-			if !ok {
-				t.Fatalf("part.data = %#v, want JSON string", part["data"])
-			}
-			var toolCall map[string]any
-			if err := sonic.UnmarshalString(toolData, &toolCall); err != nil {
-				t.Fatalf("decode tool call: %v", err)
-			}
-			if toolCall["tool_name"] != "biz/x_tool_name_video_part" {
-				t.Fatalf("tool_name = %v, want video part tool", toolCall["tool_name"])
-			}
-			paramRaw, ok := toolCall["param"].(string)
-			if !ok {
-				t.Fatalf("tool param = %#v, want JSON string", toolCall["param"])
-			}
-			var param map[string]any
-			if err := sonic.UnmarshalString(paramRaw, &param); err != nil {
-				t.Fatalf("decode video param: %v", err)
+				t.Fatalf("video_part_tool_param = %#v, want object", body["video_part_tool_param"])
 			}
 			if param["prompt"] != "做个小猫视频" {
 				t.Fatalf("prompt = %v, want submitted prompt", param["prompt"])
@@ -149,7 +119,7 @@ func TestGenerateVideo(t *testing.T) {
 func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/biz/v1/agent/submit_run":
+		case "/api/biz/v1/skill/submit_run":
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"}}}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)

@@ -9,15 +9,10 @@ import (
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
-	"github.com/bytedance/sonic"
 )
 
 const (
-	agentNameVideoPart        = "pippit_video_part_agent"
-	partTypeData              = "data"
-	partSubTypeDirectToolCall = "biz/x_data_direct_tool_call_req"
-	toolNameVideoPart         = "biz/x_tool_name_video_part"
-	messageRoleUser           = "user"
+	agentNameVideoPart = "pippit_video_part_agent"
 )
 
 // Options is the stable command-facing request shape for generate_video.
@@ -45,22 +40,6 @@ type videoPartToolParam struct {
 	Model        string       `json:"model,omitempty"`
 	Resolution   string       `json:"resolution,omitempty"`
 	GenerateType *int         `json:"generate_type,omitempty"`
-}
-
-type directToolCallPart struct {
-	ToolName string `json:"tool_name"`
-	Param    string `json:"param"`
-}
-
-type messagePart struct {
-	Type    string `json:"type"`
-	SubType string `json:"sub_type"`
-	Data    string `json:"data"`
-}
-
-type message struct {
-	Role    string        `json:"role"`
-	Content []messagePart `json:"content"`
 }
 
 type submitRunResponse struct {
@@ -101,10 +80,7 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		return nil, fmt.Errorf("upload video: %w", err)
 	}
 
-	body, err := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs)
-	if err != nil {
-		return nil, err
-	}
+	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs)
 
 	var resp submitRunResponse
 	if err := runner.Client.SendRequest(ctx, submitRunPath(runner), body, &resp); err != nil {
@@ -152,7 +128,7 @@ func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner)
 	return assetIDs, nil
 }
 
-func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string) (map[string]any, error) {
+func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string) map[string]any {
 	param := videoPartToolParam{
 		Images:       assetRefs(imageAssetIDs),
 		Prompt:       strings.TrimSpace(opts.Prompt),
@@ -163,32 +139,12 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []s
 		Resolution:   strings.TrimSpace(opts.Resolution),
 		GenerateType: opts.GenerateType,
 	}
-	paramJSON, err := sonic.MarshalString(param)
-	if err != nil {
-		return nil, fmt.Errorf("encode video part param: %w", err)
-	}
-
-	toolCallJSON, err := sonic.MarshalString(directToolCallPart{
-		ToolName: toolNameVideoPart,
-		Param:    paramJSON,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("encode direct tool call: %w", err)
-	}
 
 	return map[string]any{
-		"agent_name": agentNameVideoPart,
-		"message": message{
-			Role: messageRoleUser,
-			Content: []messagePart{
-				{
-					Type:    partTypeData,
-					SubType: partSubTypeDirectToolCall,
-					Data:    toolCallJSON,
-				},
-			},
-		},
-	}, nil
+		"agent_name":            agentNameVideoPart,
+		"message":               strings.TrimSpace(opts.Prompt),
+		"video_part_tool_param": param,
+	}
 }
 
 func assetRefs(assetIDs []string) []mediaAsset {
@@ -221,5 +177,5 @@ func submitRunPath(runner *common.Runner) string {
 	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.GenerateVideoSubmitRun != "" {
 		return runner.Config.Paths.GenerateVideoSubmitRun
 	}
-	return config.AgentSubmitRunPath
+	return config.SubmitRunPath
 }

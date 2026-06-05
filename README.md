@@ -210,7 +210,7 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 
 ## 生视频 CLI
 
-`generate_video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交 direct tool call 请求：
+`generate_video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交生视频请求：
 
 ```bash
 pippit-tool-cli generate_video \
