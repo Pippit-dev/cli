@@ -10,13 +10,12 @@ import (
 
 // SubmitRunOptions is the stable command-facing request shape for short drama run submission.
 type SubmitRunOptions struct {
-	Message   string   `json:"message"`
-	ThreadID  string   `json:"thread_id,omitempty"`
-	AssetIDs  []string `json:"asset_ids,omitempty"`
-	AgentName string   `json:"agent_name,omitempty"`
+	Message  string   `json:"message"`
+	ThreadID string   `json:"thread_id,omitempty"`
+	AssetIDs []string `json:"asset_ids,omitempty"`
 }
 
-// SubmitRunResult is the JSON envelope printed by `pippit-cli short-drama +submit-run`.
+// SubmitRunResult is the JSON envelope printed by `pippit-tool-cli short-drama +submit-run`.
 type SubmitRunResult struct {
 	ThreadID      string `json:"thread_id"`
 	RunID         string `json:"run_id"`
@@ -49,9 +48,7 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	if len(opts.AssetIDs) > 0 {
 		body["asset_ids"] = opts.AssetIDs
 	}
-	if opts.AgentName != "" {
-		body["agent_name"] = opts.AgentName
-	}
+	body["agent_name"] = "pippit_nest_novel_agent"
 
 	var resp submitRunResponse
 	if err := runner.Client.SendRequest(ctx, submitRunPath(runner), body, &resp); err != nil {

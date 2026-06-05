@@ -1,13 +1,13 @@
 {
   "name": "@pippit-dev/cli",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Pippit CLI",
   "bin": {
-    "pippit-cli": "scripts/run.js"
+    "pippit-tool-cli": "scripts/run.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "go test ./... && go vet ./..."
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && go test ./... && go vet ./..."
   },
   "os": [
     "darwin",
@@ -29,12 +29,15 @@
   "files": [
     "cmd",
     "internal",
+    "skills",
     "scripts/install.js",
     "scripts/install-wizard.js",
+    "scripts/platform.js",
     "scripts/run.js",
-    "go.mod",
-    "go.sum",
-    "main.go",
+    "scripts/skills.js",
+    "scripts/telemetry.js",
+    "scripts/version-check.js",
+    "checksums.txt",
     "README.md",
     "LICENSE"
   ],

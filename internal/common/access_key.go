@@ -21,9 +21,11 @@ func (a *accessKeyAuthorizer) Inject(ctx context.Context, req *http.Request) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if a.accessKey == "" {
-		return fmt.Errorf("%s is required for authenticated requests", config.EnvXYQAccessKey)
+	if a.accessKey == "" && req.Method == http.MethodPost {
+		return fmt.Errorf("%s 缺失. 请前往小云雀官网个人设置页创建 Access Key，地址：https://xyq.jianying.com/home?tab_name=home\n配置后重试：\n  export %s=\"<your-access-key>\"", config.EnvXYQAccessKey, config.EnvXYQAccessKey)
 	}
-	req.Header.Set("Authorization", "Bearer "+a.accessKey)
+	if a.accessKey != "" {
+		req.Header.Set("Authorization", "Bearer "+a.accessKey)
+	}
 	return nil
 }

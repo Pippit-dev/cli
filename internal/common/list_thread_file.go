@@ -3,9 +3,13 @@ package common
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
+
+const MaxListThreadFilePageSize = 200
 
 // ListThreadFileOptions is the command-facing request shape for listing thread files.
 type ListThreadFileOptions struct {
@@ -16,15 +20,16 @@ type ListThreadFileOptions struct {
 
 // ThreadFile is a file entry in a thread.
 type ThreadFile struct {
-	FileName    string `json:"file_name"`
 	FilePath    string `json:"file_path"`
 	DownloadURL string `json:"download_url"`
+	UpdatedAt   *int64 `json:"updated_at,omitempty"`
 }
 
-// ListThreadFileResult is the JSON envelope printed by `pippit-cli short-drama +list-thread-file`.
+// ListThreadFileResult is the JSON envelope printed by `pippit-tool-cli short-drama +list-thread-file`.
 type ListThreadFileResult struct {
-	Files []*ThreadFile `json:"files"`
-	Total int64         `json:"total"`
+	Files   []*ThreadFile `json:"files"`
+	Total   int64         `json:"total"`
+	Message string        `json:"message"`
 }
 
 type listThreadFileResponse struct {
@@ -33,9 +38,15 @@ type listThreadFileResponse struct {
 	SvrTime int64  `json:"svr_time"`
 	LogID   string `json:"log_id"`
 	Data    struct {
-		Files []*ThreadFile `json:"files"`
-		Total int64         `json:"total"`
+		Files []*threadFileResponse `json:"files"`
+		Total int64                 `json:"total"`
 	} `json:"data"`
+}
+
+type threadFileResponse struct {
+	FilePath    string `json:"file_path"`
+	DownloadURL string `json:"download_url"`
+	UpdatedAt   *int64 `json:"updated_at,omitempty"`
 }
 
 func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Runner) (*ListThreadFileResult, error) {
@@ -64,10 +75,46 @@ func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Ru
 		return nil, fmt.Errorf("list_thread_file failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 
+	files := make([]*ThreadFile, 0, len(resp.Data.Files))
+	for _, file := range resp.Data.Files {
+		if file == nil {
+			continue
+		}
+		files = append(files, &ThreadFile{
+			FilePath:    threadFilePath(opts.ThreadID, file.FilePath),
+			DownloadURL: file.DownloadURL,
+			UpdatedAt:   file.UpdatedAt,
+		})
+	}
+
 	return &ListThreadFileResult{
-		Files: resp.Data.Files,
-		Total: resp.Data.Total,
+		Files:   files,
+		Total:   resp.Data.Total,
+		Message: listThreadFileMessage(resp.Data.Total, opts.PageNum),
 	}, nil
+}
+
+func listThreadFileMessage(total int64, pageNum int) string {
+	start, end := "<system-remind>", "</system-remind>"
+	if pageNum <= 0 {
+		pageNum = 1
+	}
+	var message string
+	if total >= MaxListThreadFilePageSize {
+		message = fmt.Sprintf("total reached %d; query the next page with --page-num %d", MaxListThreadFilePageSize, pageNum+1)
+	} else {
+		message = fmt.Sprintf("total is below %d; continue querying with current --page-num %d", MaxListThreadFilePageSize, pageNum)
+	}
+	return fmt.Sprintf("%s\n- %s\n%s", start, message, end)
+}
+
+func threadFilePath(threadID string, filePath string) string {
+	parts := []string{strings.TrimSpace(threadID)}
+	trimmedFilePath := strings.Trim(strings.TrimSpace(filePath), `/\`)
+	if trimmedFilePath != "" {
+		parts = append(parts, trimmedFilePath)
+	}
+	return "." + string(filepath.Separator) + filepath.Join(parts...)
 }
 
 func listThreadFilePath(runner *Runner) string {
