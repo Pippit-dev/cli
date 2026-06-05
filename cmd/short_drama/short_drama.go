@@ -82,6 +82,9 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 			if opts.Path == "" {
 				return fmt.Errorf("--path is required")
 			}
+			if !isShortDramaUploadFile(opts.Path) {
+				return fmt.Errorf("unsupported file extension %q; only .doc, .docx, and .txt uploads are supported", strings.ToLower(filepath.Ext(opts.Path)))
+			}
 
 			result, err := common.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
@@ -236,6 +239,15 @@ func fileNameForLog(path string) string {
 		return ""
 	}
 	return filepath.Base(path)
+}
+
+func isShortDramaUploadFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".doc", ".docx", ".txt":
+		return true
+	default:
+		return false
+	}
 }
 
 func writeJSON(w io.Writer, v any) error {

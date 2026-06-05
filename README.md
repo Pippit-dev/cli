@@ -208,6 +208,24 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 
 短剧命令的错误日志会追加写入本地每日日志文件：`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`。日志路径会基于当前用户主目录和系统路径分隔符生成，因此可在 macOS、Linux 和 Windows 上使用。
 
+## 生视频 CLI
+
+`generate_video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交 direct tool call 请求：
+
+```bash
+pippit-tool-cli generate_video \
+  --prompt "做个小猫视频" \
+  --images "~/images/cat1.jpg" "~/images/cat2.jpg" \
+  --videos "~/images/video1.mp4" "~/images/video2.mp4" \
+  --duration 5 \
+  --ratio "9:16" \
+  --model "seedance2.0_vision" \
+  --resolution "720p" \
+  --generate-type 0
+```
+
+命令输出 `thread_id`、`run_id`、`web_thread_link` 以及本次上传得到的素材 `asset_id` 列表。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+
 ## HTTP 客户端
 
 命令模块通过 `common.Runner` 发起服务调用。运行时配置，例如基础地址、HTTP 超时时间和接口路径，由 `internal/config` 加载，并在运行器中与 `common.Client` 组合使用。

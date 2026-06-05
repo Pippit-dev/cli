@@ -13,6 +13,7 @@ const (
 	DefaultOAuthClientKey       = "mock-cli"
 	DefaultOAuthBaseURL         = "https://passport.bytedance.com"
 	DefaultAuthStoreServiceName = "pippit-cli"
+	AgentSubmitRunPath          = "/api/biz/v1/agent/submit_run"
 	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
 	GetThreadPath               = "/api/biz/v1/skill/get_thread"
 	UploadFilePath              = "/api/biz/v1/skill/upload_file"
@@ -39,10 +40,11 @@ type OAuth struct {
 }
 
 type Paths struct {
-	SubmitRun      string
-	GetThread      string
-	UploadFile     string
-	ListThreadFile string
+	SubmitRun              string
+	GenerateVideoSubmitRun string
+	GetThread              string
+	UploadFile             string
+	ListThreadFile         string
 }
 
 // Load resolves the built-in runtime config.
@@ -54,10 +56,11 @@ func Load() *Config {
 		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
 		OAuth:       resolveOAuth(),
 		Paths: &Paths{
-			SubmitRun:      SubmitRunPath,
-			GetThread:      GetThreadPath,
-			UploadFile:     UploadFilePath,
-			ListThreadFile: ListThreadFilePath,
+			SubmitRun:              SubmitRunPath,
+			GenerateVideoSubmitRun: AgentSubmitRunPath,
+			GetThread:              GetThreadPath,
+			UploadFile:             UploadFilePath,
+			ListThreadFile:         ListThreadFilePath,
 		},
 	}
 }

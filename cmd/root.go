@@ -5,6 +5,7 @@ import (
 	"os"
 
 	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -29,7 +30,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root := &cobra.Command{
 		Use:           "pippit-tool-cli",
 		Short:         "Pippit CLI",
-		Long:          "Pippit CLI submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
+		Long:          "Pippit CLI generates videos, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
 		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -39,6 +40,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	// root.AddCommand(authcmd.NewCommand(stdout, stderr, runner)) // temporarily disabled; auth is via access key injection
+	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))
 	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
 	return root

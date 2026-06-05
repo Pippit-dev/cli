@@ -124,7 +124,8 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	}
 	got := stdout.String()
 	for _, want := range []string{
-		"Pippit CLI submits short-drama workflows",
+		"Pippit CLI generates videos",
+		"generate_video",
 		"short-drama",
 		"update",
 		"--version",
@@ -942,13 +943,13 @@ func assertAccessKeyGuidance(t *testing.T, err error) {
 		t.Fatal("error = nil, want access key guidance")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "XYQ_ACCESS_KEY is required") {
+	if !strings.Contains(msg, "XYQ_ACCESS_KEY 缺失") {
 		t.Fatalf("error = %q, want access key guidance", err)
 	}
 	if !strings.Contains(msg, "https://xyq.jianying.com/home?tab_name=home") {
 		t.Fatalf("error = %q, want access key settings URL", err)
 	}
-	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<access-key>"`) {
+	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<your-access-key>"`) {
 		t.Fatalf("error = %q, want setup command guidance", err)
 	}
 }
