@@ -46,6 +46,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
+	root.AddCommand(generate_video.NewQueryResultCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))
 	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
 	localizeFlagErrors(root)

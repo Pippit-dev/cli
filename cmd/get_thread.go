@@ -27,6 +27,7 @@ func newGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra
 				return fmt.Errorf("--thread-id is required")
 			}
 			opts.RunID = strings.TrimSpace(opts.RunID)
+			opts.Version = common.GetThreadVersionV2
 
 			result, err := common.GetThread(cmd.Context(), &opts, runner)
 			if err != nil {

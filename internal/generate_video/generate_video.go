@@ -55,11 +55,9 @@ type videoPartToolParam struct {
 
 // Result is the JSON envelope printed by `pippit-tool-cli generate_video`.
 type Result struct {
-	ThreadID      string   `json:"thread_id"`
-	RunID         string   `json:"run_id"`
-	WebThreadLink string   `json:"web_thread_link"`
-	ImageAssetIDs []string `json:"image_asset_ids,omitempty"`
-	VideoAssetIDs []string `json:"video_asset_ids,omitempty"`
+	ThreadID      string `json:"thread_id"`
+	RunID         string `json:"run_id"`
+	WebThreadLink string `json:"web_thread_link"`
 }
 
 func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, error) {
@@ -102,8 +100,6 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		ThreadID:      resp.Data.Run.ThreadID,
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,
-		ImageAssetIDs: imageAssetIDs,
-		VideoAssetIDs: videoAssetIDs,
 	}, nil
 }
 

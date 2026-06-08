@@ -179,6 +179,103 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
+	var requestedDownload bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
+		}
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			if r.Method != http.MethodPost {
+				t.Fatalf("get_thread method = %s, want POST", r.Method)
+			}
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			var body map[string]any
+			if err := sonic.Unmarshal(data, &body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body["thread_id"] != "thread_123" {
+				t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
+			}
+			if body["run_id"] != "run_456" {
+				t.Fatalf("run_id = %v, want run_456", body["run_id"])
+			}
+			if _, ok := body["version"]; ok {
+				t.Fatalf("version = %v, want omitted", body["version"])
+			}
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_prompt_text","data":"做个小猫视频"},{"sub_type":"biz/x_data_video","data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\"}}"}]}}]}]}}}`))
+		case "/video.mp4":
+			requestedDownload = true
+			if r.Method != http.MethodGet {
+				t.Fatalf("download method = %s, want GET", r.Method)
+			}
+			_, _ = w.Write([]byte("video-data"))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	downloadDir := filepath.Join(t.TempDir(), "downloads")
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"query_result",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--download-dir", downloadDir,
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	outputPath := filepath.Join(downloadDir, "cat_video.mp4")
+	if !requestedDownload {
+		t.Fatal("download endpoint was not requested")
+	}
+	if got := stdout.String(); !strings.Contains(got, "Run 已完成，产物已下载：") || !strings.Contains(got, outputPath) {
+		t.Fatalf("stdout = %q, want download path", got)
+	}
+	assertFileContent(t, outputPath, "video-data")
+}
+
+func TestQueryResultPendingDoesNotDownload(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":1}]}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"query_result",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--download-dir", t.TempDir(),
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if got := stdout.String(); !strings.Contains(got, "Run 尚未完成，当前状态：1") {
+		t.Fatalf("stdout = %q, want pending state", got)
+	}
+}
+
+func serverURL(r *http.Request) string {
+	return "http://" + r.Host
+}
+
 func assertAssetRefs(t *testing.T, got any, want []string) {
 	t.Helper()
 	items, ok := got.([]any)

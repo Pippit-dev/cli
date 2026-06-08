@@ -230,6 +230,17 @@ pippit-tool-cli generate_video \
 
 命令输出 `thread_id`、`run_id`、`web_thread_link` 以及本次上传得到的素材 `asset_id` 列表。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
+查询并下载生视频结果：
+
+```bash
+pippit-tool-cli query_result \
+  --thread-id "skill_xxx" \
+  --run-id "skill_xxx" \
+  --download-dir "./output"
+```
+
+`query_result` 会查询指定 Run；Run 完成后下载视频产物并输出本地结果路径，未完成时输出当前状态和重试提示。
+
 ## HTTP 客户端
 
 命令模块通过 `common.Runner` 发起服务调用。运行时配置，例如基础地址、HTTP 超时时间和接口路径，由 `internal/config` 加载，并在运行器中与 `common.Client` 组合使用。
