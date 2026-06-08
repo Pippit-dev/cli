@@ -125,8 +125,11 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	got := stdout.String()
 	for _, want := range []string{
 		"Pippit CLI submits short-drama workflows",
+		"download-result",
 		"get-thread",
+		"list-thread-file",
 		"short-drama",
+		"upload-file",
 		"update",
 		"--version",
 	} {
@@ -141,7 +144,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	}
 }
 
-func TestShortDramaDoesNotIncludeGetThreadCommand(t *testing.T) {
+func TestShortDramaDoesNotIncludeCommonThreadCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	cmd, _, err := root.Find([]string{"short-drama"})
@@ -151,9 +154,15 @@ func TestShortDramaDoesNotIncludeGetThreadCommand(t *testing.T) {
 	if cmd.CommandPath() != "pippit-tool-cli short-drama" {
 		t.Fatalf("CommandPath() = %q, want short-drama command", cmd.CommandPath())
 	}
+	removedCommands := map[string]bool{
+		"+download-result":  true,
+		"+get-thread":       true,
+		"+list-thread-file": true,
+		"+upload-file":      true,
+	}
 	for _, child := range cmd.Commands() {
-		if child.Name() == "+get-thread" {
-			t.Fatalf("short-drama child +get-thread = %#v, want nil", child)
+		if removedCommands[child.Name()] {
+			t.Fatalf("short-drama child %s = %#v, want nil", child.Name(), child)
 		}
 	}
 }
@@ -205,7 +214,7 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestShortDramaUploadFile(t *testing.T) {
+func TestUploadFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -256,7 +265,7 @@ func TestShortDramaUploadFile(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
+	root.SetArgs([]string{"upload-file", "--path", path})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
@@ -268,10 +277,10 @@ func TestShortDramaUploadFile(t *testing.T) {
 	}
 }
 
-func TestShortDramaUploadFileRequiresPath(t *testing.T) {
+func TestUploadFileRequiresPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+upload-file"})
+	root.SetArgs([]string{"upload-file"})
 
 	err := root.Execute()
 	if err == nil {
@@ -282,7 +291,7 @@ func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	}
 }
 
-func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
+func TestUploadFileRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -296,7 +305,7 @@ func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
+	root.SetArgs([]string{"upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
@@ -305,7 +314,7 @@ func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
+func TestUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	cwd := chdirTemp(t)
 	path := filepath.Join(cwd, "story.png")
 	if err := os.WriteFile(path, []byte("png-data"), 0o644); err != nil {
@@ -314,7 +323,7 @@ func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
+	root.SetArgs([]string{"upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
@@ -325,7 +334,7 @@ func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResult(t *testing.T) {
+func TestDownloadResult(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("User-Agent") != "Pippit-CLI/1.0" {
 			t.Fatalf("User-Agent = %q, want Pippit-CLI/1.0", r.Header.Get("User-Agent"))
@@ -344,7 +353,7 @@ func TestShortDramaDownloadResult(t *testing.T) {
 	root := NewRootCommand(&stdout, &stderr)
 	outputPath := filepath.Join("results", "cover.jpeg")
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--workers", "2",
 		"--url", server.URL + "/image?filename=ignored.jpeg",
@@ -376,7 +385,7 @@ func TestShortDramaDownloadResult(t *testing.T) {
 	assertFileContent(t, wantFiles[0], "image-data")
 }
 
-func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
+func TestDownloadResultSkipsExistingFile(t *testing.T) {
 	serverCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serverCalled = true
@@ -396,7 +405,7 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--url", server.URL + "/image",
 	})
@@ -422,7 +431,7 @@ func TestShortDramaDownloadResultSkipsExistingFile(t *testing.T) {
 	assertFileContent(t, outputPath, "existing-data")
 }
 
-func TestShortDramaDownloadResultSkipsExistingFileWhenLocalIsFresh(t *testing.T) {
+func TestDownloadResultSkipsExistingFileWhenLocalIsFresh(t *testing.T) {
 	serverCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serverCalled = true
@@ -447,7 +456,7 @@ func TestShortDramaDownloadResultSkipsExistingFileWhenLocalIsFresh(t *testing.T)
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--updated-at", "1779716734",
 		"--url", server.URL + "/image",
@@ -468,7 +477,7 @@ func TestShortDramaDownloadResultSkipsExistingFileWhenLocalIsFresh(t *testing.T)
 	assertFileContent(t, outputPath, "existing-data")
 }
 
-func TestShortDramaDownloadResultOverwritesStaleExistingFile(t *testing.T) {
+func TestDownloadResultOverwritesStaleExistingFile(t *testing.T) {
 	serverCalled := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		serverCalled = true
@@ -496,7 +505,7 @@ func TestShortDramaDownloadResultOverwritesStaleExistingFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--updated-at", "1779716734",
 		"--url", server.URL + "/image",
@@ -527,7 +536,7 @@ func TestShortDramaDownloadResultOverwritesStaleExistingFile(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultDownloadsMetaJSON(t *testing.T) {
+func TestDownloadResultDownloadsMetaJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/meta.json" {
 			t.Fatalf("path = %s, want meta.json", r.URL.Path)
@@ -542,7 +551,7 @@ func TestShortDramaDownloadResultDownloadsMetaJSON(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--url", server.URL + "/meta.json",
 	})
@@ -565,10 +574,10 @@ func TestShortDramaDownloadResultDownloadsMetaJSON(t *testing.T) {
 	assertFileContent(t, outputPath, `{"ok":true}`)
 }
 
-func TestShortDramaDownloadResultRequiresOutputPath(t *testing.T) {
+func TestDownloadResultRequiresOutputPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-result", "--url", "https://example.com/image.png"})
+	root.SetArgs([]string{"download-result", "--url", "https://example.com/image.png"})
 
 	err := root.Execute()
 	if err == nil {
@@ -579,11 +588,11 @@ func TestShortDramaDownloadResultRequiresOutputPath(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultRejectsOutputDirFlag(t *testing.T) {
+func TestDownloadResultRejectsOutputDirFlag(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-dir", filepath.Join("results", "image.png"),
 		"--url", "https://example.com/image.png",
 	})
@@ -597,10 +606,10 @@ func TestShortDramaDownloadResultRejectsOutputDirFlag(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
+func TestDownloadResultRequiresURL(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-result", "--output-path", filepath.Join("results", "image.png")})
+	root.SetArgs([]string{"download-result", "--output-path", filepath.Join("results", "image.png")})
 
 	err := root.Execute()
 	if err == nil {
@@ -611,10 +620,10 @@ func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultRejectsInvalidScheme(t *testing.T) {
+func TestDownloadResultRejectsInvalidScheme(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+download-result", "--output-path", filepath.Join("results", "image.png"), "--url", "file:///etc/passwd"})
+	root.SetArgs([]string{"download-result", "--output-path", filepath.Join("results", "image.png"), "--url", "file:///etc/passwd"})
 
 	err := root.Execute()
 	if err == nil {
@@ -625,7 +634,7 @@ func TestShortDramaDownloadResultRejectsInvalidScheme(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultAllFailed(t *testing.T) {
+func TestDownloadResultAllFailed(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
@@ -636,7 +645,7 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", filepath.Join("results", "missing.png"),
 		"--url", server.URL + "/notfound",
 	})
@@ -661,7 +670,7 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	}
 }
 
-func TestShortDramaDownloadResultOutputPath(t *testing.T) {
+func TestDownloadResultOutputPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("image-data"))
 	}))
@@ -673,7 +682,7 @@ func TestShortDramaDownloadResultOutputPath(t *testing.T) {
 	root := NewRootCommand(&stdout, &stderr)
 	outputPath := filepath.Join("custom", "nested", "cover.png")
 	root.SetArgs([]string{
-		"short-drama", "+download-result",
+		"download-result",
 		"--output-path", outputPath,
 		"--url", server.URL + "/image.png",
 	})
@@ -785,7 +794,7 @@ func TestGetThreadRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestShortDramaListThreadFile(t *testing.T) {
+func TestListThreadFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -820,7 +829,7 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"short-drama", "+list-thread-file",
+		"list-thread-file",
 		"--thread-id", "thread_123",
 		"--page-num", "2",
 		"--page-size", "10",
@@ -861,7 +870,7 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	}
 }
 
-func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
+func TestListThreadFileMessageWhenPageFull(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.URL.Path, "list_thread_file") {
 			t.Fatalf("path = %s, want list_thread_file path", r.URL.Path)
@@ -873,7 +882,7 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"short-drama", "+list-thread-file",
+		"list-thread-file",
 		"--thread-id", "thread_123",
 		"--page-num", "2",
 		"--page-size", "200",
@@ -890,10 +899,10 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 	}
 }
 
-func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
+func TestListThreadFileRequiresThreadID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+list-thread-file"})
+	root.SetArgs([]string{"list-thread-file"})
 
 	err := root.Execute()
 	if err == nil {
@@ -904,7 +913,7 @@ func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
 	}
 }
 
-func TestShortDramaListThreadFileRequiresAccessKey(t *testing.T) {
+func TestListThreadFileRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -912,7 +921,7 @@ func TestShortDramaListThreadFileRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"short-drama", "+list-thread-file", "--thread-id", "thread_123"})
+	root.SetArgs([]string{"list-thread-file", "--thread-id", "thread_123"})
 
 	err := root.Execute()
 	if err == nil {
@@ -921,11 +930,11 @@ func TestShortDramaListThreadFileRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestShortDramaListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
+func TestListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{
-		"short-drama", "+list-thread-file",
+		"list-thread-file",
 		"--thread-id", "thread_123",
 		"--page-size", "201",
 	})
@@ -960,13 +969,13 @@ func assertAccessKeyGuidance(t *testing.T, err error) {
 		t.Fatal("error = nil, want access key guidance")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "XYQ_ACCESS_KEY is required") {
+	if !strings.Contains(msg, "XYQ_ACCESS_KEY") {
 		t.Fatalf("error = %q, want access key guidance", err)
 	}
 	if !strings.Contains(msg, "https://xyq.jianying.com/home?tab_name=home") {
 		t.Fatalf("error = %q, want access key settings URL", err)
 	}
-	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<access-key>"`) {
+	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<your-access-key>"`) {
 		t.Fatalf("error = %q, want setup command guidance", err)
 	}
 }
