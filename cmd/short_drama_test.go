@@ -130,7 +130,6 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 		"get-thread",
 		"list-thread-file",
 		"short-drama",
-		"upload-file",
 		"update",
 		"--version",
 	} {
@@ -159,7 +158,6 @@ func TestShortDramaDoesNotIncludeCommonThreadCommands(t *testing.T) {
 		"+download-result":  true,
 		"+get-thread":       true,
 		"+list-thread-file": true,
-		"+upload-file":      true,
 	}
 	for _, child := range cmd.Commands() {
 		if removedCommands[child.Name()] {
@@ -215,7 +213,7 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestUploadFile(t *testing.T) {
+func TestShortDramaUploadFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -266,7 +264,7 @@ func TestUploadFile(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
@@ -278,21 +276,21 @@ func TestUploadFile(t *testing.T) {
 	}
 }
 
-func TestUploadFileRequiresPath(t *testing.T) {
+func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"upload-file"})
+	root.SetArgs([]string{"short-drama", "+upload-file"})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "缺少必填参数 --path") {
+	if !strings.Contains(err.Error(), "--path is required") {
 		t.Fatalf("error = %q, want path validation", err)
 	}
 }
 
-func TestUploadFileRequiresAccessKey(t *testing.T) {
+func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -306,7 +304,7 @@ func TestUploadFileRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
@@ -315,7 +313,7 @@ func TestUploadFileRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestUploadFileRejectsUnsupportedFileType(t *testing.T) {
+func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	cwd := chdirTemp(t)
 	path := filepath.Join(cwd, "story.png")
 	if err := os.WriteFile(path, []byte("png-data"), 0o644); err != nil {
@@ -324,7 +322,7 @@ func TestUploadFileRejectsUnsupportedFileType(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
