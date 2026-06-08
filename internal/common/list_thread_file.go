@@ -25,7 +25,7 @@ type ThreadFile struct {
 	UpdatedAt   *int64 `json:"updated_at,omitempty"`
 }
 
-// ListThreadFileResult is the JSON envelope printed by `pippit-tool-cli short-drama +list-thread-file`.
+// ListThreadFileResult is the JSON envelope printed by `pippit-tool-cli list-thread-file`.
 type ListThreadFileResult struct {
 	Files   []*ThreadFile `json:"files"`
 	Total   int64         `json:"total"`

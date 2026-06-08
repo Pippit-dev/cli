@@ -3,7 +3,6 @@ package short_drama
 import (
 	"fmt"
 	"io"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -22,10 +21,6 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newShortDramaSubmitRunCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaDownloadResultCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaGetThreadCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaListThreadFileCommand(stdout, stderr, runner))
 	return cmd
 }
 
@@ -64,160 +59,6 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 	return cmd
 }
 
-func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.UploadFileOptions
-
-	cmd := &cobra.Command{
-		Use:   "+upload-file",
-		Short: "Upload a file for the short drama scene",
-		Args:  cobra.NoArgs,
-		RunE: withErrorLog("short-drama +upload-file", func() map[string]string {
-			return map[string]string{
-				"file_name": fileNameForLog(opts.Path),
-			}
-		}, func(cmd *cobra.Command, _ []string) error {
-			opts.Path = strings.TrimSpace(opts.Path)
-
-			if opts.Path == "" {
-				return fmt.Errorf("缺少必填参数 --path")
-			}
-			if !isShortDramaUploadFile(opts.Path) {
-				return fmt.Errorf("不支持的文件后缀 %q，仅支持上传 .doc、.docx 和 .txt", strings.ToLower(filepath.Ext(opts.Path)))
-			}
-
-			result, err := common.UploadFile(cmd.Context(), opts, runner)
-			if err != nil {
-				return err
-			}
-			return common.WriteJSON(stdout, result)
-		}),
-	}
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.Path, "path", "", "local file path to upload")
-	return cmd
-}
-
-func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.DownloadResultOptions
-
-	cmd := &cobra.Command{
-		Use:   "+download-result",
-		Short: "Download a generated result URL",
-		Args:  cobra.NoArgs,
-		RunE: withErrorLog("short-drama +download-result", func() map[string]string {
-			fields := map[string]string{
-				"output_path": opts.OutputPath,
-				"has_url":     strconv.FormatBool(strings.TrimSpace(opts.URL) != ""),
-				"workers":     strconv.Itoa(opts.Workers),
-			}
-			if opts.UpdatedAt > 0 {
-				fields["updated_at"] = strconv.FormatInt(opts.UpdatedAt, 10)
-			}
-			return fields
-		}, func(cmd *cobra.Command, _ []string) error {
-			opts.OutputPath = strings.TrimSpace(opts.OutputPath)
-			if opts.OutputPath == "" {
-				return fmt.Errorf("缺少必填参数 --output-path")
-			}
-			opts.URL = strings.TrimSpace(opts.URL)
-			if opts.URL == "" {
-				return fmt.Errorf("缺少必填参数 --url")
-			}
-			if opts.Workers <= 0 {
-				return fmt.Errorf("--workers 必须大于 0")
-			}
-
-			result, err := common.DownloadResult(cmd.Context(), opts, runner)
-			if err != nil {
-				return err
-			}
-			return common.WriteJSON(stdout, result)
-		}),
-	}
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.URL, "url", "", "URL to download")
-	cmd.Flags().StringVar(&opts.OutputPath, "output-path", "", "local output file path")
-	cmd.Flags().Int64Var(&opts.UpdatedAt, "updated-at", 0, "remote file update time as a Unix timestamp")
-	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
-	return cmd
-}
-
-func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.GetThreadOptions
-
-	cmd := &cobra.Command{
-		Use:   "+get-thread",
-		Short: "Get a short drama thread detail",
-		Args:  cobra.NoArgs,
-		RunE: withErrorLog("short-drama +get-thread", func() map[string]string {
-			return map[string]string{
-				"thread_id": opts.ThreadID,
-				"run_id":    opts.RunID,
-			}
-		}, func(cmd *cobra.Command, _ []string) error {
-			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
-			if opts.ThreadID == "" {
-				return fmt.Errorf("缺少必填参数 --thread-id")
-			}
-			opts.RunID = strings.TrimSpace(opts.RunID)
-
-			result, err := common.GetThread(cmd.Context(), &opts, runner)
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(stdout, result.ReadableText)
-			return err
-		}),
-	}
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to fetch")
-	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run ID to fetch")
-	return cmd
-}
-
-func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.ListThreadFileOptions
-
-	cmd := &cobra.Command{
-		Use:   "+list-thread-file",
-		Short: "List files in a short drama thread",
-		Args:  cobra.NoArgs,
-		RunE: withErrorLog("short-drama +list-thread-file", func() map[string]string {
-			return map[string]string{
-				"thread_id": opts.ThreadID,
-				"page_num":  strconv.Itoa(opts.PageNum),
-				"page_size": strconv.Itoa(opts.PageSize),
-			}
-		}, func(cmd *cobra.Command, _ []string) error {
-			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
-			if opts.ThreadID == "" {
-				return fmt.Errorf("缺少必填参数 --thread-id")
-			}
-			if opts.PageSize <= 0 || opts.PageSize > common.MaxListThreadFilePageSize {
-				return fmt.Errorf("--page-size 必须在 1 到 %d 之间", common.MaxListThreadFilePageSize)
-			}
-			if opts.PageNum <= 0 {
-				return fmt.Errorf("--page-num 必须大于 0")
-			}
-
-			result, err := common.ListThreadFile(cmd.Context(), &opts, runner)
-			if err != nil {
-				return err
-			}
-			return common.WriteJSON(stdout, result)
-		}),
-	}
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to list files for")
-	cmd.Flags().IntVar(&opts.PageNum, "page-num", 1, "page number (1-based)")
-	cmd.Flags().IntVar(&opts.PageSize, "page-size", common.MaxListThreadFilePageSize, fmt.Sprintf("number of files per page (between 1 and %d)", common.MaxListThreadFilePageSize))
-	return cmd
-}
-
 func withErrorLog(command string, fields func() map[string]string, run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		err := run(cmd, args)
@@ -230,14 +71,6 @@ func withErrorLog(command string, fields func() map[string]string, run func(*cob
 		}
 		return err
 	}
-}
-
-func fileNameForLog(path string) string {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return ""
-	}
-	return filepath.Base(path)
 }
 
 func isShortDramaUploadFile(path string) bool {
