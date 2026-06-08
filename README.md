@@ -196,15 +196,17 @@ npx @pippit-dev/cli@latest install
 export XYQ_ACCESS_KEY="<access-key>"
 pippit-tool-cli --version
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
-pippit-tool-cli short-drama +upload-file --path ./reference.doc
-pippit-tool-cli short-drama +get-thread --thread-id thread_123 --run-id run_456
-pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL --updated-at 1779716734
+pippit-tool-cli upload-file --path ./reference.doc
+pippit-tool-cli get-thread --thread-id thread_123 --run-id run_456
+pippit-tool-cli list-thread-file --thread-id thread_123 --page-num 1 --page-size 200
+pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --url URL --updated-at 1779716734
 ```
 
 `+submit-run`: 输出 `thread_id`、`run_id` 和 `web_thread_link`；其中 `--message` 为必填参数。
-`+get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
-`+upload-file`: 输出返回的 `asset_id`。 当前仅支持 `.doc`、`.docx` 和 `.txt` 文件。
-`+download-result`: 会把结果 URL 下载到 `--output-path` 指定的文件路径；传入 `--updated-at` 后，如果本地文件早于该时间戳会覆盖更新，否则跳过。
+`get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
+`list-thread-file`: 输出会话文件列表、分页提示和可直接传给下载命令的 `file_path`。
+`upload-file`: 输出返回的 `asset_id`。 当前仅支持 `.doc`、`.docx` 和 `.txt` 文件。
+`download-result`: 会把结果 URL 下载到 `--output-path` 指定的文件路径；传入 `--updated-at` 后，如果本地文件早于该时间戳会覆盖更新，否则跳过。
 
 短剧命令的错误日志会追加写入本地每日日志文件：`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`。日志路径会基于当前用户主目录和系统路径分隔符生成，因此可在 macOS、Linux 和 Windows 上使用。
 
@@ -214,4 +216,4 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 
 ## 鉴权
 
-`short-drama +submit-run`、`short-drama +get-thread`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
+`short-drama +submit-run`、`get-thread`、`list-thread-file`、`upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
