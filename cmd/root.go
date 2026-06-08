@@ -39,6 +39,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	// root.AddCommand(authcmd.NewCommand(stdout, stderr, runner)) // temporarily disabled; auth is via access key injection
+	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))
 	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
 	return root

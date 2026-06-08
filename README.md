@@ -197,12 +197,12 @@ export XYQ_ACCESS_KEY="<access-key>"
 pippit-tool-cli --version
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-tool-cli short-drama +upload-file --path ./reference.doc
-pippit-tool-cli short-drama +get-thread --thread-id thread_123 --run-id run_456
+pippit-tool-cli get-thread --thread-id thread_123 --run-id run_456
 pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/result.mp4 --url URL --updated-at 1779716734
 ```
 
 `+submit-run`: 输出 `thread_id`、`run_id` 和 `web_thread_link`；其中 `--message` 为必填参数。
-`+get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
+`get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
 `+upload-file`: 输出返回的 `asset_id`。 当前仅支持 `.doc`、`.docx` 和 `.txt` 文件。
 `+download-result`: 会把结果 URL 下载到 `--output-path` 指定的文件路径；传入 `--updated-at` 后，如果本地文件早于该时间戳会覆盖更新，否则跳过。
 
@@ -214,4 +214,4 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 
 ## 鉴权
 
-`short-drama +submit-run`、`short-drama +get-thread`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
+`short-drama +submit-run`、`get-thread`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。

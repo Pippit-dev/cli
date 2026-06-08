@@ -25,7 +25,6 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.AddCommand(newShortDramaSubmitRunCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaDownloadResultCommand(stdout, stderr, runner))
-	cmd.AddCommand(newShortDramaGetThreadCommand(stdout, stderr, runner))
 	cmd.AddCommand(newShortDramaListThreadFileCommand(stdout, stderr, runner))
 	return cmd
 }
@@ -139,40 +138,6 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 	cmd.Flags().StringVar(&opts.OutputPath, "output-path", "", "local output file path")
 	cmd.Flags().Int64Var(&opts.UpdatedAt, "updated-at", 0, "remote file update time as a Unix timestamp")
 	cmd.Flags().IntVar(&opts.Workers, "workers", 5, "parallel download workers")
-	return cmd
-}
-
-func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var opts common.GetThreadOptions
-
-	cmd := &cobra.Command{
-		Use:   "+get-thread",
-		Short: "Get a short drama thread detail",
-		Args:  cobra.NoArgs,
-		RunE: withErrorLog("short-drama +get-thread", func() map[string]string {
-			return map[string]string{
-				"thread_id": opts.ThreadID,
-				"run_id":    opts.RunID,
-			}
-		}, func(cmd *cobra.Command, _ []string) error {
-			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
-			if opts.ThreadID == "" {
-				return fmt.Errorf("--thread-id is required")
-			}
-			opts.RunID = strings.TrimSpace(opts.RunID)
-
-			result, err := common.GetThread(cmd.Context(), &opts, runner)
-			if err != nil {
-				return err
-			}
-			_, err = fmt.Fprintln(stdout, result.ReadableText)
-			return err
-		}),
-	}
-	cmd.SetOut(stdout)
-	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread ID to fetch")
-	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run ID to fetch")
 	return cmd
 }
 

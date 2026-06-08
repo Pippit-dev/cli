@@ -16,7 +16,7 @@ func TestAppendDailyErrorLog(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	err := AppendDailyErrorLog("short-drama +get-thread", fmt.Errorf("request failed"), map[string]string{
+	err := AppendDailyErrorLog("get-thread", fmt.Errorf("request failed"), map[string]string{
 		"thread_id":  "thread_123",
 		"access_key": "secret",
 		"empty":      "",
@@ -24,7 +24,7 @@ func TestAppendDailyErrorLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AppendDailyErrorLog(): %v", err)
 	}
-	if err := AppendDailyErrorLog("short-drama +get-thread", fmt.Errorf("second failure"), nil); err != nil {
+	if err := AppendDailyErrorLog("get-thread", fmt.Errorf("second failure"), nil); err != nil {
 		t.Fatalf("AppendDailyErrorLog() second call: %v", err)
 	}
 
@@ -42,7 +42,7 @@ func TestAppendDailyErrorLog(t *testing.T) {
 	if err := sonic.Unmarshal([]byte(lines[0]), &first); err != nil {
 		t.Fatalf("decode first log line: %v\n%s", err, lines[0])
 	}
-	if first["command"] != "short-drama +get-thread" {
+	if first["command"] != "get-thread" {
 		t.Fatalf("command = %v, want get-thread command", first["command"])
 	}
 	if first["error"] != "request failed" {

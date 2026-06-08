@@ -125,6 +125,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	got := stdout.String()
 	for _, want := range []string{
 		"Pippit CLI submits short-drama workflows",
+		"get-thread",
 		"short-drama",
 		"update",
 		"--version",
@@ -136,6 +137,23 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	for _, unwanted := range []string{"completion", "version     "} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("help output = %q, should not contain %q", got, unwanted)
+		}
+	}
+}
+
+func TestShortDramaDoesNotIncludeGetThreadCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	cmd, _, err := root.Find([]string{"short-drama"})
+	if err != nil {
+		t.Fatalf("Find(short-drama) error = %v", err)
+	}
+	if cmd.CommandPath() != "pippit-tool-cli short-drama" {
+		t.Fatalf("CommandPath() = %q, want short-drama command", cmd.CommandPath())
+	}
+	for _, child := range cmd.Commands() {
+		if child.Name() == "+get-thread" {
+			t.Fatalf("short-drama child +get-thread = %#v, want nil", child)
 		}
 	}
 }
@@ -671,7 +689,7 @@ func TestShortDramaDownloadResultOutputPath(t *testing.T) {
 	assertFileContent(t, outputPath, "image-data")
 }
 
-func TestShortDramaGetThread(t *testing.T) {
+func TestGetThread(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -709,7 +727,7 @@ func TestShortDramaGetThread(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"short-drama", "+get-thread",
+		"get-thread",
 		"--thread-id", "thread_123",
 		"--run-id", "run_456",
 	})
@@ -723,12 +741,12 @@ func TestShortDramaGetThread(t *testing.T) {
 	}
 }
 
-func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
+func TestGetThreadRequiresThreadID(t *testing.T) {
 	clearDailyErrorLog(t)
 
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"short-drama", "+get-thread"})
+	root.SetArgs([]string{"get-thread"})
 
 	err := root.Execute()
 	if err == nil {
@@ -742,7 +760,7 @@ func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("log entries = %d, want 1: %#v", len(entries), entries)
 	}
-	if entries[0]["command"] != "short-drama +get-thread" {
+	if entries[0]["command"] != "get-thread" {
 		t.Fatalf("command = %v, want get-thread", entries[0]["command"])
 	}
 	if entries[0]["error"] != "--thread-id is required" {
@@ -750,7 +768,7 @@ func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	}
 }
 
-func TestShortDramaGetThreadRequiresAccessKey(t *testing.T) {
+func TestGetThreadRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -758,7 +776,7 @@ func TestShortDramaGetThreadRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"short-drama", "+get-thread", "--thread-id", "thread_123"})
+	root.SetArgs([]string{"get-thread", "--thread-id", "thread_123"})
 
 	err := root.Execute()
 	if err == nil {
