@@ -14,14 +14,14 @@ import (
 
 const completedRunState = 3
 
-// QueryResultOptions is the command-facing request shape for query_result.
+// QueryResultOptions is the command-facing request shape for query-result.
 type QueryResultOptions struct {
 	ThreadID    string
 	RunID       string
 	DownloadDir string
 }
 
-// QueryResultResult describes the user-facing query_result outcome.
+// QueryResultResult describes the user-facing query-result outcome.
 type QueryResultResult struct {
 	Completed   bool
 	State       int
@@ -219,7 +219,7 @@ func extractQueryVideos(run queryRun) []queryVideo {
 	for _, entry := range run.EntryList {
 		artifact := entry.Artifact
 		for _, content := range artifact.Content {
-			if content.SubType != "" && content.SubType != "biz/x_data_video" {
+			if content.SubType != "biz/x_data_video" {
 				continue
 			}
 			data := content.Data

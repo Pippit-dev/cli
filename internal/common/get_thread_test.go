@@ -42,6 +42,21 @@ func TestGetThreadAllowsStructuredDataWithoutVersion(t *testing.T) {
 	}
 }
 
+func TestGetThreadRequiresRetZero(t *testing.T) {
+	_, err := GetThread(context.Background(), &GetThreadOptions{
+		ThreadID: "thread_123",
+		RunID:    "run_456",
+	}, &Runner{
+		Client: getThreadFakeClient{response: `{"errmsg":"","data":{"thread":{"thread_id":"thread_123"}}}`},
+	})
+	if err == nil {
+		t.Fatal("GetThread() error = nil, want missing ret validation")
+	}
+	if !strings.Contains(err.Error(), "获取线程请求返回失败: ret=") {
+		t.Fatalf("error = %q, want missing ret validation", err)
+	}
+}
+
 func TestGetThreadV2RequiresReadableText(t *testing.T) {
 	_, err := GetThread(context.Background(), &GetThreadOptions{
 		ThreadID: "thread_123",

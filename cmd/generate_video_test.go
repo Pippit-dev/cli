@@ -78,9 +78,6 @@ func TestGenerateVideo(t *testing.T) {
 			if param["ratio"] != "9:16" || param["model"] != "seedance2.0_vision" || param["resolution"] != "720p" {
 				t.Fatalf("param = %#v, want ratio/model/resolution", param)
 			}
-			if param["generate_type"] != float64(0) {
-				t.Fatalf("generate_type = %v, want 0", param["generate_type"])
-			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
 			assertAssetRefs(t, param["videos"], []string{"video_asset_1", "video_asset_2"})
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"},"web_thread_link":"https://xyq.example/thread_123"}}`))
@@ -114,7 +111,6 @@ func TestGenerateVideo(t *testing.T) {
 		"--ratio", "9:16",
 		"--model", "seedance2.0_vision",
 		"--resolution", "720p",
-		"--generate-type", "0",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -125,8 +121,6 @@ func TestGenerateVideo(t *testing.T) {
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("output = %#v, want thread and run IDs", got)
 	}
-	assertStringSlice(t, got["image_asset_ids"], []string{"image_asset_1", "image_asset_2"})
-	assertStringSlice(t, got["video_asset_ids"], []string{"video_asset_1", "video_asset_2"})
 }
 
 func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
@@ -149,7 +143,6 @@ func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 		"--ratio", "1:1",
 		"--model", "bad_model",
 		"--resolution", "bad_resolution",
-		"--generate-type", "99",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -176,6 +169,115 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "缺少必填参数 --prompt") {
 		t.Fatalf("error = %q, want prompt validation", err)
+	}
+}
+
+func TestGenerateVideoRejectsTooManyImages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request when image count is invalid")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	args := []string{"generate_video", "--prompt", "x"}
+	for _, path := range mediaPaths("image", ".jpg", 10) {
+		args = append(args, "--image", path)
+	}
+	root.SetArgs(args)
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want image count validation")
+	}
+	if !strings.Contains(err.Error(), "参考图片最多支持 9 个，当前传入 10 个") {
+		t.Fatalf("error = %q, want image count validation", err)
+	}
+}
+
+func TestGenerateVideoRejectsTooManyVideos(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request when video count is invalid")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	args := []string{"generate_video", "--prompt", "x"}
+	for _, path := range mediaPaths("video", ".mp4", 4) {
+		args = append(args, "--video", path)
+	}
+	root.SetArgs(args)
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want video count validation")
+	}
+	if !strings.Contains(err.Error(), "参考视频最多支持 3 个，当前传入 4 个") {
+		t.Fatalf("error = %q, want video count validation", err)
+	}
+}
+
+func TestGenerateVideoSubmitRunErrorIncludesLogID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/submit_run":
+			_, _ = w.Write([]byte(`{"ret":"16008","errmsg":"提交Run任务失败","log_id":"log_123"}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"generate_video",
+		"--prompt", "x",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want submit_run error")
+	}
+	if !strings.Contains(err.Error(), "log_id=log_123") {
+		t.Fatalf("error = %q, want log_id", err)
+	}
+}
+
+func TestGenerateVideoErrorLogIncludesLogID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/submit_run":
+			_, _ = w.Write([]byte(`{"ret":"16008","errmsg":"提交Run任务失败","log_id":"log_123"}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	clearDailyErrorLog(t)
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"generate_video",
+		"--prompt", "x",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want submit_run error")
+	}
+	entries := readDailyErrorLog(t)
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1: %#v", len(entries), entries)
+	}
+	fields, ok := entries[0]["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("fields = %#v, want object", entries[0]["fields"])
+	}
+	if fields["log_id"] != "log_123" {
+		t.Fatalf("log_id = %v, want log_123", fields["log_id"])
 	}
 }
 
@@ -224,7 +326,7 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"query_result",
+		"query-result",
 		"--thread-id", "thread_123",
 		"--run-id", "run_456",
 		"--download-dir", downloadDir,
@@ -244,6 +346,79 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 	assertFileContent(t, outputPath, "video-data")
 }
 
+func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\"}}"}]}}]}]}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"query-result",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--download-dir", t.TempDir(),
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want no downloadable video error")
+	}
+	if !strings.Contains(err.Error(), "下载失败：未找到可下载的视频产物") {
+		t.Fatalf("error = %q, want no downloadable video error", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestQueryResultErrorLogIncludesLogID(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			_, _ = w.Write([]byte(`{"ret":"5","errmsg":"创作失败","log_id":"log_456"}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	clearDailyErrorLog(t)
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"query-result",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--download-dir", t.TempDir(),
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want get_thread error")
+	}
+	entries := readDailyErrorLog(t)
+	if len(entries) != 1 {
+		t.Fatalf("log entries = %d, want 1: %#v", len(entries), entries)
+	}
+	fields, ok := entries[0]["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("fields = %#v, want object", entries[0]["fields"])
+	}
+	if fields["log_id"] != "log_456" {
+		t.Fatalf("log_id = %v, want log_456", fields["log_id"])
+	}
+	if fields["thread_id"] != "thread_123" || fields["run_id"] != "run_456" {
+		t.Fatalf("fields = %#v, want thread/run ids", fields)
+	}
+}
+
 func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -258,7 +433,7 @@ func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"query_result",
+		"query-result",
 		"--thread-id", "thread_123",
 		"--run-id", "run_456",
 		"--download-dir", t.TempDir(),
@@ -284,21 +459,16 @@ func assertAssetRefs(t *testing.T, got any, want []string) {
 	}
 	for i, item := range items {
 		ref, ok := item.(map[string]any)
-		if !ok || ref["asset_id"] != want[i] {
+		if !ok || ref["pippit_asset_id"] != want[i] {
 			t.Fatalf("asset refs[%d] = %#v, want %s", i, item, want[i])
 		}
 	}
 }
 
-func assertStringSlice(t *testing.T, got any, want []string) {
-	t.Helper()
-	items, ok := got.([]any)
-	if !ok || len(items) != len(want) {
-		t.Fatalf("slice = %#v, want %v", got, want)
+func mediaPaths(prefix string, ext string, count int) []string {
+	paths := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		paths = append(paths, prefix+string(rune('a'+i))+ext)
 	}
-	for i, item := range items {
-		if item != want[i] {
-			t.Fatalf("slice[%d] = %v, want %s", i, item, want[i])
-		}
-	}
+	return paths
 }

@@ -6,6 +6,7 @@ import "github.com/Pippit-dev/pippit-cli/internal/config"
 type SubmitRunResponse struct {
 	Ret    string                `json:"ret"`
 	Errmsg string                `json:"errmsg"`
+	LogID  string                `json:"log_id"`
 	Data   SubmitRunResponseData `json:"data"`
 }
 

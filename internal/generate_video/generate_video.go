@@ -12,6 +12,8 @@ import (
 
 const (
 	agentNameVideoPart = "pippit_video_part_agent"
+	maxReferenceImages = 9
+	maxReferenceVideos = 3
 )
 
 var submitRunHeaders = map[string]string{
@@ -28,29 +30,27 @@ var (
 
 // Options is the stable command-facing request shape for generate_video.
 type Options struct {
-	Prompt       string
-	ImagePaths   []string
-	VideoPaths   []string
-	DurationSec  *int
-	Ratio        string
-	Model        string
-	Resolution   string
-	GenerateType *int
+	Prompt      string
+	ImagePaths  []string
+	VideoPaths  []string
+	DurationSec *int
+	Ratio       string
+	Model       string
+	Resolution  string
 }
 
 type mediaAsset struct {
-	AssetID string `json:"asset_id"`
+	PippitAssetID string `json:"pippit_asset_id"`
 }
 
 type videoPartToolParam struct {
-	Images       []mediaAsset `json:"images,omitempty"`
-	Prompt       string       `json:"prompt"`
-	DurationSec  *int         `json:"duration_sec,omitempty"`
-	Ratio        string       `json:"ratio,omitempty"`
-	Videos       []mediaAsset `json:"videos,omitempty"`
-	Model        string       `json:"model,omitempty"`
-	Resolution   string       `json:"resolution,omitempty"`
-	GenerateType *int         `json:"generate_type,omitempty"`
+	Images      []mediaAsset `json:"images,omitempty"`
+	Prompt      string       `json:"prompt"`
+	DurationSec *int         `json:"duration_sec,omitempty"`
+	Ratio       string       `json:"ratio,omitempty"`
+	Videos      []mediaAsset `json:"videos,omitempty"`
+	Model       string       `json:"model,omitempty"`
+	Resolution  string       `json:"resolution,omitempty"`
 }
 
 // Result is the JSON envelope printed by `pippit-tool-cli generate_video`.
@@ -87,7 +87,7 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("generate_video 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, common.NewLogIDError(fmt.Sprintf("generate_video 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 	if resp.Data.Run.ThreadID == "" {
 		return nil, fmt.Errorf("generate_video 响应缺少 data.run.thread_id")
@@ -109,6 +109,12 @@ func ValidateOptions(opts *Options) error {
 	}
 	if strings.TrimSpace(opts.Prompt) == "" {
 		return fmt.Errorf("缺少必填参数 --prompt")
+	}
+	if len(opts.ImagePaths) > maxReferenceImages {
+		return fmt.Errorf("参考图片最多支持 %d 个，当前传入 %d 个", maxReferenceImages, len(opts.ImagePaths))
+	}
+	if len(opts.VideoPaths) > maxReferenceVideos {
+		return fmt.Errorf("参考视频最多支持 %d 个，当前传入 %d 个", maxReferenceVideos, len(opts.VideoPaths))
 	}
 	if err := validateMediaExtensions("图片", opts.ImagePaths, allowedImageExtensions, allowedImageExtensionList); err != nil {
 		return err
@@ -155,14 +161,13 @@ func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner)
 
 func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string) map[string]any {
 	param := videoPartToolParam{
-		Images:       assetRefs(imageAssetIDs),
-		Prompt:       strings.TrimSpace(opts.Prompt),
-		DurationSec:  opts.DurationSec,
-		Ratio:        strings.TrimSpace(opts.Ratio),
-		Videos:       assetRefs(videoAssetIDs),
-		Model:        strings.TrimSpace(opts.Model),
-		Resolution:   strings.TrimSpace(opts.Resolution),
-		GenerateType: opts.GenerateType,
+		Images:      assetRefs(imageAssetIDs),
+		Prompt:      strings.TrimSpace(opts.Prompt),
+		DurationSec: opts.DurationSec,
+		Ratio:       strings.TrimSpace(opts.Ratio),
+		Videos:      assetRefs(videoAssetIDs),
+		Model:       strings.TrimSpace(opts.Model),
+		Resolution:  strings.TrimSpace(opts.Resolution),
 	}
 
 	return map[string]any{
@@ -178,7 +183,7 @@ func assetRefs(assetIDs []string) []mediaAsset {
 	}
 	refs := make([]mediaAsset, 0, len(assetIDs))
 	for _, assetID := range assetIDs {
-		refs = append(refs, mediaAsset{AssetID: assetID})
+		refs = append(refs, mediaAsset{PippitAssetID: assetID})
 	}
 	return refs
 }

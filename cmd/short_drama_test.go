@@ -129,7 +129,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 		"download-result",
 		"get-thread",
 		"list-thread-file",
-		"query_result",
+		"query-result",
 		"short-drama",
 		"update",
 		"--version",

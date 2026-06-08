@@ -26,6 +26,7 @@ type GetThreadResult struct {
 type getThreadResponse struct {
 	Ret    string          `json:"ret"`
 	Errmsg string          `json:"errmsg"`
+	LogID  string          `json:"log_id"`
 	Data   json.RawMessage `json:"data"`
 }
 
@@ -48,11 +49,11 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 	if err := runner.Client.SendRequest(ctx, getThreadPath(runner), body, &resp); err != nil {
 		return nil, fmt.Errorf("获取线程请求失败: %w", err)
 	}
-	if resp.Ret != "" && resp.Ret != "0" {
+	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("get_thread 响应缺少 data")

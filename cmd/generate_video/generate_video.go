@@ -13,7 +13,6 @@ import (
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	opts := &internalgen.Options{}
 	var durationSec int
-	var generateType int
 
 	cmd := &cobra.Command{
 		Use:   "generate_video",
@@ -22,9 +21,6 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("duration") {
 				opts.DurationSec = &durationSec
-			}
-			if cmd.Flags().Changed("generate-type") {
-				opts.GenerateType = &generateType
 			}
 
 			result, err := internalgen.Run(cmd.Context(), opts, runner)
@@ -42,12 +38,11 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt")
-	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
-	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos")
+	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images, up to 9")
+	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos, up to 3")
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
-	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16")
-	flags.StringVar(&opts.Model, "model", "", "video model")
-	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution")
-	flags.IntVar(&generateType, "generate-type", 0, "generation type")
+	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
+	flags.StringVar(&opts.Model, "model", "", "video model; normal users: seedance2.0_direct, seedance2.0_fast_direct; VIP users: seedance2.0_direct, seedance2.0_fast_direct, seedance2.0_vision, seedance2.0_fast_vision")
+	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
 	return cmd
 }

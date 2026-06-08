@@ -223,23 +223,22 @@ pippit-tool-cli generate_video \
   --video "~/images/video2.mp4" \
   --duration 5 \
   --ratio "9:16" \
-  --model "seedance2.0_vision" \
-  --resolution "720p" \
-  --generate-type 0
+  --model "seedance2.0_direct" \
+  --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id`、`web_thread_link` 以及本次上传得到的素材 `asset_id` 列表。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图和参考视频会使用上传接口返回的 `pippit_asset_id`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
 查询并下载生视频结果：
 
 ```bash
-pippit-tool-cli query_result \
+pippit-tool-cli query-result \
   --thread-id "skill_xxx" \
   --run-id "skill_xxx" \
   --download-dir "./output"
 ```
 
-`query_result` 会查询指定 Run；Run 完成后下载视频产物并输出本地结果路径，未完成时输出当前状态和重试提示。
+`query-result` 会查询指定 Run；Run 完成后下载视频产物并输出本地结果路径，未完成时输出当前状态和重试提示。
 
 ## HTTP 客户端
 
