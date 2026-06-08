@@ -20,6 +20,7 @@ import (
 
 type Client interface {
 	SendRequest(ctx context.Context, path string, body any, out any) error
+	SendRequestWithHeaders(ctx context.Context, path string, body any, headers map[string]string, out any) error
 	SendMultipartRequest(ctx context.Context, path string, fields map[string]string, file MultipartFile, out any) error
 }
 
@@ -53,6 +54,10 @@ func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuth
 }
 
 func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out any) error {
+	return c.SendRequestWithHeaders(ctx, path, body, nil, out)
+}
+
+func (c *httpClient) SendRequestWithHeaders(ctx context.Context, path string, body any, headers map[string]string, out any) error {
 	method := http.MethodPost
 	if body == nil {
 		method = http.MethodGet
@@ -67,27 +72,27 @@ func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out
 	if body != nil {
 		payload, err := sonic.Marshal(body)
 		if err != nil {
-			return fmt.Errorf("encode body: %w", err)
+			return fmt.Errorf("编码请求体失败: %w", err)
 		}
 		reader = bytes.NewReader(payload)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, reqURL, reader)
 	if err != nil {
-		return fmt.Errorf("build %s request: %w", method, err)
+		return fmt.Errorf("构造 %s 请求失败: %w", method, err)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
 	if c.authorizer == nil {
-		return fmt.Errorf("authorized request requires authorizer")
+		return fmt.Errorf("授权请求缺少认证器")
 	}
 	if err := c.authorizer.Inject(ctx, req); err != nil {
-		return fmt.Errorf("inject auth headers: %w", err)
+		return fmt.Errorf("写入认证请求头失败: %w", err)
 	}
 
-	c.injectHeaders(req)
+	c.injectHeaders(req, headers)
 
 	// If out is **http.Response, return the raw response for streaming (e.g. file download).
 	if out != nil {
@@ -95,11 +100,11 @@ func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out
 			if rv.Elem().Type().Elem() == reflect.TypeOf(http.Response{}) {
 				resp, err := c.httpClient.Do(req)
 				if err != nil {
-					return fmt.Errorf("%s %s failed: %w", method, reqURL, err)
+					return fmt.Errorf("%s %s 请求失败: %w", method, reqURL, err)
 				}
 				if resp.StatusCode >= 400 {
 					defer resp.Body.Close()
-					return fmt.Errorf("%s %s returned HTTP %d", method, reqURL, resp.StatusCode)
+					return fmt.Errorf("%s %s 返回 HTTP %d", method, reqURL, resp.StatusCode)
 				}
 				rv.Elem().Set(reflect.ValueOf(resp))
 				return nil
@@ -118,7 +123,7 @@ func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fiel
 		return err
 	}
 	if file.FieldName == "" {
-		return fmt.Errorf("multipart file field name is required")
+		return fmt.Errorf("multipart 文件字段名不能为空")
 	}
 	if file.FileName == "" {
 		file.FileName = filepath.Base(file.Path)
@@ -133,7 +138,7 @@ func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fiel
 	if err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
-		return fmt.Errorf("build POST request: %w", err)
+		return fmt.Errorf("构造 POST 请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
@@ -141,14 +146,14 @@ func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fiel
 	if c.authorizer == nil {
 		_ = pr.Close()
 		_ = pw.Close()
-		return fmt.Errorf("authorized request requires authorizer")
+		return fmt.Errorf("授权请求缺少认证器")
 	}
 	if err := c.authorizer.Inject(ctx, req); err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
-		return fmt.Errorf("inject auth headers: %w", err)
+		return fmt.Errorf("写入认证请求头失败: %w", err)
 	}
-	c.injectHeaders(req)
+	c.injectHeaders(req, nil)
 
 	go func() {
 		err := writeMultipartBody(writer, fields, file)
@@ -172,7 +177,7 @@ func writeMultipartBody(writer *multipart.Writer, fields map[string]string, file
 
 	f, err := os.Open(file.Path)
 	if err != nil {
-		return fmt.Errorf("open upload file: %w", err)
+		return fmt.Errorf("打开上传文件失败: %w", err)
 	}
 	defer f.Close()
 
@@ -184,7 +189,7 @@ func writeMultipartBody(writer *multipart.Writer, fields map[string]string, file
 		return err
 	}
 	if _, err := io.Copy(part, f); err != nil {
-		return fmt.Errorf("write upload file: %w", err)
+		return fmt.Errorf("写入上传文件失败: %w", err)
 	}
 	return nil
 }
@@ -195,38 +200,41 @@ func escapeQuotes(s string) string {
 	return quotesReplacer.Replace(s)
 }
 
-func (c *httpClient) injectHeaders(req *http.Request) {
+func (c *httpClient) injectHeaders(req *http.Request, headers map[string]string) {
 	for k, values := range c.headers {
 		for _, v := range values {
 			req.Header.Add(k, v)
 		}
 	}
 	req.Header.Set("User-Agent", "Pippit-CLI/1.0")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 }
 
 func (c *httpClient) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("%s %s failed: %w", req.Method, req.URL.String(), err)
+		return fmt.Errorf("%s %s 请求失败: %w", req.Method, req.URL.String(), err)
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("read response body: %w", err)
+		return fmt.Errorf("读取响应体失败: %w", err)
 	}
 	if resp.StatusCode >= 400 {
 		msg := strings.TrimSpace(string(data))
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return fmt.Errorf("%s %s returned HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg)
+		return fmt.Errorf("%s %s 返回 HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg)
 	}
 	if out == nil || len(data) == 0 {
 		return nil
 	}
 	if err := sonic.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("decode response body: %w", err)
+		return fmt.Errorf("解析响应体失败: %w", err)
 	}
 	return nil
 }
@@ -236,7 +244,7 @@ func (c *httpClient) resolveURL(path string, query map[string]string) (string, e
 		return appendQuery(path, query)
 	}
 	if c.baseURL == "" {
-		return "", fmt.Errorf("base URL is required for relative path %q", path)
+		return "", fmt.Errorf("相对路径 %q 需要配置 base URL", path)
 	}
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
@@ -247,7 +255,7 @@ func (c *httpClient) resolveURL(path string, query map[string]string) (string, e
 func appendQuery(raw string, query map[string]string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse URL: %w", err)
+		return "", fmt.Errorf("解析 URL 失败: %w", err)
 	}
 	values := u.Query()
 	for k, v := range query {

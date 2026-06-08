@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
@@ -43,5 +45,26 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))
 	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
+	localizeFlagErrors(root)
 	return root
+}
+
+func localizeFlagErrors(cmd *cobra.Command) {
+	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return localizeFlagError(err)
+	})
+	for _, child := range cmd.Commands() {
+		localizeFlagErrors(child)
+	}
+}
+
+func localizeFlagError(err error) error {
+	msg := err.Error()
+	if flag, ok := strings.CutPrefix(msg, "unknown flag: "); ok {
+		return fmt.Errorf("未知参数: %s", flag)
+	}
+	if flag, ok := strings.CutPrefix(msg, "flag needs an argument: "); ok {
+		return fmt.Errorf("参数 %s 缺少取值", flag)
+	}
+	return fmt.Errorf("参数解析失败: %s", msg)
 }

@@ -9,7 +9,6 @@ import (
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/short_drama"
-	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
 )
 
@@ -47,14 +46,14 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 
 			if opts.Message == "" {
-				return fmt.Errorf("--message is required")
+				return fmt.Errorf("缺少必填参数 --message")
 			}
 
 			result, err := short_drama.SubmitRun(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)
@@ -80,17 +79,17 @@ func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Run
 			opts.Path = strings.TrimSpace(opts.Path)
 
 			if opts.Path == "" {
-				return fmt.Errorf("--path is required")
+				return fmt.Errorf("缺少必填参数 --path")
 			}
 			if !isShortDramaUploadFile(opts.Path) {
-				return fmt.Errorf("unsupported file extension %q; only .doc, .docx, and .txt uploads are supported", strings.ToLower(filepath.Ext(opts.Path)))
+				return fmt.Errorf("不支持的文件后缀 %q，仅支持上传 .doc、.docx 和 .txt", strings.ToLower(filepath.Ext(opts.Path)))
 			}
 
 			result, err := common.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)
@@ -119,21 +118,21 @@ func newShortDramaDownloadResultCommand(stdout, stderr io.Writer, runner *common
 		}, func(cmd *cobra.Command, _ []string) error {
 			opts.OutputPath = strings.TrimSpace(opts.OutputPath)
 			if opts.OutputPath == "" {
-				return fmt.Errorf("--output-path is required")
+				return fmt.Errorf("缺少必填参数 --output-path")
 			}
 			opts.URL = strings.TrimSpace(opts.URL)
 			if opts.URL == "" {
-				return fmt.Errorf("--url is required")
+				return fmt.Errorf("缺少必填参数 --url")
 			}
 			if opts.Workers <= 0 {
-				return fmt.Errorf("--workers must be greater than 0")
+				return fmt.Errorf("--workers 必须大于 0")
 			}
 
 			result, err := common.DownloadResult(cmd.Context(), opts, runner)
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)
@@ -160,7 +159,7 @@ func newShortDramaGetThreadCommand(stdout, stderr io.Writer, runner *common.Runn
 		}, func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 			if opts.ThreadID == "" {
-				return fmt.Errorf("--thread-id is required")
+				return fmt.Errorf("缺少必填参数 --thread-id")
 			}
 			opts.RunID = strings.TrimSpace(opts.RunID)
 
@@ -195,20 +194,20 @@ func newShortDramaListThreadFileCommand(stdout, stderr io.Writer, runner *common
 		}, func(cmd *cobra.Command, _ []string) error {
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 			if opts.ThreadID == "" {
-				return fmt.Errorf("--thread-id is required")
+				return fmt.Errorf("缺少必填参数 --thread-id")
 			}
 			if opts.PageSize <= 0 || opts.PageSize > common.MaxListThreadFilePageSize {
-				return fmt.Errorf("--page-size must be between 1 and %d", common.MaxListThreadFilePageSize)
+				return fmt.Errorf("--page-size 必须在 1 到 %d 之间", common.MaxListThreadFilePageSize)
 			}
 			if opts.PageNum <= 0 {
-				return fmt.Errorf("--page-num must be greater than 0")
+				return fmt.Errorf("--page-num 必须大于 0")
 			}
 
 			result, err := common.ListThreadFile(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)
@@ -248,13 +247,4 @@ func isShortDramaUploadFile(path string) bool {
 	default:
 		return false
 	}
-}
-
-func writeJSON(w io.Writer, v any) error {
-	data, err := sonic.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(w, string(data))
-	return err
 }

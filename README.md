@@ -215,8 +215,10 @@ pippit-tool-cli short-drama +download-result --output-path ./thread_123/results/
 ```bash
 pippit-tool-cli generate_video \
   --prompt "做个小猫视频" \
-  --images "~/images/cat1.jpg" "~/images/cat2.jpg" \
-  --videos "~/images/video1.mp4" "~/images/video2.mp4" \
+  --image "~/images/cat1.jpg" \
+  --image "~/images/cat2.jpg" \
+  --video "~/images/video1.mp4" \
+  --video "~/images/video2.mp4" \
   --duration 5 \
   --ratio "9:16" \
   --model "seedance2.0_vision" \
@@ -224,7 +226,7 @@ pippit-tool-cli generate_video \
   --generate-type 0
 ```
 
-命令输出 `thread_id`、`run_id`、`web_thread_link` 以及本次上传得到的素材 `asset_id` 列表。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id`、`web_thread_link` 以及本次上传得到的素材 `asset_id` 列表。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
 ## HTTP 客户端
 

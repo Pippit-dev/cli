@@ -7,13 +7,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bytedance/sonic"
 )
 
 func TestGenerateVideo(t *testing.T) {
-	assetIDs := []string{"image_asset_1", "image_asset_2", "video_asset_1"}
+	assetIDs := []string{"image_asset_1", "image_asset_2", "video_asset_1", "video_asset_2"}
 	uploadIndex := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,6 +25,9 @@ func TestGenerateVideo(t *testing.T) {
 		case "/api/biz/v1/skill/upload_file":
 			if r.Method != http.MethodPost {
 				t.Fatalf("upload method = %s, want POST", r.Method)
+			}
+			if r.Header.Get("x-use-ppe") != "" || r.Header.Get("x-tt-env") != "" {
+				t.Fatalf("upload PPE headers = (%q, %q), want empty", r.Header.Get("x-use-ppe"), r.Header.Get("x-tt-env"))
 			}
 			if uploadIndex >= len(assetIDs) {
 				t.Fatalf("unexpected upload %d", uploadIndex)
@@ -40,6 +44,12 @@ func TestGenerateVideo(t *testing.T) {
 		case "/api/biz/v1/skill/submit_run":
 			if uploadIndex != len(assetIDs) {
 				t.Fatalf("submit called after %d uploads, want %d", uploadIndex, len(assetIDs))
+			}
+			if r.Header.Get("x-use-ppe") != "1" {
+				t.Fatalf("x-use-ppe = %q, want 1", r.Header.Get("x-use-ppe"))
+			}
+			if r.Header.Get("x-tt-env") != "ppe_self_testin_c9pq2g" {
+				t.Fatalf("x-tt-env = %q, want ppe_self_testin_c9pq2g", r.Header.Get("x-tt-env"))
 			}
 			data, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -72,7 +82,7 @@ func TestGenerateVideo(t *testing.T) {
 				t.Fatalf("generate_type = %v, want 0", param["generate_type"])
 			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
-			assertAssetRefs(t, param["videos"], []string{"video_asset_1"})
+			assertAssetRefs(t, param["videos"], []string{"video_asset_1", "video_asset_2"})
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"},"web_thread_link":"https://xyq.example/thread_123"}}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -84,7 +94,8 @@ func TestGenerateVideo(t *testing.T) {
 	image1 := filepath.Join(cwd, "cat1.jpg")
 	image2 := filepath.Join(cwd, "cat2.jpg")
 	video1 := filepath.Join(cwd, "video1.mp4")
-	for _, path := range []string{image1, image2, video1} {
+	video2 := filepath.Join(cwd, "video2.mp4")
+	for _, path := range []string{image1, image2, video1, video2} {
 		if err := os.WriteFile(path, []byte("media-data"), 0o644); err != nil {
 			t.Fatalf("WriteFile(%s): %v", path, err)
 		}
@@ -95,8 +106,10 @@ func TestGenerateVideo(t *testing.T) {
 	root.SetArgs([]string{
 		"generate_video",
 		"--prompt", "做个小猫视频",
-		"--images", image1, image2,
-		"--videos", video1,
+		"--image", image1,
+		"--image", image2,
+		"--video", video1,
+		"--video", video2,
 		"--duration", "5",
 		"--ratio", "9:16",
 		"--model", "seedance2.0_vision",
@@ -113,7 +126,7 @@ func TestGenerateVideo(t *testing.T) {
 		t.Fatalf("output = %#v, want thread and run IDs", got)
 	}
 	assertStringSlice(t, got["image_asset_ids"], []string{"image_asset_1", "image_asset_2"})
-	assertStringSlice(t, got["video_asset_ids"], []string{"video_asset_1"})
+	assertStringSlice(t, got["video_asset_ids"], []string{"video_asset_1", "video_asset_2"})
 }
 
 func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
@@ -141,6 +154,28 @@ func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+}
+
+func TestGenerateVideoRequiresPrompt(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request without prompt")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"generate_video",
+		"--duration", "1",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want prompt validation")
+	}
+	if !strings.Contains(err.Error(), "缺少必填参数 --prompt") {
+		t.Fatalf("error = %q, want prompt validation", err)
 	}
 }
 

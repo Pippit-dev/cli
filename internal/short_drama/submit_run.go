@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
-	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 // SubmitRunOptions is the stable command-facing request shape for short drama run submission.
@@ -22,21 +21,9 @@ type SubmitRunResult struct {
 	WebThreadLink string `json:"web_thread_link"`
 }
 
-type submitRunResponse struct {
-	Ret    string `json:"ret"`
-	Errmsg string `json:"errmsg"`
-	Data   struct {
-		WebThreadLink string `json:"web_thread_link"`
-		Run           struct {
-			ThreadID string `json:"thread_id"`
-			RunID    string `json:"run_id"`
-		} `json:"run"`
-	} `json:"data"`
-}
-
 func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runner) (*SubmitRunResult, error) {
 	if runner == nil || runner.Client == nil {
-		return nil, fmt.Errorf("submit_run runner client is required")
+		return nil, fmt.Errorf("submit_run 运行器客户端缺失")
 	}
 
 	body := map[string]any{
@@ -50,32 +37,25 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	}
 	body["agent_name"] = "pippit_nest_novel_agent"
 
-	var resp submitRunResponse
-	if err := runner.Client.SendRequest(ctx, submitRunPath(runner), body, &resp); err != nil {
-		return nil, fmt.Errorf("submit_run request failed: %w", err)
+	var resp common.SubmitRunResponse
+	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
+		return nil, fmt.Errorf("提交 short_drama 请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
-			resp.Errmsg = "unknown error"
+			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("submit_run failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, fmt.Errorf("short_drama 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 	if resp.Data.Run.ThreadID == "" {
-		return nil, fmt.Errorf("submit_run response missing data.run.thread_id")
+		return nil, fmt.Errorf("short_drama 响应缺少 data.run.thread_id")
 	}
 	if resp.Data.Run.RunID == "" {
-		return nil, fmt.Errorf("submit_run response missing data.run.run_id")
+		return nil, fmt.Errorf("short_drama 响应缺少 data.run.run_id")
 	}
 	return &SubmitRunResult{
 		ThreadID:      resp.Data.Run.ThreadID,
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,
 	}, nil
-}
-
-func submitRunPath(runner *common.Runner) string {
-	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.SubmitRun != "" {
-		return runner.Config.Paths.SubmitRun
-	}
-	return config.SubmitRunPath
 }

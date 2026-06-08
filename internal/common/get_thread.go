@@ -30,7 +30,7 @@ type getThreadResponse struct {
 
 func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*GetThreadResult, error) {
 	if runner == nil || runner.Client == nil {
-		return nil, fmt.Errorf("get_thread runner client is required")
+		return nil, fmt.Errorf("get_thread 运行器客户端缺失")
 	}
 
 	body := map[string]any{
@@ -43,16 +43,16 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 
 	var resp getThreadResponse
 	if err := runner.Client.SendRequest(ctx, getThreadPath(runner), body, &resp); err != nil {
-		return nil, fmt.Errorf("get_thread request failed: %w", err)
+		return nil, fmt.Errorf("获取线程请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
-			resp.Errmsg = "unknown error"
+			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("get_thread failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, fmt.Errorf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 	if resp.Data.ReadableText == "" {
-		return nil, fmt.Errorf("get_thread response missing data.readable_text")
+		return nil, fmt.Errorf("get_thread 响应缺少 data.readable_text")
 	}
 
 	return &GetThreadResult{

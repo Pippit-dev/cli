@@ -163,7 +163,7 @@ func TestShortDramaSubmitRunRequiresMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--message is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --message") {
 		t.Fatalf("error = %q, want message validation", err)
 	}
 }
@@ -260,7 +260,7 @@ func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--path is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --path") {
 		t.Fatalf("error = %q, want path validation", err)
 	}
 }
@@ -303,7 +303,7 @@ func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want file type validation error")
 	}
-	if !strings.Contains(err.Error(), "only .doc, .docx, and .txt uploads are supported") {
+	if !strings.Contains(err.Error(), "仅支持上传 .doc、.docx 和 .txt") {
 		t.Fatalf("error = %q, want unsupported type validation", err)
 	}
 }
@@ -557,7 +557,7 @@ func TestShortDramaDownloadResultRequiresOutputPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--output-path is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --output-path") {
 		t.Fatalf("error = %q, want output-path validation", err)
 	}
 }
@@ -575,7 +575,7 @@ func TestShortDramaDownloadResultRejectsOutputDirFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want unknown flag error")
 	}
-	if !strings.Contains(err.Error(), "unknown flag: --output-dir") {
+	if !strings.Contains(err.Error(), "未知参数: --output-dir") {
 		t.Fatalf("error = %q, want output-dir rejection", err)
 	}
 }
@@ -589,7 +589,7 @@ func TestShortDramaDownloadResultRequiresURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--url is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --url") {
 		t.Fatalf("error = %q, want url validation", err)
 	}
 }
@@ -603,7 +603,7 @@ func TestShortDramaDownloadResultRejectsInvalidScheme(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want scheme validation error")
 	}
-	if !strings.Contains(err.Error(), "only http and https are allowed") {
+	if !strings.Contains(err.Error(), "仅支持 http 和 https") {
 		t.Fatalf("error = %q, want scheme validation", err)
 	}
 }
@@ -628,7 +628,7 @@ func TestShortDramaDownloadResultAllFailed(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want all-failed error")
 	}
-	if !strings.Contains(err.Error(), "all 1 download(s) failed") {
+	if !strings.Contains(err.Error(), "全部 1 个下载任务失败") {
 		t.Fatalf("error = %q, want all-failed message", err)
 	}
 	logs := readDailyErrorLog(t)
@@ -735,7 +735,7 @@ func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--thread-id is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --thread-id") {
 		t.Fatalf("error = %q, want thread-id validation", err)
 	}
 
@@ -746,7 +746,7 @@ func TestShortDramaGetThreadRequiresThreadID(t *testing.T) {
 	if entries[0]["command"] != "short-drama +get-thread" {
 		t.Fatalf("command = %v, want get-thread", entries[0]["command"])
 	}
-	if entries[0]["error"] != "--thread-id is required" {
+	if entries[0]["error"] != "缺少必填参数 --thread-id" {
 		t.Fatalf("error = %v, want thread-id validation", entries[0]["error"])
 	}
 }
@@ -817,7 +817,7 @@ func TestShortDramaListThreadFile(t *testing.T) {
 	if got["total"] != float64(1) {
 		t.Fatalf("total = %v, want 1", got["total"])
 	}
-	wantMessage := "<system-remind>\n- total is below 200; continue querying with current --page-num 2\n</system-remind>"
+	wantMessage := "<system-remind>\n- 文件总数小于 200；继续使用当前 --page-num 2 查询\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want current page hint", got["message"])
 	}
@@ -867,7 +867,7 @@ func TestShortDramaListThreadFileMessageWhenPageFull(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	wantMessage := "<system-remind>\n- total reached 200; query the next page with --page-num 3\n</system-remind>"
+	wantMessage := "<system-remind>\n- 文件总数已达到 200；请使用 --page-num 3 查询下一页\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want next page hint", got["message"])
 	}
@@ -882,7 +882,7 @@ func TestShortDramaListThreadFileRequiresThreadID(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--thread-id is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --thread-id") {
 		t.Fatalf("error = %q, want thread-id validation", err)
 	}
 }
@@ -917,7 +917,7 @@ func TestShortDramaListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--page-size must be between 1 and 200") {
+	if !strings.Contains(err.Error(), "--page-size 必须在 1 到 200 之间") {
 		t.Fatalf("error = %q, want page-size validation", err)
 	}
 }

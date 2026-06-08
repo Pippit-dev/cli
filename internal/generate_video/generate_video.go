@@ -8,11 +8,22 @@ import (
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
-	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 const (
 	agentNameVideoPart = "pippit_video_part_agent"
+)
+
+var submitRunHeaders = map[string]string{
+	"x-use-ppe": "1",
+	"x-tt-env":  "ppe_self_testin_c9pq2g",
+}
+
+var (
+	allowedImageExtensionList = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"}
+	allowedVideoExtensionList = []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".m4v"}
+	allowedImageExtensions    = makeExtensionSet(allowedImageExtensionList)
+	allowedVideoExtensions    = makeExtensionSet(allowedVideoExtensionList)
 )
 
 // Options is the stable command-facing request shape for generate_video.
@@ -42,18 +53,6 @@ type videoPartToolParam struct {
 	GenerateType *int         `json:"generate_type,omitempty"`
 }
 
-type submitRunResponse struct {
-	Ret    string `json:"ret"`
-	Errmsg string `json:"errmsg"`
-	Data   struct {
-		WebThreadLink string `json:"web_thread_link"`
-		Run           struct {
-			ThreadID string `json:"thread_id"`
-			RunID    string `json:"run_id"`
-		} `json:"run"`
-	} `json:"data"`
-}
-
 // Result is the JSON envelope printed by `pippit-tool-cli generate_video`.
 type Result struct {
 	ThreadID      string   `json:"thread_id"`
@@ -65,7 +64,7 @@ type Result struct {
 
 func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, error) {
 	if runner == nil || runner.Client == nil {
-		return nil, fmt.Errorf("generate_video runner client is required")
+		return nil, fmt.Errorf("generate_video 运行器客户端缺失")
 	}
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
@@ -73,30 +72,30 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 
 	imageAssetIDs, err := uploadMediaList(ctx, opts.ImagePaths, runner)
 	if err != nil {
-		return nil, fmt.Errorf("upload image: %w", err)
+		return nil, fmt.Errorf("上传图片失败: %w", err)
 	}
 	videoAssetIDs, err := uploadMediaList(ctx, opts.VideoPaths, runner)
 	if err != nil {
-		return nil, fmt.Errorf("upload video: %w", err)
+		return nil, fmt.Errorf("上传视频失败: %w", err)
 	}
 
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs)
 
-	var resp submitRunResponse
-	if err := runner.Client.SendRequest(ctx, submitRunPath(runner), body, &resp); err != nil {
-		return nil, fmt.Errorf("submit_run request failed: %w", err)
+	var resp common.SubmitRunResponse
+	if err := runner.Client.SendRequestWithHeaders(ctx, common.SubmitRunPath(runner), body, submitRunHeaders, &resp); err != nil {
+		return nil, fmt.Errorf("提交 generate_video 请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
-			resp.Errmsg = "unknown error"
+			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("submit_run failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, fmt.Errorf("generate_video 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 	if resp.Data.Run.ThreadID == "" {
-		return nil, fmt.Errorf("submit_run response missing data.run.thread_id")
+		return nil, fmt.Errorf("generate_video 响应缺少 data.run.thread_id")
 	}
 	if resp.Data.Run.RunID == "" {
-		return nil, fmt.Errorf("submit_run response missing data.run.run_id")
+		return nil, fmt.Errorf("generate_video 响应缺少 data.run.run_id")
 	}
 
 	return &Result{
@@ -108,8 +107,38 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	}, nil
 }
 
-func ValidateOptions(_ *Options) error {
+func ValidateOptions(opts *Options) error {
+	if opts == nil {
+		return fmt.Errorf("缺少必填参数 --prompt")
+	}
+	if strings.TrimSpace(opts.Prompt) == "" {
+		return fmt.Errorf("缺少必填参数 --prompt")
+	}
+	if err := validateMediaExtensions("图片", opts.ImagePaths, allowedImageExtensions, allowedImageExtensionList); err != nil {
+		return err
+	}
+	if err := validateMediaExtensions("视频", opts.VideoPaths, allowedVideoExtensions, allowedVideoExtensionList); err != nil {
+		return err
+	}
 	return nil
+}
+
+func validateMediaExtensions(kind string, paths []string, allowed map[string]struct{}, allowedList []string) error {
+	for _, path := range paths {
+		ext := strings.ToLower(filepath.Ext(strings.TrimSpace(path)))
+		if _, ok := allowed[ext]; !ok {
+			return fmt.Errorf("不支持的%s文件后缀 %q，文件：%q；支持的后缀：%s", kind, ext, path, strings.Join(allowedList, ", "))
+		}
+	}
+	return nil
+}
+
+func makeExtensionSet(list []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(list))
+	for _, ext := range list {
+		set[ext] = struct{}{}
+	}
+	return set
 }
 
 func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner) ([]string, error) {
@@ -166,16 +195,9 @@ func expandPath(path string) (string, error) {
 	if strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("resolve home dir: %w", err)
+			return "", fmt.Errorf("解析用户主目录失败: %w", err)
 		}
 		return filepath.Join(home, path[2:]), nil
 	}
 	return path, nil
-}
-
-func submitRunPath(runner *common.Runner) string {
-	if runner != nil && runner.Config != nil && runner.Config.Paths != nil && runner.Config.Paths.GenerateVideoSubmitRun != "" {
-		return runner.Config.Paths.GenerateVideoSubmitRun
-	}
-	return config.SubmitRunPath
 }

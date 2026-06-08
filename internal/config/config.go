@@ -39,11 +39,10 @@ type OAuth struct {
 }
 
 type Paths struct {
-	SubmitRun              string
-	GenerateVideoSubmitRun string
-	GetThread              string
-	UploadFile             string
-	ListThreadFile         string
+	SubmitRun      string
+	GetThread      string
+	UploadFile     string
+	ListThreadFile string
 }
 
 // Load resolves the built-in runtime config.
@@ -55,11 +54,10 @@ func Load() *Config {
 		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
 		OAuth:       resolveOAuth(),
 		Paths: &Paths{
-			SubmitRun:              SubmitRunPath,
-			GenerateVideoSubmitRun: SubmitRunPath,
-			GetThread:              GetThreadPath,
-			UploadFile:             UploadFilePath,
-			ListThreadFile:         ListThreadFilePath,
+			SubmitRun:      SubmitRunPath,
+			GetThread:      GetThreadPath,
+			UploadFile:     UploadFilePath,
+			ListThreadFile: ListThreadFilePath,
 		},
 	}
 }
