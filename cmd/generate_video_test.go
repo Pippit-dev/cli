@@ -332,10 +332,34 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 	if !requestedDownload {
 		t.Fatal("download endpoint was not requested")
 	}
-	if got := stdout.String(); !strings.Contains(got, "Run 已完成，产物已下载：") ||
-		!strings.Contains(got, outputPath) ||
-		!strings.Contains(got, "download_url: "+downloadURL) {
-		t.Fatalf("stdout = %q, want download path and download url", got)
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true", got["completed"])
+	}
+	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
+	}
+	if _, ok := got["state"]; ok {
+		t.Fatalf("state should not be returned: %#v", got)
+	}
+	if got["error_message"] != "" {
+		t.Fatalf("error_message = %v, want empty", got["error_message"])
+	}
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 1 {
+		t.Fatalf("videos = %#v, want one video", got["videos"])
+	}
+	video, ok := videos[0].(map[string]any)
+	if !ok {
+		t.Fatalf("video = %#v, want object", videos[0])
+	}
+	if video["download_url"] != downloadURL || video["output_path"] != outputPath {
+		t.Fatalf("video = %#v, want download_url/output_path", video)
+	}
+	for _, unwanted := range []string{"vid", "asset_id", "title"} {
+		if _, ok := video[unwanted]; ok {
+			t.Fatalf("video = %#v, should not contain %s", video, unwanted)
+		}
 	}
 	assertFileContent(t, outputPath, "video-data")
 }
@@ -413,6 +437,45 @@ func TestQueryResultErrorLogIncludesLogID(t *testing.T) {
 	}
 }
 
+func TestQueryResultFailedReturnsErrorMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_video","data":"{\"error_message\":\"生成失败\",\"error_code\":\"11001\"}"}]}}]}]}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"query-result",
+		"--thread-id", "thread_123",
+		"--run-id", "run_456",
+		"--download-dir", t.TempDir(),
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true", got["completed"])
+	}
+	if _, ok := got["state"]; ok {
+		t.Fatalf("state should not be returned: %#v", got)
+	}
+	if got["error_message"] != "生成失败 (error_code=11001)" {
+		t.Fatalf("error_message = %v, want failure message", got["error_message"])
+	}
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 0 {
+		t.Fatalf("videos = %#v, want empty", got["videos"])
+	}
+}
+
 func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -436,8 +499,19 @@ func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if got := stdout.String(); !strings.Contains(got, "Run 尚未完成，当前状态：1") {
-		t.Fatalf("stdout = %q, want pending state", got)
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != false {
+		t.Fatalf("completed = %v, want false", got["completed"])
+	}
+	if _, ok := got["state"]; ok {
+		t.Fatalf("state should not be returned: %#v", got)
+	}
+	if got["error_message"] != "" {
+		t.Fatalf("error_message = %v, want empty", got["error_message"])
+	}
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 0 {
+		t.Fatalf("videos = %#v, want empty", got["videos"])
 	}
 }
 

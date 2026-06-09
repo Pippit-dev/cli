@@ -238,7 +238,7 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run；Run 完成后下载视频产物并输出本地结果路径，未完成时输出当前状态和重试提示。
+`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频产物，`completed=true`，`videos` 中只包含 `download_url` 和 `output_path`；Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
 
 ## HTTP 客户端
 

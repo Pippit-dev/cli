@@ -1,7 +1,7 @@
 package generate_video
 
 import (
-	"fmt"
+	"encoding/json"
 	"io"
 	"strings"
 
@@ -28,25 +28,9 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 				})
 				return err
 			}
-			if !result.Completed {
-				_, err = fmt.Fprintf(stdout, "Run 尚未完成，当前状态：%d\n请稍后重试 query-result。\n", result.State)
-				return err
-			}
-			_, err = fmt.Fprintln(stdout, "Run 已完成，产物已下载：")
-			if err != nil {
-				return err
-			}
-			for i, path := range result.OutputPaths {
-				if _, err := fmt.Fprintln(stdout, path); err != nil {
-					return err
-				}
-				if i < len(result.DownloadURLs) && strings.TrimSpace(result.DownloadURLs[i]) != "" {
-					if _, err := fmt.Fprintf(stdout, "download_url: %s\n", result.DownloadURLs[i]); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
+			encoder := json.NewEncoder(stdout)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(result)
 		},
 	}
 	cmd.SetOut(stdout)

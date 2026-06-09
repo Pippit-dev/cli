@@ -12,7 +12,10 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
-const completedRunState = 3
+const (
+	successRunState = 3
+	failedRunState  = 4
+)
 
 // QueryResultOptions is the command-facing request shape for query-result.
 type QueryResultOptions struct {
@@ -23,10 +26,17 @@ type QueryResultOptions struct {
 
 // QueryResultResult describes the user-facing query-result outcome.
 type QueryResultResult struct {
-	Completed    bool
-	State        int
-	OutputPaths  []string
-	DownloadURLs []string
+	Completed    bool               `json:"completed"`
+	ThreadID     string             `json:"thread_id"`
+	RunID        string             `json:"run_id"`
+	ErrorMessage string             `json:"error_message"`
+	Videos       []QueryResultVideo `json:"videos"`
+}
+
+// QueryResultVideo describes a downloaded video from query-result.
+type QueryResultVideo struct {
+	DownloadURL string `json:"download_url"`
+	OutputPath  string `json:"output_path"`
 }
 
 type queryThread struct {
@@ -35,9 +45,12 @@ type queryThread struct {
 }
 
 type queryRun struct {
-	RunID     string       `json:"run_id"`
-	State     int          `json:"state"`
-	EntryList []queryEntry `json:"entry_list"`
+	RunID        string       `json:"run_id"`
+	State        int          `json:"state"`
+	ErrorMessage string       `json:"error_message"`
+	ErrorMsg     string       `json:"error_msg"`
+	Errmsg       string       `json:"errmsg"`
+	EntryList    []queryEntry `json:"entry_list"`
 }
 
 type queryEntry struct {
@@ -54,7 +67,9 @@ type queryContent struct {
 }
 
 type queryContentData struct {
-	Video *queryVideo `json:"video"`
+	Video        *queryVideo     `json:"video"`
+	ErrorMessage string          `json:"error_message"`
+	ErrorCode    json.RawMessage `json:"error_code"`
 }
 
 type queryVideo struct {
@@ -86,11 +101,17 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	if !ok {
 		return nil, fmt.Errorf("查询失败：未找到 run_id=%s 对应的 Run", opts.RunID)
 	}
-	if run.State != completedRunState {
-		return &QueryResultResult{
-			Completed: false,
-			State:     run.State,
-		}, nil
+	if run.State != successRunState {
+		result := &QueryResultResult{
+			Completed: run.State == failedRunState,
+			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
+			RunID:     opts.RunID,
+			Videos:    []QueryResultVideo{},
+		}
+		if run.State == failedRunState {
+			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 失败")
+		}
+		return result, nil
 	}
 
 	videos := extractQueryVideos(run)
@@ -103,14 +124,12 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		return nil, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
 	}
 
-	outputPaths := make([]string, 0, len(videos))
-	downloadURLs := make([]string, 0, len(videos))
+	resultVideos := make([]QueryResultVideo, 0, len(videos))
 	usedNames := make(map[string]int, len(videos))
 	for i, video := range videos {
 		if strings.TrimSpace(video.DownloadURL) == "" {
 			return nil, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
 		}
-		downloadURLs = append(downloadURLs, video.DownloadURL)
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(videoFileName(video, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
 			URL:        video.DownloadURL,
@@ -120,22 +139,23 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		if err != nil {
 			return nil, fmt.Errorf("下载失败：%w", err)
 		}
+		actualOutputPath := outputPath
 		if len(download.Downloaded) > 0 {
-			outputPaths = append(outputPaths, download.Downloaded...)
-			continue
+			actualOutputPath = download.Downloaded[0]
+		} else if len(download.AlreadyExist) > 0 {
+			actualOutputPath = download.AlreadyExist[0]
 		}
-		if len(download.AlreadyExist) > 0 {
-			outputPaths = append(outputPaths, download.AlreadyExist...)
-			continue
-		}
-		outputPaths = append(outputPaths, outputPath)
+		resultVideos = append(resultVideos, QueryResultVideo{
+			DownloadURL: video.DownloadURL,
+			OutputPath:  actualOutputPath,
+		})
 	}
 
 	return &QueryResultResult{
-		Completed:    true,
-		State:        run.State,
-		OutputPaths:  outputPaths,
-		DownloadURLs: downloadURLs,
+		Completed: true,
+		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
+		RunID:     opts.RunID,
+		Videos:    resultVideos,
 	}, nil
 }
 
@@ -233,6 +253,39 @@ func extractQueryVideos(run queryRun) []queryVideo {
 		}
 	}
 	return videos
+}
+
+func extractQueryErrorMessage(run queryRun) string {
+	if message := firstNonEmpty(run.ErrorMessage, run.ErrorMsg, run.Errmsg); message != "" {
+		return message
+	}
+	for _, entry := range run.EntryList {
+		for _, content := range entry.Artifact.Content {
+			data := content.Data
+			if message := firstNonEmpty(data.ErrorMessage); message != "" {
+				if code := rawMessageString(data.ErrorCode); code != "" {
+					return fmt.Sprintf("%s (error_code=%s)", message, code)
+				}
+				return message
+			}
+			if code := rawMessageString(data.ErrorCode); code != "" {
+				return "error_code=" + code
+			}
+		}
+	}
+	return ""
+}
+
+func rawMessageString(raw json.RawMessage) string {
+	raw = json.RawMessage(strings.TrimSpace(string(raw)))
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func videoFileName(video queryVideo, index int) string {
