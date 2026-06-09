@@ -90,9 +90,6 @@ func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*U
 
 	assetID := strings.TrimSpace(resp.Data.PippitAssetID)
 	if assetID == "" {
-		assetID = strings.TrimSpace(resp.Data.AssetID)
-	}
-	if assetID == "" {
 		return nil, fmt.Errorf("上传文件响应缺少 pippit_asset_id")
 	}
 
