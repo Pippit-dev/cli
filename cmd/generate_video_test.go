@@ -384,30 +384,64 @@ func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {
 		"--download-dir", t.TempDir(),
 	})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want no downloadable video error")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if !strings.Contains(err.Error(), "下载失败：未找到可下载的视频产物") {
-		t.Fatalf("error = %q, want no downloadable video error", err)
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != false {
+		t.Fatalf("completed = %v, want false", got["completed"])
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout = %q, want empty", stdout.String())
+	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
+	}
+	if got["error_message"] != "下载失败：未找到可下载的视频产物" {
+		t.Fatalf("error_message = %v, want no downloadable video error", got["error_message"])
+	}
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 0 {
+		t.Fatalf("videos = %#v, want empty", got["videos"])
 	}
 }
 
-func TestQueryResultErrorLogIncludesLogID(t *testing.T) {
+func TestQueryResultValidationErrorReturnsJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, "http://127.0.0.1")
+	root.SetArgs([]string{
+		"query-result",
+		"--run-id", "run_456",
+		"--download-dir", t.TempDir(),
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != false {
+		t.Fatalf("completed = %v, want false", got["completed"])
+	}
+	if got["thread_id"] != "" || got["run_id"] != "run_456" {
+		t.Fatalf("ids = (%v, %v), want empty thread_id and run_id", got["thread_id"], got["run_id"])
+	}
+	if got["error_message"] != "查询失败：缺少必填参数 --thread-id" {
+		t.Fatalf("error_message = %v, want validation error", got["error_message"])
+	}
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 0 {
+		t.Fatalf("videos = %#v, want empty", got["videos"])
+	}
+}
+
+func TestQueryResultGetThreadBusinessErrorReturnsErrorMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/biz/v1/skill/get_thread":
-			_, _ = w.Write([]byte(`{"ret":"5","errmsg":"创作失败","log_id":"log_456"}`))
+			_, _ = w.Write([]byte(`{"ret":"5","errmsg":"创作失败：暂时无法生成","log_id":"log_456"}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
 	}))
 	defer server.Close()
 
-	clearDailyErrorLog(t)
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
@@ -417,23 +451,22 @@ func TestQueryResultErrorLogIncludesLogID(t *testing.T) {
 		"--download-dir", t.TempDir(),
 	})
 
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want get_thread error")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	entries := readDailyErrorLog(t)
-	if len(entries) != 1 {
-		t.Fatalf("log entries = %d, want 1: %#v", len(entries), entries)
+	got := decodeJSON(t, stdout.Bytes())
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true", got["completed"])
 	}
-	fields, ok := entries[0]["fields"].(map[string]any)
-	if !ok {
-		t.Fatalf("fields = %#v, want object", entries[0]["fields"])
+	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
-	if fields["log_id"] != "log_456" {
-		t.Fatalf("log_id = %v, want log_456", fields["log_id"])
+	if got["error_message"] != "创作失败：暂时无法生成 log_id=log_456" {
+		t.Fatalf("error_message = %v, want get_thread business error", got["error_message"])
 	}
-	if fields["thread_id"] != "thread_123" || fields["run_id"] != "run_456" {
-		t.Fatalf("fields = %#v, want thread/run ids", fields)
+	videos, ok := got["videos"].([]any)
+	if !ok || len(videos) != 0 {
+		t.Fatalf("videos = %#v, want empty", got["videos"])
 	}
 }
 

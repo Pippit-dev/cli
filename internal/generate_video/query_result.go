@@ -3,6 +3,7 @@ package generate_video
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -89,6 +90,9 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		RunID:    opts.RunID,
 	}, runner)
 	if err != nil {
+		if result, ok := queryResultFromGetThreadBusinessError(err, opts); ok {
+			return result, nil
+		}
 		return nil, fmt.Errorf("查询失败：%w", err)
 	}
 
@@ -157,6 +161,35 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		RunID:     opts.RunID,
 		Videos:    resultVideos,
 	}, nil
+}
+
+func queryResultFromGetThreadBusinessError(err error, opts *QueryResultOptions) (*QueryResultResult, bool) {
+	var logErr *common.LogIDError
+	if !errors.As(err, &logErr) {
+		return nil, false
+	}
+	message := getThreadBusinessErrorMessage(logErr.Message)
+	if message == "" {
+		message = "查询失败"
+	}
+	if logID := logErr.LogID(); logID != "" {
+		message = fmt.Sprintf("%s log_id=%s", message, logID)
+	}
+	return &QueryResultResult{
+		Completed:    true,
+		ThreadID:     opts.ThreadID,
+		RunID:        opts.RunID,
+		ErrorMessage: message,
+		Videos:       []QueryResultVideo{},
+	}, true
+}
+
+func getThreadBusinessErrorMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if idx := strings.Index(message, "errmsg="); idx >= 0 {
+		return strings.TrimSpace(message[idx+len("errmsg="):])
+	}
+	return message
 }
 
 func validateQueryResultOptions(opts *QueryResultOptions) error {

@@ -26,7 +26,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 					"run_id":       strings.TrimSpace(opts.RunID),
 					"download_dir": strings.TrimSpace(opts.DownloadDir),
 				})
-				return err
+				result = queryResultFromError(err, opts)
 			}
 			encoder := json.NewEncoder(stdout)
 			encoder.SetIndent("", "  ")
@@ -39,4 +39,16 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate-video output")
 	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos into")
 	return cmd
+}
+
+func queryResultFromError(err error, opts *internalgen.QueryResultOptions) *internalgen.QueryResultResult {
+	result := &internalgen.QueryResultResult{
+		ErrorMessage: err.Error(),
+		Videos:       []internalgen.QueryResultVideo{},
+	}
+	if opts != nil {
+		result.ThreadID = strings.TrimSpace(opts.ThreadID)
+		result.RunID = strings.TrimSpace(opts.RunID)
+	}
+	return result
 }
