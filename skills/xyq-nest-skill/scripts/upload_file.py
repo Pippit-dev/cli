@@ -11,7 +11,7 @@ import urllib.request
 import urllib.error
 
 sys.path.insert(0, os.path.dirname(__file__))
-from xyq_common import XYQ_BASE, ACCESS_KEY, UPLOAD_FILE_PATH, parse_response
+from xyq_common import XYQ_BASE, ACCESS_KEY, UPLOAD_FILE_PATH, HTTP_TIMEOUT_SECONDS, parse_response
 
 # 允许的 MIME 类型前缀
 ALLOWED_PREFIXES = ("image/", "video/")
@@ -70,7 +70,7 @@ def upload_file(file_path: str) -> dict:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             return parse_response(result)
     except urllib.error.HTTPError as e:

@@ -212,10 +212,10 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 ## 生视频 CLI
 
-`generate_video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交生视频请求：
+`generate-video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交生视频请求：
 
 ```bash
-pippit-tool-cli generate_video \
+pippit-tool-cli generate-video \
   --prompt "做个小猫视频" \
   --image "~/images/cat1.jpg" \
   --image "~/images/cat2.jpg" \

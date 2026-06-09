@@ -26,9 +26,6 @@ func TestGenerateVideo(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("upload method = %s, want POST", r.Method)
 			}
-			if r.Header.Get("x-use-ppe") != "" || r.Header.Get("x-tt-env") != "" {
-				t.Fatalf("upload PPE headers = (%q, %q), want empty", r.Header.Get("x-use-ppe"), r.Header.Get("x-tt-env"))
-			}
 			if uploadIndex >= len(assetIDs) {
 				t.Fatalf("unexpected upload %d", uploadIndex)
 			}
@@ -44,12 +41,6 @@ func TestGenerateVideo(t *testing.T) {
 		case "/api/biz/v1/skill/submit_run":
 			if uploadIndex != len(assetIDs) {
 				t.Fatalf("submit called after %d uploads, want %d", uploadIndex, len(assetIDs))
-			}
-			if r.Header.Get("x-use-ppe") != "1" {
-				t.Fatalf("x-use-ppe = %q, want 1", r.Header.Get("x-use-ppe"))
-			}
-			if r.Header.Get("x-tt-env") != "ppe_self_testin_c9pq2g" {
-				t.Fatalf("x-tt-env = %q, want ppe_self_testin_c9pq2g", r.Header.Get("x-tt-env"))
 			}
 			data, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -101,7 +92,7 @@ func TestGenerateVideo(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"generate_video",
+		"generate-video",
 		"--prompt", "做个小猫视频",
 		"--image", image1,
 		"--image", image2,
@@ -137,7 +128,7 @@ func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"generate_video",
+		"generate-video",
 		"--prompt", "x",
 		"--duration", "1",
 		"--ratio", "1:1",
@@ -159,7 +150,7 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"generate_video",
+		"generate-video",
 		"--duration", "1",
 	})
 
@@ -180,7 +171,7 @@ func TestGenerateVideoRejectsTooManyImages(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate_video", "--prompt", "x"}
+	args := []string{"generate-video", "--prompt", "x"}
 	for _, path := range mediaPaths("image", ".jpg", 10) {
 		args = append(args, "--image", path)
 	}
@@ -203,7 +194,7 @@ func TestGenerateVideoRejectsTooManyVideos(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate_video", "--prompt", "x"}
+	args := []string{"generate-video", "--prompt", "x"}
 	for _, path := range mediaPaths("video", ".mp4", 4) {
 		args = append(args, "--video", path)
 	}
@@ -232,7 +223,7 @@ func TestGenerateVideoSubmitRunErrorIncludesLogID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"generate_video",
+		"generate-video",
 		"--prompt", "x",
 	})
 
@@ -260,7 +251,7 @@ func TestGenerateVideoErrorLogIncludesLogID(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
 	root.SetArgs([]string{
-		"generate_video",
+		"generate-video",
 		"--prompt", "x",
 	})
 
@@ -309,7 +300,7 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 			if _, ok := body["version"]; ok {
 				t.Fatalf("version = %v, want omitted", body["version"])
 			}
-			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_prompt_text","data":"做个小猫视频"},{"sub_type":"biz/x_data_video","data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\"}}"}]}}]}]}}}`))
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_prompt_text","data":"做个小猫视频"},{"sub_type":"biz/x_data_video","data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\",\"vid\":\"cat_vid\"}}"}]}}]}]}}}`))
 		case "/video.mp4":
 			requestedDownload = true
 			if r.Method != http.MethodGet {
@@ -336,12 +327,15 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 
-	outputPath := filepath.Join(downloadDir, "cat_video.mp4")
+	outputPath := filepath.Join(downloadDir, "cat_vid.mp4")
+	downloadURL := server.URL + "/video.mp4"
 	if !requestedDownload {
 		t.Fatal("download endpoint was not requested")
 	}
-	if got := stdout.String(); !strings.Contains(got, "Run 已完成，产物已下载：") || !strings.Contains(got, outputPath) {
-		t.Fatalf("stdout = %q, want download path", got)
+	if got := stdout.String(); !strings.Contains(got, "Run 已完成，产物已下载：") ||
+		!strings.Contains(got, outputPath) ||
+		!strings.Contains(got, "download_url: "+downloadURL) {
+		t.Fatalf("stdout = %q, want download path and download url", got)
 	}
 	assertFileContent(t, outputPath, "video-data")
 }

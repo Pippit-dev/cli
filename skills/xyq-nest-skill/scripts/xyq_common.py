@@ -13,6 +13,7 @@ ACCESS_KEY = os.environ.get("XYQ_ACCESS_KEY", "")
 SUBMIT_RUN_PATH = "/api/biz/v1/skill/submit_run"
 GET_THREAD_PATH = "/api/biz/v1/skill/get_thread"
 UPLOAD_FILE_PATH = "/api/biz/v1/skill/upload_file"
+HTTP_TIMEOUT_SECONDS = 30 * 60
 
 if not ACCESS_KEY:
     print("错误：请设置 XYQ_ACCESS_KEY 环境变量", file=sys.stderr)
@@ -22,7 +23,7 @@ if not ACCESS_KEY:
 def _headers():
     return {
         "Authorization": f"Bearer {ACCESS_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
 
@@ -37,7 +38,7 @@ def api_post(path: str, body: dict) -> dict:
         headers=_headers(),
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8") if e.fp else ""
@@ -53,7 +54,7 @@ def api_get(path: str) -> dict:
     url = f"{XYQ_BASE.rstrip('/')}{path}"
     req = urllib.request.Request(url, method="GET", headers=_headers())
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8") if e.fp else ""

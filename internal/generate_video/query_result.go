@@ -23,9 +23,10 @@ type QueryResultOptions struct {
 
 // QueryResultResult describes the user-facing query-result outcome.
 type QueryResultResult struct {
-	Completed   bool
-	State       int
-	OutputPaths []string
+	Completed    bool
+	State        int
+	OutputPaths  []string
+	DownloadURLs []string
 }
 
 type queryThread struct {
@@ -103,11 +104,13 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 
 	outputPaths := make([]string, 0, len(videos))
+	downloadURLs := make([]string, 0, len(videos))
 	usedNames := make(map[string]int, len(videos))
 	for i, video := range videos {
 		if strings.TrimSpace(video.DownloadURL) == "" {
 			return nil, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
 		}
+		downloadURLs = append(downloadURLs, video.DownloadURL)
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(videoFileName(video, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
 			URL:        video.DownloadURL,
@@ -129,9 +132,10 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 
 	return &QueryResultResult{
-		Completed:   true,
-		State:       run.State,
-		OutputPaths: outputPaths,
+		Completed:    true,
+		State:        run.State,
+		OutputPaths:  outputPaths,
+		DownloadURLs: downloadURLs,
 	}, nil
 }
 
@@ -232,15 +236,24 @@ func extractQueryVideos(run queryRun) []queryVideo {
 }
 
 func videoFileName(video queryVideo, index int) string {
-	name := firstNonEmpty(video.Title, video.VID, video.AssetID)
+	name := firstNonEmpty(video.VID, video.Title, video.AssetID)
 	if name == "" {
 		name = "result_" + strconv.Itoa(index)
 	}
 	name = sanitizeFileName(name)
-	if strings.TrimSpace(filepath.Ext(name)) == "" {
+	if !hasVideoExtension(name) {
 		name += ".mp4"
 	}
 	return name
+}
+
+func hasVideoExtension(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(filepath.Ext(name))) {
+	case ".mp4", ".mov", ".m4v", ".webm":
+		return true
+	default:
+		return false
+	}
 }
 
 func firstNonEmpty(values ...string) string {

@@ -125,7 +125,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	got := stdout.String()
 	for _, want := range []string{
 		"Pippit CLI generates videos",
-		"generate_video",
+		"generate-video",
 		"download-result",
 		"get-thread",
 		"list-thread-file",
@@ -583,7 +583,7 @@ func TestDownloadResultRequiresOutputPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "缺少必填参数 --output-path") {
+	if !strings.Contains(err.Error(), "--output-path is required") {
 		t.Fatalf("error = %q, want output-path validation", err)
 	}
 }
@@ -615,7 +615,7 @@ func TestDownloadResultRequiresURL(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "缺少必填参数 --url") {
+	if !strings.Contains(err.Error(), "--url is required") {
 		t.Fatalf("error = %q, want url validation", err)
 	}
 }
@@ -761,7 +761,7 @@ func TestGetThreadRequiresThreadID(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "缺少必填参数 --thread-id") {
+	if !strings.Contains(err.Error(), "--thread-id is required") {
 		t.Fatalf("error = %q, want thread-id validation", err)
 	}
 
@@ -772,7 +772,7 @@ func TestGetThreadRequiresThreadID(t *testing.T) {
 	if entries[0]["command"] != "get-thread" {
 		t.Fatalf("command = %v, want get-thread", entries[0]["command"])
 	}
-	if entries[0]["error"] != "缺少必填参数 --thread-id" {
+	if entries[0]["error"] != "--thread-id is required" {
 		t.Fatalf("error = %v, want thread-id validation", entries[0]["error"])
 	}
 }
@@ -908,7 +908,7 @@ func TestListThreadFileRequiresThreadID(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "缺少必填参数 --thread-id") {
+	if !strings.Contains(err.Error(), "--thread-id is required") {
 		t.Fatalf("error = %q, want thread-id validation", err)
 	}
 }
@@ -943,7 +943,7 @@ func TestListThreadFileRejectsPageSizeAboveMax(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--page-size 必须在 1 到 200 之间") {
+	if !strings.Contains(err.Error(), "--page-size must be between 1 and 200") {
 		t.Fatalf("error = %q, want page-size validation", err)
 	}
 }

@@ -16,11 +16,6 @@ const (
 	maxReferenceVideos = 3
 )
 
-var submitRunHeaders = map[string]string{
-	"x-use-ppe": "1",
-	"x-tt-env":  "ppe_self_testin_c9pq2g",
-}
-
 var (
 	allowedImageExtensionList = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"}
 	allowedVideoExtensionList = []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".m4v"}
@@ -28,7 +23,7 @@ var (
 	allowedVideoExtensions    = makeExtensionSet(allowedVideoExtensionList)
 )
 
-// Options is the stable command-facing request shape for generate_video.
+// Options is the stable command-facing request shape for generate-video.
 type Options struct {
 	Prompt      string
 	ImagePaths  []string
@@ -53,7 +48,7 @@ type videoPartToolParam struct {
 	Resolution  string       `json:"resolution,omitempty"`
 }
 
-// Result is the JSON envelope printed by `pippit-tool-cli generate_video`.
+// Result is the JSON envelope printed by `pippit-tool-cli generate-video`.
 type Result struct {
 	ThreadID      string `json:"thread_id"`
 	RunID         string `json:"run_id"`
@@ -62,7 +57,7 @@ type Result struct {
 
 func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, error) {
 	if runner == nil || runner.Client == nil {
-		return nil, fmt.Errorf("generate_video 运行器客户端缺失")
+		return nil, fmt.Errorf("generate-video 运行器客户端缺失")
 	}
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
@@ -80,20 +75,20 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs)
 
 	var resp common.SubmitRunResponse
-	if err := runner.Client.SendRequestWithHeaders(ctx, common.SubmitRunPath(runner), body, submitRunHeaders, &resp); err != nil {
-		return nil, fmt.Errorf("提交 generate_video 请求失败: %w", err)
+	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
+		return nil, fmt.Errorf("提交 generate-video 请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, common.NewLogIDError(fmt.Sprintf("generate_video 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		return nil, common.NewLogIDError(fmt.Sprintf("generate-video 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 	if resp.Data.Run.ThreadID == "" {
-		return nil, fmt.Errorf("generate_video 响应缺少 data.run.thread_id")
+		return nil, fmt.Errorf("generate-video 响应缺少 data.run.thread_id")
 	}
 	if resp.Data.Run.RunID == "" {
-		return nil, fmt.Errorf("generate_video 响应缺少 data.run.run_id")
+		return nil, fmt.Errorf("generate-video 响应缺少 data.run.run_id")
 	}
 
 	return &Result{

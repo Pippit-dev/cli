@@ -9,13 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewCommand builds the generate_video command.
+// NewCommand builds the generate-video command.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	opts := &internalgen.Options{}
 	var durationSec int
 
 	cmd := &cobra.Command{
-		Use:   "generate_video",
+		Use:   "generate-video",
 		Short: "Generate a video with the video part agent",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -25,7 +25,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 
 			result, err := internalgen.Run(cmd.Context(), opts, runner)
 			if err != nil {
-				_ = common.AppendDailyErrorLog("generate_video", err, map[string]string{
+				_ = common.AppendDailyErrorLog("generate-video", err, map[string]string{
 					"image_count": strconv.Itoa(len(opts.ImagePaths)),
 					"video_count": strconv.Itoa(len(opts.VideoPaths)),
 				})

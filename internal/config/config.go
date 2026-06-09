@@ -8,7 +8,7 @@ import (
 
 const (
 	DefaultBaseURL              = "https://xyq.jianying.com"
-	DefaultHTTPTimeout          = 30 * time.Second
+	DefaultHTTPTimeout          = 30 * time.Minute
 	DefaultAuthTTL              = 30 * time.Second
 	DefaultOAuthClientKey       = "mock-cli"
 	DefaultOAuthBaseURL         = "https://passport.bytedance.com"

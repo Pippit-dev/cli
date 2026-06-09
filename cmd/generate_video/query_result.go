@@ -16,7 +16,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 
 	cmd := &cobra.Command{
 		Use:   "query-result",
-		Short: "Query a generate_video run result and download completed videos",
+		Short: "Query a generate-video run result and download completed videos",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := internalgen.QueryResult(cmd.Context(), opts, runner)
@@ -36,9 +36,14 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 			if err != nil {
 				return err
 			}
-			for _, path := range result.OutputPaths {
+			for i, path := range result.OutputPaths {
 				if _, err := fmt.Fprintln(stdout, path); err != nil {
 					return err
+				}
+				if i < len(result.DownloadURLs) && strings.TrimSpace(result.DownloadURLs[i]) != "" {
+					if _, err := fmt.Fprintf(stdout, "download_url: %s\n", result.DownloadURLs[i]); err != nil {
+						return err
+					}
 				}
 			}
 			return nil
@@ -46,8 +51,8 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from generate_video output")
-	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate_video output")
+	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from generate-video output")
+	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate-video output")
 	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos into")
 	return cmd
 }
