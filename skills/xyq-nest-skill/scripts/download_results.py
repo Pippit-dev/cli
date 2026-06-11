@@ -11,6 +11,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 sys.path.insert(0, os.path.dirname(__file__))
 
+HTTP_TIMEOUT_SECONDS = 30 * 60
+
 
 def download_file(url, filepath):
     """下载单个文件"""
@@ -18,7 +20,7 @@ def download_file(url, filepath):
     req = urllib.request.Request(url, headers={"User-Agent": "XYQ-Nest-Skill/1.0"})
     tmp_path = filepath + ".tmp"
     try:
-        with urllib.request.urlopen(req, timeout=600) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
             with open(tmp_path, "wb") as f:
                 shutil.copyfileobj(resp, f, length=1024 * 1024)
         os.replace(tmp_path, filepath)

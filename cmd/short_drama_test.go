@@ -124,12 +124,13 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	}
 	got := stdout.String()
 	for _, want := range []string{
-		"Pippit CLI submits short-drama workflows",
+		"Pippit CLI generates videos",
+		"generate-video",
 		"download-result",
 		"get-thread",
 		"list-thread-file",
+		"query-result",
 		"short-drama",
-		"upload-file",
 		"update",
 		"--version",
 	} {
@@ -158,7 +159,6 @@ func TestShortDramaDoesNotIncludeCommonThreadCommands(t *testing.T) {
 		"+download-result":  true,
 		"+get-thread":       true,
 		"+list-thread-file": true,
-		"+upload-file":      true,
 	}
 	for _, child := range cmd.Commands() {
 		if removedCommands[child.Name()] {
@@ -189,7 +189,7 @@ func TestShortDramaSubmitRunRequiresMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want validation error")
 	}
-	if !strings.Contains(err.Error(), "--message is required") {
+	if !strings.Contains(err.Error(), "缺少必填参数 --message") {
 		t.Fatalf("error = %q, want message validation", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestShortDramaSubmitRunRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestUploadFile(t *testing.T) {
+func TestShortDramaUploadFile(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method = %s, want POST", r.Method)
@@ -265,7 +265,7 @@ func TestUploadFile(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
@@ -277,10 +277,10 @@ func TestUploadFile(t *testing.T) {
 	}
 }
 
-func TestUploadFileRequiresPath(t *testing.T) {
+func TestShortDramaUploadFileRequiresPath(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"upload-file"})
+	root.SetArgs([]string{"short-drama", "+upload-file"})
 
 	err := root.Execute()
 	if err == nil {
@@ -291,7 +291,7 @@ func TestUploadFileRequiresPath(t *testing.T) {
 	}
 }
 
-func TestUploadFileRequiresAccessKey(t *testing.T) {
+func TestShortDramaUploadFileRequiresAccessKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not receive request without access key")
 	}))
@@ -305,7 +305,7 @@ func TestUploadFileRequiresAccessKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommandWithAccessKey(t, &stdout, &stderr, server.URL, "")
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
@@ -314,7 +314,7 @@ func TestUploadFileRequiresAccessKey(t *testing.T) {
 	assertAccessKeyGuidance(t, err)
 }
 
-func TestUploadFileRejectsUnsupportedFileType(t *testing.T) {
+func TestShortDramaUploadFileRejectsUnsupportedFileType(t *testing.T) {
 	cwd := chdirTemp(t)
 	path := filepath.Join(cwd, "story.png")
 	if err := os.WriteFile(path, []byte("png-data"), 0o644); err != nil {
@@ -323,13 +323,13 @@ func TestUploadFileRejectsUnsupportedFileType(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"upload-file", "--path", path})
+	root.SetArgs([]string{"short-drama", "+upload-file", "--path", path})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("Execute() error = nil, want file type validation error")
 	}
-	if !strings.Contains(err.Error(), "only .doc, .docx, and .txt uploads are supported") {
+	if !strings.Contains(err.Error(), "仅支持上传 .doc、.docx 和 .txt") {
 		t.Fatalf("error = %q, want unsupported type validation", err)
 	}
 }
@@ -601,7 +601,7 @@ func TestDownloadResultRejectsOutputDirFlag(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want unknown flag error")
 	}
-	if !strings.Contains(err.Error(), "unknown flag: --output-dir") {
+	if !strings.Contains(err.Error(), "未知参数: --output-dir") {
 		t.Fatalf("error = %q, want output-dir rejection", err)
 	}
 }
@@ -629,7 +629,7 @@ func TestDownloadResultRejectsInvalidScheme(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want scheme validation error")
 	}
-	if !strings.Contains(err.Error(), "only http and https are allowed") {
+	if !strings.Contains(err.Error(), "仅支持 http 和 https") {
 		t.Fatalf("error = %q, want scheme validation", err)
 	}
 }
@@ -654,7 +654,7 @@ func TestDownloadResultAllFailed(t *testing.T) {
 	if err == nil {
 		t.Fatal("Execute() error = nil, want all-failed error")
 	}
-	if !strings.Contains(err.Error(), "all 1 download(s) failed") {
+	if !strings.Contains(err.Error(), "全部 1 个下载任务失败") {
 		t.Fatalf("error = %q, want all-failed message", err)
 	}
 	logs := readDailyErrorLog(t)
@@ -843,7 +843,7 @@ func TestListThreadFile(t *testing.T) {
 	if got["total"] != float64(1) {
 		t.Fatalf("total = %v, want 1", got["total"])
 	}
-	wantMessage := "<system-remind>\n- total is below 200; continue querying with current --page-num 2\n</system-remind>"
+	wantMessage := "<system-remind>\n- 文件总数小于 200；继续使用当前 --page-num 2 查询\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want current page hint", got["message"])
 	}
@@ -893,7 +893,7 @@ func TestListThreadFileMessageWhenPageFull(t *testing.T) {
 	}
 
 	got := decodeJSON(t, stdout.Bytes())
-	wantMessage := "<system-remind>\n- total reached 200; query the next page with --page-num 3\n</system-remind>"
+	wantMessage := "<system-remind>\n- 文件总数已达到 200；请使用 --page-num 3 查询下一页\n</system-remind>"
 	if got["message"] != wantMessage {
 		t.Fatalf("message = %v, want next page hint", got["message"])
 	}
@@ -969,7 +969,7 @@ func assertAccessKeyGuidance(t *testing.T, err error) {
 		t.Fatal("error = nil, want access key guidance")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "XYQ_ACCESS_KEY") {
+	if !strings.Contains(msg, "XYQ_ACCESS_KEY 缺失") {
 		t.Fatalf("error = %q, want access key guidance", err)
 	}
 	if !strings.Contains(msg, "https://xyq.jianying.com/home?tab_name=home") {

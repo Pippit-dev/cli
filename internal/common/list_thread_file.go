@@ -51,7 +51,7 @@ type threadFileResponse struct {
 
 func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Runner) (*ListThreadFileResult, error) {
 	if runner == nil || runner.Client == nil {
-		return nil, fmt.Errorf("list_thread_file runner client is required")
+		return nil, fmt.Errorf("list_thread_file 运行器客户端缺失")
 	}
 
 	body := map[string]any{
@@ -66,13 +66,13 @@ func ListThreadFile(ctx context.Context, opts *ListThreadFileOptions, runner *Ru
 
 	var resp listThreadFileResponse
 	if err := runner.Client.SendRequest(ctx, listThreadFilePath(runner), body, &resp); err != nil {
-		return nil, fmt.Errorf("list_thread_file request failed: %w", err)
+		return nil, fmt.Errorf("获取线程文件列表请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
-			resp.Errmsg = "unknown error"
+			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("list_thread_file failed: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, fmt.Errorf("获取线程文件列表请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
 	}
 
 	files := make([]*ThreadFile, 0, len(resp.Data.Files))
@@ -101,9 +101,9 @@ func listThreadFileMessage(total int64, pageNum int) string {
 	}
 	var message string
 	if total >= MaxListThreadFilePageSize {
-		message = fmt.Sprintf("total reached %d; query the next page with --page-num %d", MaxListThreadFilePageSize, pageNum+1)
+		message = fmt.Sprintf("文件总数已达到 %d；请使用 --page-num %d 查询下一页", MaxListThreadFilePageSize, pageNum+1)
 	} else {
-		message = fmt.Sprintf("total is below %d; continue querying with current --page-num %d", MaxListThreadFilePageSize, pageNum)
+		message = fmt.Sprintf("文件总数小于 %d；继续使用当前 --page-num %d 查询", MaxListThreadFilePageSize, pageNum)
 	}
 	return fmt.Sprintf("%s\n- %s\n%s", start, message, end)
 }

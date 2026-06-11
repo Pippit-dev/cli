@@ -59,3 +59,33 @@ func TestAppendDailyErrorLog(t *testing.T) {
 		t.Fatalf("access_key should be omitted from log fields: %#v", fields)
 	}
 }
+
+func TestAppendDailyErrorLogAddsLogID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	err := AppendDailyErrorLog("query-result", NewLogIDError("request failed", "log_123"), map[string]string{
+		"thread_id": "thread_123",
+	})
+	if err != nil {
+		t.Fatalf("AppendDailyErrorLog(): %v", err)
+	}
+
+	path := filepath.Join(home, ".pippit_tool_cli", "logs", time.Now().Format("2006-01-02")+".log")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	var entry map[string]any
+	if err := sonic.Unmarshal([]byte(strings.TrimSpace(string(data))), &entry); err != nil {
+		t.Fatalf("decode log line: %v\n%s", err, string(data))
+	}
+	fields, ok := entry["fields"].(map[string]any)
+	if !ok {
+		t.Fatalf("fields = %#v, want object", entry["fields"])
+	}
+	if fields["log_id"] != "log_123" {
+		t.Fatalf("log_id = %v, want log_123", fields["log_id"])
+	}
+}

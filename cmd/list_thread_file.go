@@ -39,7 +39,7 @@ func newListThreadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)

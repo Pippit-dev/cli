@@ -60,21 +60,21 @@ func runUpdate(stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "Updating pippit-tool-cli via npm: %s\n", pkg)
 	restore, err := prepareSelfReplace()
 	if err != nil {
-		return fmt.Errorf("prepare self replace: %w", err)
+		return fmt.Errorf("准备替换当前可执行文件失败: %w", err)
 	}
 	if err := runInheritEnv(stderr, []string{"PIPPIT_CLI_SKIP_SKILLS=1"}, "npm", "install", "-g", pkg); err != nil {
 		restore()
-		return fmt.Errorf("update pippit-tool-cli: %w", err)
+		return fmt.Errorf("更新 pippit-tool-cli 失败: %w", err)
 	}
 
 	root, err := globalPackageRoot(defaultPackage)
 	if err != nil {
-		return fmt.Errorf("locate global package: %w", err)
+		return fmt.Errorf("定位全局 npm 包失败: %w", err)
 	}
 
 	fmt.Fprintln(stderr, "Updating pippit-tool-cli skills...")
 	if err := installSkills(root, stderr); err != nil {
-		return fmt.Errorf("update pippit-tool-cli skills: %w", err)
+		return fmt.Errorf("更新 pippit-tool-cli skills 失败: %w", err)
 	}
 
 	reportBundledSkillTelemetry("update", "cli_update", stderr)
@@ -89,7 +89,7 @@ func globalPackageRoot(pkg string) (string, error) {
 	}
 	npmRoot := strings.TrimSpace(string(out))
 	if npmRoot == "" {
-		return "", fmt.Errorf("npm root -g returned empty output")
+		return "", fmt.Errorf("npm root -g 输出为空")
 	}
 	return filepath.Join(append([]string{npmRoot}, strings.Split(pkg, "/")...)...), nil
 }
@@ -98,7 +98,7 @@ func installSkills(root string, stderr io.Writer) error {
 	if info, err := os.Stat(filepath.Join(root, "skills")); err != nil {
 		return err
 	} else if !info.IsDir() {
-		return fmt.Errorf("%s is not a directory", filepath.Join(root, "skills"))
+		return fmt.Errorf("%s 不是目录", filepath.Join(root, "skills"))
 	}
 	if err := runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y", "--skill", "*"); err != nil {
 		return err
@@ -153,7 +153,7 @@ func reportBundledSkillTelemetry(event string, source string, stderr io.Writer) 
 		go func(payload telemetryPayload) {
 			defer wg.Done()
 			if err := reportSkillTelemetry(payload); err != nil && os.Getenv("PIPPIT_CLI_DEBUG_TELEMETRY") == "1" {
-				fmt.Fprintf(stderr, "[pippit-tool-cli] telemetry failed: %v\n", err)
+				fmt.Fprintf(stderr, "[pippit-tool-cli] 埋点上报失败: %v\n", err)
 			}
 		}(payload)
 	}
@@ -188,7 +188,7 @@ func reportSkillTelemetry(payload telemetryPayload) error {
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("telemetry returned HTTP %d", resp.StatusCode)
+		return fmt.Errorf("埋点请求返回 HTTP %d", resp.StatusCode)
 	}
 	return nil
 }

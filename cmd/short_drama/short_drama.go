@@ -3,12 +3,12 @@ package short_drama
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/short_drama"
-	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +22,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newShortDramaSubmitRunCommand(stdout, stderr, runner))
+	cmd.AddCommand(newShortDramaUploadFileCommand(stdout, stderr, runner))
 	return cmd
 }
 
@@ -42,14 +43,14 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 			opts.ThreadID = strings.TrimSpace(opts.ThreadID)
 
 			if opts.Message == "" {
-				return fmt.Errorf("--message is required")
+				return fmt.Errorf("缺少必填参数 --message")
 			}
 
 			result, err := short_drama.SubmitRun(cmd.Context(), &opts, runner)
 			if err != nil {
 				return err
 			}
-			return writeJSON(stdout, result)
+			return common.WriteJSON(stdout, result)
 		}),
 	}
 	cmd.SetOut(stdout)
@@ -57,6 +58,40 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 	cmd.Flags().StringVar(&opts.Message, "message", "", "message to send to the short drama agent")
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "existing thread ID; omit to create a new thread")
 	cmd.Flags().StringArrayVar(&opts.AssetIDs, "asset-ids", nil, "asset ID to attach; repeat for multiple assets")
+	return cmd
+}
+
+func newShortDramaUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var opts common.UploadFileOptions
+
+	cmd := &cobra.Command{
+		Use:   "+upload-file",
+		Short: "Upload a file for the short drama scene",
+		Args:  cobra.NoArgs,
+		RunE: withErrorLog("short-drama +upload-file", func() map[string]string {
+			return map[string]string{
+				"file_name": fileNameForLog(opts.Path),
+			}
+		}, func(cmd *cobra.Command, _ []string) error {
+			opts.Path = strings.TrimSpace(opts.Path)
+
+			if opts.Path == "" {
+				return fmt.Errorf("--path is required")
+			}
+			if !isShortDramaUploadFile(opts.Path) {
+				return fmt.Errorf("短剧上传仅支持上传 .doc、.docx 和 .txt 文件")
+			}
+
+			result, err := common.UploadFile(cmd.Context(), opts, runner)
+			if err != nil {
+				return err
+			}
+			return common.WriteJSON(stdout, result)
+		}),
+	}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.Flags().StringVar(&opts.Path, "path", "", "local file path to upload")
 	return cmd
 }
 
@@ -74,11 +109,19 @@ func withErrorLog(command string, fields func() map[string]string, run func(*cob
 	}
 }
 
-func writeJSON(w io.Writer, v any) error {
-	data, err := sonic.Marshal(v)
-	if err != nil {
-		return err
+func fileNameForLog(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
 	}
-	_, err = fmt.Fprintln(w, string(data))
-	return err
+	return filepath.Base(path)
+}
+
+func isShortDramaUploadFile(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".doc", ".docx", ".txt":
+		return true
+	default:
+		return false
+	}
 }

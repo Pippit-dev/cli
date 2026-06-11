@@ -58,20 +58,26 @@ type downloadTaskResult struct {
 
 func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Runner) (*DownloadResultResponse, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		if errors.Is(err, context.Canceled) {
+			return nil, fmt.Errorf("下载已取消")
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("下载超时")
+		}
+		return nil, fmt.Errorf("下载上下文异常: %w", err)
 	}
 	rawURL := strings.TrimSpace(opts.URL)
 	if rawURL == "" {
-		return nil, fmt.Errorf("download url is required")
+		return nil, fmt.Errorf("下载 URL 不能为空")
 	}
 
 	outputPath := strings.TrimSpace(opts.OutputPath)
 	if outputPath == "" {
-		return nil, fmt.Errorf("output_path is required")
+		return nil, fmt.Errorf("输出路径不能为空")
 	}
 	if info, err := os.Stat(outputPath); err == nil {
 		if info.IsDir() {
-			return nil, fmt.Errorf("output path %q is a directory", outputPath)
+			return nil, fmt.Errorf("输出路径 %q 是目录，请指定文件", outputPath)
 		}
 		if shouldSkipExistingFile(info, opts.UpdatedAt) {
 			return &DownloadResultResponse{
@@ -80,19 +86,19 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 			}, nil
 		}
 	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("stat output path: %w", err)
+		return nil, fmt.Errorf("获取输出路径信息失败: %w", err)
 	}
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
-		return nil, fmt.Errorf("create output dir: %w", err)
+		return nil, fmt.Errorf("创建输出目录失败: %w", err)
 	}
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid url %q: %w", rawURL, err)
+		return nil, fmt.Errorf("URL %q 不合法: %w", rawURL, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("invalid url scheme %q in %q, only http and https are allowed", parsed.Scheme, rawURL)
+		return nil, fmt.Errorf("URL %q 的协议 %q 不支持，仅支持 http 和 https", rawURL, parsed.Scheme)
 	}
 	tasks := []downloadTask{
 		{
@@ -166,7 +172,7 @@ func DownloadResult(ctx context.Context, opts DownloadResultOptions, runner *Run
 		Errors:     errorList,
 	}
 	if len(downloaded) == 0 && len(errorList) > 0 {
-		return result, fmt.Errorf("all %d download(s) failed", len(errorList))
+		return result, fmt.Errorf("全部 %d 个下载任务失败", len(errorList))
 	}
 	return result, nil
 }
@@ -200,7 +206,7 @@ func downloadFileWithRetry(ctx context.Context, client Client, rawURL string, ta
 			return err
 		}
 	}
-	return fmt.Errorf("failed after %d retries: %w", maxDownloadRetries, lastErr)
+	return fmt.Errorf("重试 %d 次后仍失败: %w", maxDownloadRetries, lastErr)
 }
 
 func isRetryableError(err error) bool {
@@ -230,18 +236,18 @@ func downloadFile(ctx context.Context, client Client, rawURL string, targetPath 
 	}()
 	out, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return fmt.Errorf("创建临时文件失败: %w", err)
 	}
 	_, copyErr := io.Copy(out, resp.Body)
 	closeErr := out.Close()
 	if copyErr != nil {
-		return fmt.Errorf("write temp file: %w", copyErr)
+		return fmt.Errorf("写入临时文件失败: %w", copyErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close temp file: %w", closeErr)
+		return fmt.Errorf("关闭临时文件失败: %w", closeErr)
 	}
 	if err := os.Rename(tmpPath, targetPath); err != nil {
-		return fmt.Errorf("replace target file: %w", err)
+		return fmt.Errorf("替换目标文件失败: %w", err)
 	}
 	tempActive = false
 	if updatedAt > 0 {

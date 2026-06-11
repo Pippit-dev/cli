@@ -1,4 +1,4 @@
-package cmd
+package common
 
 import (
 	"fmt"
@@ -7,7 +7,8 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-func writeJSON(w io.Writer, v any) error {
+// WriteJSON writes v as one JSON line.
+func WriteJSON(w io.Writer, v any) error {
 	data, err := sonic.Marshal(v)
 	if err != nil {
 		return err

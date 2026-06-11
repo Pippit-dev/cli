@@ -101,10 +101,10 @@ pippit-tool-cli get-thread --thread-id THREAD_ID --run-id RUN_ID
 
 ### 3. 上传文件
 
-当用户提供短剧大纲、人物设定、世界观设定、已有分集或剧本等本地参考文件时，可先上传文件。`upload-file` 当前只接收本地文件路径，并且只支持 `.doc`、`.docx` 和 `.txt` 后缀；不要把 `.md`、`.pdf`、图片、视频或 URL 传给该命令。
+当用户提供短剧大纲、人物设定、世界观设定、已有分集或剧本等本地参考文件时，可先上传文件。`+upload-file` 当前只接收本地文件路径，并且只支持 `.doc`、`.docx` 和 `.txt` 后缀；不要把 `.md`、`.pdf`、图片、视频或 URL 传给该命令。
 
 ```bash
-pippit-tool-cli upload-file --path /path/to/outline.txt
+pippit-tool-cli short-drama +upload-file --path /path/to/outline.txt
 ```
 
 上传成功后命令只返回 `asset_id`：
@@ -179,7 +179,7 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
 
 ```
 1. 检查用户提供的是一个本地 `.doc`、`.docx` 或 `.txt` 剧本文件路径；如果不是，告知当前上传命令只支持这三类文件，不要擅自转换或改写文件。
-2. pippit-tool-cli upload-file --path /path/to/file.txt
+2. pippit-tool-cli short-drama +upload-file --path /path/to/file.txt
    → 拿到 asset_id
 3. pippit-tool-cli short-drama +submit-run --message "用户的原始短剧需求" --asset-ids asset_id
    → 拿到 thread_id、run_id 和 web_thread_link
@@ -242,7 +242,7 @@ Thread: thread_...
        [assistant] ...
 ```
 
-**upload-file** 返回：
+**short-drama +upload-file** 返回：
 
 ```json
 {
@@ -250,7 +250,7 @@ Thread: thread_...
 }
 ```
 
-`upload-file` 通过 `multipart/form-data` 上传文件，表单文件字段名为 `file`。本地文件必须存在、不能是目录，后缀必须是 `.doc`、`.docx` 或 `.txt`；不支持的后缀会直接报错。返回的 `asset_id` 来自服务端 `pippit_asset_id`，如果没有该字段才回退到 `asset_id`。
+`+upload-file` 通过 `multipart/form-data` 上传文件，表单文件字段名为 `file`。本地文件必须存在、不能是目录，后缀必须是 `.doc`、`.docx` 或 `.txt`；不支持的后缀会直接报错。返回的 `asset_id` 来自服务端 `pippit_asset_id`，如果没有该字段才回退到 `asset_id`。
 
 **list-thread-file** 返回：
 
@@ -323,7 +323,7 @@ Thread: thread_...
 
 你要做的只有三件事：
 
-1. **上传**：如果用户给了本地 `.doc` / `.docx` / `.txt` 参考文件，先调用 `upload-file`。
+1. **上传**：如果用户给了本地 `.doc` / `.docx` / `.txt` 参考文件，先调用 `+upload-file`。
 2. **提交任务**：首次创作时把用户原始短剧需求和唯一剧本 `asset_id` 通过 `+submit-run --asset-ids` 发给后端；同一 `thread_id` 后续续写或修改不再追加新的剧本文件。
 3. **传话、取文件、下载资源**：根据 `get-thread` 返回的 `readable_text` 展示进展、问题和结果；遇到表单、问卷、选项或按钮时，只做流程合理性清洗，不替用户决定创作内容；根据 `list-thread-file` 获取文件列表；再根据 `download_url` 调用 `download-result` 把缺失资源下载到用户本地。
 
@@ -341,8 +341,8 @@ Thread: thread_...
 - `--message` 是用户的原始短剧需求，不能为空。
 - 查询进展时优先使用 `+submit-run` 返回的 `thread_id` 和 `run_id`；如果需要查看整个会话，可以省略 `--run-id`。
 - `get-thread` 当前固定走服务端 v2 响应，输出字段是 `readable_text`；不要解析旧版 `messages` 数组。
-- `upload-file` 当前用于短剧场景文件上传链路，只支持本地 `.doc` / `.docx` / `.txt` 文件；`--path` 不能为空，路径必须指向真实文件，不能是目录。
-- `upload-file` 上传成功后只返回 `asset_id`；把该值原样作为 `+submit-run --asset-ids` 的参数。
+- `+upload-file` 当前用于短剧场景文件上传链路，只支持本地 `.doc` / `.docx` / `.txt` 文件；`--path` 不能为空，路径必须指向真实文件，不能是目录。
+- `+upload-file` 上传成功后只返回 `asset_id`；把该值原样作为 `+submit-run --asset-ids` 的参数。
 - 单次创作会话中（相同 `thread_id`），`+submit-run` 只支持绑定一个剧本文件。不要在同一 `thread_id` 下重复上传并追加第二个剧本 `asset_id`；用户给多个剧本时，先让用户选择一个，或分别开启新的创作会话。
 - `list-thread-file` 只需要 `thread_id`；分页参数使用 `--page-num 1 --page-size 200` 起步，`total` 达到 200 时下一轮递增 `page-num`。
 - `list-thread-file` 和 `download-result` 是两个不同的 CLI 指令：前者获取会话文件元信息，后者下载 URL 资源并写入到本地目标文件路径。

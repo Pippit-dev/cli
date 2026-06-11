@@ -1,6 +1,6 @@
 {
   "name": "@pippit-dev/cli",
-  "version": "1.0.1",
+  "version": "1.0.5",
   "description": "Pippit CLI",
   "bin": {
     "pippit-tool-cli": "scripts/run.js"
