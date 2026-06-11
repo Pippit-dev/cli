@@ -66,7 +66,7 @@ func TestGenerateVideo(t *testing.T) {
 			if param["duration_sec"] != float64(5) {
 				t.Fatalf("duration_sec = %v, want 5", param["duration_sec"])
 			}
-			if param["ratio"] != "9:16" || param["model"] != "seedance2.0_vision" || param["resolution"] != "720p" {
+			if param["ratio"] != "9:16" || param["model"] != "Seedance_2.0_mini" || param["resolution"] != "720p" {
 				t.Fatalf("param = %#v, want ratio/model/resolution", param)
 			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
@@ -100,7 +100,7 @@ func TestGenerateVideo(t *testing.T) {
 		"--video", video2,
 		"--duration", "5",
 		"--ratio", "9:16",
-		"--model", "seedance2.0_vision",
+		"--model", "Seedance_2.0_mini",
 		"--resolution", "720p",
 	})
 
