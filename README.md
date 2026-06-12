@@ -9,11 +9,11 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、图片/视频/音频文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
 
 ## 通用 NestAgent 技能
 
-`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、文件上传、进度查询和结果下载。
+`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/音频文件上传、进度查询和结果下载。
 
 ### 功能特性
 
@@ -21,7 +21,7 @@
 |------|------|
 | 创建会话 / 发送消息 | 向小云雀发送自然语言指令，生成图片或视频。 |
 | 查询会话进展 | 增量拉取会话消息，轮询创作进度和产物结果。 |
-| 上传文件 | 上传图片/视频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
+| 上传文件 | 上传图片/视频/音频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
 | 下载结果 | 批量下载生成的图片/视频到本地，支持并行下载。 |
 
 小云雀平台能力覆盖：
@@ -103,9 +103,12 @@ python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/image.png
 
 # 上传视频
 python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/video.mp4
+
+# 上传音频
+python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/audio.mp3
 ```
 
-仅支持 `image/*` 和 `video/*` 类型，单文件大小限制 200 MB。
+仅支持 `image/*`、`video/*` 和 `audio/*` 类型，单文件大小限制 200 MB。
 
 返回示例：
 
