@@ -227,7 +227,7 @@ pippit-tool-cli generate-video \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图和参考视频会使用上传接口返回的 `pippit_asset_id`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。普通用户支持模型 `seedance2.0_direct`、`seedance2.0_fast_direct` 和 `Seedance_2.0_mini`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图和参考视频会使用上传接口返回的 `pippit_asset_id`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision`、`seedance2.0_fast_vision` 和 `Seedance_2.0_mini`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
 查询并下载生视频结果：
 
