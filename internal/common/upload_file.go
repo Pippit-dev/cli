@@ -36,6 +36,11 @@ type uploadFileResponse struct {
 
 const uploadFileFieldName = "file"
 
+var uploadFileContentTypeFallbacks = map[string]string{
+	".mp3": "audio/mpeg",
+	".wav": "audio/wav",
+}
+
 func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*UploadFileResult, error) {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -71,6 +76,9 @@ func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*U
 	ext := strings.ToLower(filepath.Ext(path))
 	fileName := filepath.Base(path)
 	contentType := mime.TypeByExtension(ext)
+	if contentType == "" {
+		contentType = uploadFileContentTypeFallbacks[ext]
+	}
 
 	var resp uploadFileResponse
 	if err := runner.Client.SendMultipartRequest(ctx, uploadFilePath(runner), nil, MultipartFile{

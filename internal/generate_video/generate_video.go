@@ -14,13 +14,16 @@ const (
 	agentNameVideoPart = "pippit_video_part_agent"
 	maxReferenceImages = 9
 	maxReferenceVideos = 3
+	maxReferenceAudios = 3
 )
 
 var (
 	allowedImageExtensionList = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"}
 	allowedVideoExtensionList = []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".m4v"}
+	allowedAudioExtensionList = []string{".mp3", ".wav"}
 	allowedImageExtensions    = makeExtensionSet(allowedImageExtensionList)
 	allowedVideoExtensions    = makeExtensionSet(allowedVideoExtensionList)
+	allowedAudioExtensions    = makeExtensionSet(allowedAudioExtensionList)
 )
 
 // Options is the stable command-facing request shape for generate-video.
@@ -28,6 +31,7 @@ type Options struct {
 	Prompt      string
 	ImagePaths  []string
 	VideoPaths  []string
+	AudioPaths  []string
 	DurationSec *int
 	Ratio       string
 	Model       string
@@ -44,6 +48,7 @@ type videoPartToolParam struct {
 	DurationSec *int         `json:"duration_sec,omitempty"`
 	Ratio       string       `json:"ratio,omitempty"`
 	Videos      []mediaAsset `json:"videos,omitempty"`
+	Audios      []mediaAsset `json:"audios,omitempty"`
 	Model       string       `json:"model,omitempty"`
 	Resolution  string       `json:"resolution,omitempty"`
 }
@@ -71,8 +76,12 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	if err != nil {
 		return nil, fmt.Errorf("上传视频失败: %w", err)
 	}
+	audioAssetIDs, err := uploadMediaList(ctx, opts.AudioPaths, runner)
+	if err != nil {
+		return nil, fmt.Errorf("上传音频失败: %w", err)
+	}
 
-	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs)
+	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
 
 	var resp common.SubmitRunResponse
 	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
@@ -111,10 +120,16 @@ func ValidateOptions(opts *Options) error {
 	if len(opts.VideoPaths) > maxReferenceVideos {
 		return fmt.Errorf("参考视频最多支持 %d 个，当前传入 %d 个", maxReferenceVideos, len(opts.VideoPaths))
 	}
+	if len(opts.AudioPaths) > maxReferenceAudios {
+		return fmt.Errorf("参考音频最多支持 %d 个，当前传入 %d 个", maxReferenceAudios, len(opts.AudioPaths))
+	}
 	if err := validateMediaExtensions("图片", opts.ImagePaths, allowedImageExtensions, allowedImageExtensionList); err != nil {
 		return err
 	}
 	if err := validateMediaExtensions("视频", opts.VideoPaths, allowedVideoExtensions, allowedVideoExtensionList); err != nil {
+		return err
+	}
+	if err := validateMediaExtensions("音频", opts.AudioPaths, allowedAudioExtensions, allowedAudioExtensionList); err != nil {
 		return err
 	}
 	return nil
@@ -154,13 +169,14 @@ func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner)
 	return assetIDs, nil
 }
 
-func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string) map[string]any {
+func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string, audioAssetIDs []string) map[string]any {
 	param := videoPartToolParam{
 		Images:      assetRefs(imageAssetIDs),
 		Prompt:      strings.TrimSpace(opts.Prompt),
 		DurationSec: opts.DurationSec,
 		Ratio:       strings.TrimSpace(opts.Ratio),
 		Videos:      assetRefs(videoAssetIDs),
+		Audios:      assetRefs(audioAssetIDs),
 		Model:       strings.TrimSpace(opts.Model),
 		Resolution:  strings.TrimSpace(opts.Resolution),
 	}

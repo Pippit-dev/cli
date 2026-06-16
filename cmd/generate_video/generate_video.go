@@ -28,6 +28,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 				_ = common.AppendDailyErrorLog("generate-video", err, map[string]string{
 					"image_count": strconv.Itoa(len(opts.ImagePaths)),
 					"video_count": strconv.Itoa(len(opts.VideoPaths)),
+					"audio_count": strconv.Itoa(len(opts.AudioPaths)),
 				})
 				return err
 			}
@@ -40,6 +41,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images, up to 9")
 	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos, up to 3")
+	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios, up to 3")
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
 	flags.StringVar(&opts.Model, "model", "", "video model; normal users: seedance2.0_direct, seedance2.0_fast_direct; VIP users: seedance2.0_direct, seedance2.0_fast_direct, seedance2.0_vision, seedance2.0_fast_vision")

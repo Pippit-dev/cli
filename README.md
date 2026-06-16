@@ -9,11 +9,11 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
 
 ## 通用 NestAgent 技能
 
-`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、文件上传、进度查询和结果下载。
+`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。
 
 ### 功能特性
 
@@ -21,7 +21,7 @@
 |------|------|
 | 创建会话 / 发送消息 | 向小云雀发送自然语言指令，生成图片或视频。 |
 | 查询会话进展 | 增量拉取会话消息，轮询创作进度和产物结果。 |
-| 上传文件 | 上传图片/视频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
+| 上传文件 | 上传图片/视频/mp3或wav音频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
 | 下载结果 | 批量下载生成的图片/视频到本地，支持并行下载。 |
 
 小云雀平台能力覆盖：
@@ -103,9 +103,12 @@ python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/image.png
 
 # 上传视频
 python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/video.mp4
+
+# 上传音频
+python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/audio.mp3
 ```
 
-仅支持 `image/*` 和 `video/*` 类型，单文件大小限制 200 MB。
+仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 200 MB。
 
 返回示例：
 
@@ -212,7 +215,7 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 ## 生视频 CLI
 
-`generate-video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交生视频请求：
+`generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
 
 ```bash
 pippit-tool-cli generate-video \
@@ -221,13 +224,14 @@ pippit-tool-cli generate-video \
   --image "~/images/cat2.jpg" \
   --video "~/images/video1.mp4" \
   --video "~/images/video2.mp4" \
+  --audio "~/audio/bgm.mp3" \
   --duration 5 \
   --ratio "9:16" \
   --model "seedance2.0_direct" \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图和参考视频会使用上传接口返回的 `pippit_asset_id`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，仅支持 `.mp3`、`.wav`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
 查询并下载生视频结果：
 

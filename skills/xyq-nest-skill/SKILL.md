@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频。覆盖场景包括：生成（文生图、文生视频、图生视频、做动画、画一个xxx、来段xxx）、编辑修改（把xxx换成yyy、去掉xxx、加上xxx、改成xxx、调整xxx、局部修改、改镜头）、风格转换（风格迁移、转绘、换风格）、视频续写延长、复刻视频/TVC/宣传片、短剧/短漫剧生成、音乐MV生成、产品广告/展示片制作、分镜/故事板设计、教育视频/短视频制作。当用户提到小云雀、xyq、上传参考图/视频、查看生成进度时也应触发。关键判断：只要用户的请求涉及 AI 视频的创作、生成、编辑、修改，无论措辞如何（如"画只猫"、"做个海报"、"做个视频"、"这个视频帮我改一下"、"帮我复刻这段视频"、"用这首歌做个MV"、"一句话生成短剧"），都必须触发此技能。
+description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频。覆盖场景包括：生成（文生图、文生视频、图生视频、做动画、画一个xxx、来段xxx）、编辑修改（把xxx换成yyy、去掉xxx、加上xxx、改成xxx、调整xxx、局部修改、改镜头）、风格转换（风格迁移、转绘、换风格）、视频续写延长、复刻视频/TVC/宣传片、短剧/短漫剧生成、音乐MV生成、产品广告/展示片制作、分镜/故事板设计、教育视频/短视频制作。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。关键判断：只要用户的请求涉及 AI 视频的创作、生成、编辑、修改，无论措辞如何（如"画只猫"、"做个海报"、"做个视频"、"这个视频帮我改一下"、"帮我复刻这段视频"、"用这首歌做个MV"、"一句话生成短剧"），都必须触发此技能。
 user-invocable: true
 metadata:
   {
@@ -19,7 +19,7 @@ metadata:
 
 # 小云雀会话（生视频）
 
-通过 小云雀的API 创建会话、发送消息（生图、生视频、编辑视频等）、上传图片/视频文件，并查询会话消息进展。
+通过 小云雀的API 创建会话、发送消息（生图、生视频、编辑视频等）、上传图片/视频/mp3或wav音频文件，并查询会话消息进展。
 
 小云雀是一个 AI 综合创作平台，同时为人类创作者和 Agent 设计。Agent 通过 Skill 入口理解任务、调用模型并自动编排工作流。
 
@@ -34,7 +34,7 @@ metadata:
 
 1. **创建会话 / 发消息** - 创建新会话或向已有会话发送一条消息（如「创作一个视频」）
 2. **查询会话进展** - 根据 `thread_id` 、 `run_id`、`after_seq` 增量拉取该会话的消息列表，用于轮询创作过程的消息和最终产物结果
-3. **上传文件** - 支持上传`单张图片`或`单个视频文件`到小云雀资产库，得到文件对应的 `asset_id`（编辑已有视频/图片时需要先上传）
+3. **上传文件** - 支持上传`单张图片`、`单个视频文件`或`单个mp3/wav音频文件`到小云雀资产库，得到文件对应的 `asset_id`（编辑或参考已有图片/视频/音频时需要先上传）
 4. **下载结果** - 将会话中生成的图片/视频批量下载到本地，支持指定输出目录和文件名前缀。
 
 
@@ -71,7 +71,7 @@ python3 {baseDir}/scripts/get_thread.py --thread-id THREAD_ID --run-id RUN_ID --
 
 ### 3. 上传文件
 
-- 当用户提供了参考的文件地址时，先进行文件上传，仅支持图片、视频。
+- 当用户提供了参考的文件地址时，先进行文件上传，仅支持图片、视频、`.mp3/.wav` 音频。
 - 单次指令执行仅支持单个文件，多个文件可并行调用，单个文件大小必须在200MB以下。
 
 ```bash
@@ -80,6 +80,9 @@ python3 {baseDir}/scripts/upload_file.py /path/to/image.png
 
 # 上传视频
 python3 {baseDir}/scripts/upload_file.py /path/to/video.mp4
+
+# 上传音频
+python3 {baseDir}/scripts/upload_file.py /path/to/audio.mp3
 ```
 
 ### 4. 下载结果
@@ -115,24 +118,26 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 6. 向用户展示：过程中的创作信息，以及下载后的本地文件列表
 ```
 
-### 场景 2：用户提供图片/视频要求编辑修改（如"参考这个视频做一个新的"）
+### 场景 2：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
 
 ```
-1. upload_file.py /path/to/video.mp4  →  拿到 asset_id
-2. submit_run.py --message "参考这个视频做一个新的" --asset-ids asset_id  →  拿到 thread_id、run_id、web_thread_link
-3. 后续同场景 1 的步骤 2-6
+1. upload_file.py /path/to/video.mp4  →  拿到 asset_id1
+2. upload_file.py /path/to/audio.mp3  →  拿到 asset_id2
+3. submit_run.py --message "参考这个视频并用这首歌做一个新的" --asset-ids asset_id1 asset_id2  →  拿到 thread_id、run_id、web_thread_link
+4. 后续同场景 1 的步骤 2-6
 ```
 
 用户给了文件路径 + 编辑指令 = 先上传文件，再把编辑指令和 所有asset_id 一起发送。
 
-### 场景 3：用户提供参考图/视频要求生成新内容
+### 场景 3：用户提供参考图/视频/音频要求生成新内容
 
 ```
 1. upload_file.py /path/to/ref1.png  →  拿到 asset_id1
 2. upload_file.py /path/to/ref2.mp4  →  拿到 asset_id2
-3. 直到所有文件上传完成，拿到所有 asset_id
-4. submit_run.py --message "根据参考图、视频生成xxx" --asset-ids asset_id1 asset_id2, ...  →  拿到 thread_id、run_id、web_thread_link
-5. 后续同场景 1 的步骤 2-6
+3. upload_file.py /path/to/ref3.mp3  →  拿到 asset_id3
+4. 直到所有文件上传完成，拿到所有 asset_id
+5. submit_run.py --message "根据参考图、视频、音频生成xxx" --asset-ids asset_id1 asset_id2 asset_id3, ...  →  拿到 thread_id、run_id、web_thread_link
+6. 后续同场景 1 的步骤 2-6
 ```
 
 ### 场景 4：在已有会话中追加新需求
@@ -251,5 +256,5 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 - 鉴权方式为请求头 `Authorization: Bearer <XYQ_ACCESS_KEY>`
 - 创建会话时 `message` 是用户的指令要求，不能为空
 - 查询会话时可用 --after-seq 做增量拉取，便于轮询新消息（含 assistant 回复与生图/生视频结果）
-- 上传文件仅支持图片（image/*）和视频（video/*）类型，其他类型会被拒绝，文件大小须在 200MB 以下
+- 上传文件仅支持图片（image/*）、视频（video/*）和 `.mp3/.wav` 音频文件，其他类型会被拒绝，文件大小须在 200MB 以下
 - 生成过程中将过程中的创作信息展示给用户；任务完成后给出**产物结果（图片/视频）URL链接**和下载的**本地文件列表**。
