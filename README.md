@@ -215,7 +215,7 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 ## 生视频 CLI
 
-`generate-video` 会上传本地参考图片和视频，然后向视频片段 Agent 提交生视频请求：
+`generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
 
 ```bash
 pippit-tool-cli generate-video \
@@ -224,13 +224,14 @@ pippit-tool-cli generate-video \
   --image "~/images/cat2.jpg" \
   --video "~/images/video1.mp4" \
   --video "~/images/video2.mp4" \
+  --audio "~/audio/bgm.mp3" \
   --duration 5 \
   --ratio "9:16" \
   --model "seedance2.0_direct" \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图和参考视频会使用上传接口返回的 `pippit_asset_id`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，支持 `.mp3`、`.wav`、`.m4a`、`.aac`、`.flac`、`.ogg`、`.wma`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
 
 查询并下载生视频结果：
 

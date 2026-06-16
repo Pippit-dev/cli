@@ -14,7 +14,7 @@ import (
 )
 
 func TestGenerateVideo(t *testing.T) {
-	assetIDs := []string{"image_asset_1", "image_asset_2", "video_asset_1", "video_asset_2"}
+	assetIDs := []string{"image_asset_1", "image_asset_2", "video_asset_1", "video_asset_2", "audio_asset_1"}
 	uploadIndex := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +35,9 @@ func TestGenerateVideo(t *testing.T) {
 			files := r.MultipartForm.File["file"]
 			if len(files) != 1 {
 				t.Fatalf("file parts = %d, want 1", len(files))
+			}
+			if files[0].Filename == "bgm.wma" && files[0].Header.Get("Content-Type") != "audio/x-ms-wma" {
+				t.Fatalf("audio content type = %q, want audio/x-ms-wma", files[0].Header.Get("Content-Type"))
 			}
 			uploadIndex++
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"` + assetIDs[uploadIndex-1] + `"}}`))
@@ -71,6 +74,7 @@ func TestGenerateVideo(t *testing.T) {
 			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
 			assertAssetRefs(t, param["videos"], []string{"video_asset_1", "video_asset_2"})
+			assertAssetRefs(t, param["audios"], []string{"audio_asset_1"})
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"},"web_thread_link":"https://xyq.example/thread_123"}}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -83,7 +87,8 @@ func TestGenerateVideo(t *testing.T) {
 	image2 := filepath.Join(cwd, "cat2.jpg")
 	video1 := filepath.Join(cwd, "video1.mp4")
 	video2 := filepath.Join(cwd, "video2.mp4")
-	for _, path := range []string{image1, image2, video1, video2} {
+	audio1 := filepath.Join(cwd, "bgm.wma")
+	for _, path := range []string{image1, image2, video1, video2, audio1} {
 		if err := os.WriteFile(path, []byte("media-data"), 0o644); err != nil {
 			t.Fatalf("WriteFile(%s): %v", path, err)
 		}
@@ -98,6 +103,7 @@ func TestGenerateVideo(t *testing.T) {
 		"--image", image2,
 		"--video", video1,
 		"--video", video2,
+		"--audio", audio1,
 		"--duration", "5",
 		"--ratio", "9:16",
 		"--model", "seedance2.0_vision",
@@ -111,6 +117,61 @@ func TestGenerateVideo(t *testing.T) {
 	got := decodeJSON(t, stdout.Bytes())
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("output = %#v, want thread and run IDs", got)
+	}
+}
+
+func TestGenerateVideoAddsSubmitHeadersFromEnv(t *testing.T) {
+	t.Setenv("PIPPIT_GENERATE_VIDEO_SUBMIT_X_USE_PPE", "1")
+	t.Setenv("PIPPIT_GENERATE_VIDEO_SUBMIT_X_TT_ENV", "ppe_self_testin_y7y4tl")
+
+	var sawUpload bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/upload_file":
+			sawUpload = true
+			if got := r.Header.Get("x-use-ppe"); got != "" {
+				t.Fatalf("upload x-use-ppe = %q, want empty", got)
+			}
+			if got := r.Header.Get("x-tt-env"); got != "" {
+				t.Fatalf("upload x-tt-env = %q, want empty", got)
+			}
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Fatalf("ParseMultipartForm(): %v", err)
+			}
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"image_asset_1"}}`))
+		case "/api/biz/v1/skill/submit_run":
+			if !sawUpload {
+				t.Fatal("submit_run called before upload_file")
+			}
+			if got := r.Header.Get("x-use-ppe"); got != "1" {
+				t.Fatalf("submit x-use-ppe = %q, want 1", got)
+			}
+			if got := r.Header.Get("x-tt-env"); got != "ppe_self_testin_y7y4tl" {
+				t.Fatalf("submit x-tt-env = %q, want ppe_self_testin_y7y4tl", got)
+			}
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cwd := chdirTemp(t)
+	image1 := filepath.Join(cwd, "cat1.jpg")
+	if err := os.WriteFile(image1, []byte("media-data"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%s): %v", image1, err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"generate-video",
+		"--prompt", "做个小猫视频",
+		"--image", image1,
+	})
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 }
 
@@ -206,6 +267,52 @@ func TestGenerateVideoRejectsTooManyVideos(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "参考视频最多支持 3 个，当前传入 4 个") {
 		t.Fatalf("error = %q, want video count validation", err)
+	}
+}
+
+func TestGenerateVideoRejectsTooManyAudios(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request when audio count is invalid")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	args := []string{"generate-video", "--prompt", "x"}
+	for _, path := range mediaPaths("audio", ".mp3", 4) {
+		args = append(args, "--audio", path)
+	}
+	root.SetArgs(args)
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want audio count validation")
+	}
+	if !strings.Contains(err.Error(), "参考音频最多支持 3 个，当前传入 4 个") {
+		t.Fatalf("error = %q, want audio count validation", err)
+	}
+}
+
+func TestGenerateVideoRejectsUnsupportedAudioExtension(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("server should not receive request when audio extension is invalid")
+	}))
+	defer server.Close()
+
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{
+		"generate-video",
+		"--prompt", "x",
+		"--audio", "bgm.pdf",
+	})
+
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want audio extension validation")
+	}
+	if !strings.Contains(err.Error(), `不支持的音频文件后缀 ".pdf"`) {
+		t.Fatalf("error = %q, want audio extension validation", err)
 	}
 }
 
