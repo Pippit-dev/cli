@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""上传图片/视频/音频到小云雀资产库：POST /api/biz/v1/skill/upload_file（multipart/form-data）"""
+"""上传图片/视频/mp3或wav音频到小云雀资产库：POST /api/biz/v1/skill/upload_file（multipart/form-data）"""
 
 import argparse
 import json
@@ -14,12 +14,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 from xyq_common import XYQ_BASE, ACCESS_KEY, UPLOAD_FILE_PATH, HTTP_TIMEOUT_SECONDS, parse_response
 
 # 允许的 MIME 类型前缀
-ALLOWED_PREFIXES = ("image/", "video/", "audio/")
+ALLOWED_PREFIXES = ("image/", "video/")
+ALLOWED_AUDIO_EXTENSIONS = {".mp3", ".wav"}
 EXTRA_MIME_MAP = {
-    ".flac": "audio/flac",
-    ".m4a": "audio/mp4",
-    ".aac": "audio/aac",
-    ".wma": "audio/x-ms-wma",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
 }
 
 
@@ -33,12 +32,14 @@ def upload_file(file_path: str) -> dict:
         sys.exit(1)
 
     # 检查 MIME 类型
+    ext = os.path.splitext(file_path)[1].lower()
     mime_type, _ = mimetypes.guess_type(file_path)
     if not mime_type:
-        ext = os.path.splitext(file_path)[1].lower()
         mime_type = EXTRA_MIME_MAP.get(ext)
-    if not mime_type or not any(mime_type.startswith(p) for p in ALLOWED_PREFIXES):
-        print(f"错误：不支持的文件类型: {mime_type or '未知'}，仅支持图片、视频和音频", file=sys.stderr)
+    is_supported_media = bool(mime_type) and any(mime_type.startswith(p) for p in ALLOWED_PREFIXES)
+    is_supported_audio = bool(mime_type) and mime_type.startswith("audio/") and ext in ALLOWED_AUDIO_EXTENSIONS
+    if not is_supported_media and not is_supported_audio:
+        print(f"错误：不支持的文件类型: {mime_type or '未知'}，仅支持图片、视频和 .mp3/.wav 音频", file=sys.stderr)
         sys.exit(1)
 
     # 构建 multipart/form-data 请求体
@@ -93,7 +94,7 @@ def upload_file(file_path: str) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="上传图片、视频或音频文件到小云雀资产库",
+        description="上传图片、视频或 mp3/wav 音频文件到小云雀资产库",
         epilog="""
 环境变量:
   XYQ_ACCESS_KEY  必填，Bearer 鉴权
@@ -113,7 +114,7 @@ def main():
     )
     parser.add_argument(
         "file",
-        help="要上传的图片、视频或音频文件路径",
+        help="要上传的图片、视频或 mp3/wav 音频文件路径",
     )
     args = parser.parse_args()
 

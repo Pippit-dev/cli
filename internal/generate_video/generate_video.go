@@ -24,7 +24,7 @@ const (
 var (
 	allowedImageExtensionList = []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"}
 	allowedVideoExtensionList = []string{".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm", ".mkv", ".m4v"}
-	allowedAudioExtensionList = []string{".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma"}
+	allowedAudioExtensionList = []string{".mp3", ".wav"}
 	allowedImageExtensions    = makeExtensionSet(allowedImageExtensionList)
 	allowedVideoExtensions    = makeExtensionSet(allowedVideoExtensionList)
 	allowedAudioExtensions    = makeExtensionSet(allowedAudioExtensionList)

@@ -36,8 +36,8 @@ func TestGenerateVideo(t *testing.T) {
 			if len(files) != 1 {
 				t.Fatalf("file parts = %d, want 1", len(files))
 			}
-			if files[0].Filename == "bgm.wma" && files[0].Header.Get("Content-Type") != "audio/x-ms-wma" {
-				t.Fatalf("audio content type = %q, want audio/x-ms-wma", files[0].Header.Get("Content-Type"))
+			if files[0].Filename == "bgm.wav" && !strings.HasPrefix(files[0].Header.Get("Content-Type"), "audio/") {
+				t.Fatalf("audio content type = %q, want audio content type", files[0].Header.Get("Content-Type"))
 			}
 			uploadIndex++
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"` + assetIDs[uploadIndex-1] + `"}}`))
@@ -87,7 +87,7 @@ func TestGenerateVideo(t *testing.T) {
 	image2 := filepath.Join(cwd, "cat2.jpg")
 	video1 := filepath.Join(cwd, "video1.mp4")
 	video2 := filepath.Join(cwd, "video2.mp4")
-	audio1 := filepath.Join(cwd, "bgm.wma")
+	audio1 := filepath.Join(cwd, "bgm.wav")
 	for _, path := range []string{image1, image2, video1, video2, audio1} {
 		if err := os.WriteFile(path, []byte("media-data"), 0o644); err != nil {
 			t.Fatalf("WriteFile(%s): %v", path, err)
@@ -304,14 +304,14 @@ func TestGenerateVideoRejectsUnsupportedAudioExtension(t *testing.T) {
 	root.SetArgs([]string{
 		"generate-video",
 		"--prompt", "x",
-		"--audio", "bgm.pdf",
+		"--audio", "bgm.wma",
 	})
 
 	err := root.Execute()
 	if err == nil {
 		t.Fatal("Execute() error = nil, want audio extension validation")
 	}
-	if !strings.Contains(err.Error(), `不支持的音频文件后缀 ".pdf"`) {
+	if !strings.Contains(err.Error(), `不支持的音频文件后缀 ".wma"`) {
 		t.Fatalf("error = %q, want audio extension validation", err)
 	}
 }

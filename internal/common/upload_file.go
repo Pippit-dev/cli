@@ -37,13 +37,8 @@ type uploadFileResponse struct {
 const uploadFileFieldName = "file"
 
 var uploadFileContentTypeFallbacks = map[string]string{
-	".mp3":  "audio/mpeg",
-	".wav":  "audio/wav",
-	".m4a":  "audio/mp4",
-	".aac":  "audio/aac",
-	".flac": "audio/flac",
-	".ogg":  "audio/ogg",
-	".wma":  "audio/x-ms-wma",
+	".mp3": "audio/mpeg",
+	".wav": "audio/wav",
 }
 
 func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*UploadFileResult, error) {
