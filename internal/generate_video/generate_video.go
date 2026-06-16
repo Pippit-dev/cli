@@ -11,14 +11,10 @@ import (
 )
 
 const (
-	agentNameVideoPart  = "pippit_video_part_agent"
-	maxReferenceImages  = 9
-	maxReferenceVideos  = 3
-	maxReferenceAudios  = 3
-	submitXUsePPEEnv    = "PIPPIT_GENERATE_VIDEO_SUBMIT_X_USE_PPE"
-	submitXTTEnvEnv     = "PIPPIT_GENERATE_VIDEO_SUBMIT_X_TT_ENV"
-	submitHeaderXUsePPE = "x-use-ppe"
-	submitHeaderXTTEnv  = "x-tt-env"
+	agentNameVideoPart = "pippit_video_part_agent"
+	maxReferenceImages = 9
+	maxReferenceVideos = 3
+	maxReferenceAudios = 3
 )
 
 var (
@@ -88,7 +84,7 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
 
 	var resp common.SubmitRunResponse
-	if err := runner.Client.SendRequestWithHeaders(ctx, common.SubmitRunPath(runner), body, submitRunHeadersFromEnv(), &resp); err != nil {
+	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
 		return nil, fmt.Errorf("提交 generate-video 请求失败: %w", err)
 	}
 	if resp.Ret != "0" {
@@ -201,20 +197,6 @@ func assetRefs(assetIDs []string) []mediaAsset {
 		refs = append(refs, mediaAsset{PippitAssetID: assetID})
 	}
 	return refs
-}
-
-func submitRunHeadersFromEnv() map[string]string {
-	headers := make(map[string]string, 2)
-	if value := strings.TrimSpace(os.Getenv(submitXUsePPEEnv)); value != "" {
-		headers[submitHeaderXUsePPE] = value
-	}
-	if value := strings.TrimSpace(os.Getenv(submitXTTEnvEnv)); value != "" {
-		headers[submitHeaderXTTEnv] = value
-	}
-	if len(headers) == 0 {
-		return nil
-	}
-	return headers
 }
 
 func expandPath(path string) (string, error) {
