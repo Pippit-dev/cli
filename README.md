@@ -227,11 +227,11 @@ pippit-tool-cli generate-video \
   --audio "~/audio/bgm.mp3" \
   --duration 5 \
   --ratio "9:16" \
-  --model "seedance2.0_direct" \
+  --model "Seedance_2.0_mini_lite" \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，仅支持 `.mp3`、`.wav`。普通用户支持模型 `seedance2.0_direct` 和 `seedance2.0_fast_direct`；VIP 用户额外支持 `seedance2.0_vision` 和 `seedance2.0_fast_vision`。模型、比例、分辨率、素材数量等参数的语义校验当前预留在后续实现。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，仅支持 `.mp3`、`.wav`。普通用户支持模型 `Seedance_2.0_mini_lite`；`seedance2.0_direct`、`seedance2.0_fast_direct`、`seedance2.0_vision`、`seedance2.0_fast_vision` 和 `Seedance_2.0_mini` 为 VIP 专属模型。CLI 会在提交前校验 prompt、素材数量和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
 
 查询并下载生视频结果：
 
