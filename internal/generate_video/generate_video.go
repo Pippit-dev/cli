@@ -12,9 +12,6 @@ import (
 
 const (
 	agentNameVideoPart = "pippit_video_part_agent"
-	maxReferenceImages = 9
-	maxReferenceVideos = 3
-	maxReferenceAudios = 3
 )
 
 var (
@@ -113,15 +110,6 @@ func ValidateOptions(opts *Options) error {
 	}
 	if strings.TrimSpace(opts.Prompt) == "" {
 		return fmt.Errorf("缺少必填参数 --prompt")
-	}
-	if len(opts.ImagePaths) > maxReferenceImages {
-		return fmt.Errorf("参考图片最多支持 %d 个，当前传入 %d 个", maxReferenceImages, len(opts.ImagePaths))
-	}
-	if len(opts.VideoPaths) > maxReferenceVideos {
-		return fmt.Errorf("参考视频最多支持 %d 个，当前传入 %d 个", maxReferenceVideos, len(opts.VideoPaths))
-	}
-	if len(opts.AudioPaths) > maxReferenceAudios {
-		return fmt.Errorf("参考音频最多支持 %d 个，当前传入 %d 个", maxReferenceAudios, len(opts.AudioPaths))
 	}
 	if err := validateMediaExtensions("图片", opts.ImagePaths, allowedImageExtensions, allowedImageExtensionList); err != nil {
 		return err

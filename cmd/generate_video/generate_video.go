@@ -39,12 +39,12 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt")
-	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images, up to 9")
-	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos, up to 3")
-	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios, up to 3")
+	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
+	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos")
+	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios")
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
-	flags.StringVar(&opts.Model, "model", "", "video model; normal users: Seedance_2.0_mini_lite; VIP-only: seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini")
+	flags.StringVar(&opts.Model, "model", "", "video model; supported: Seedance_2.0_mini_lite, seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini, Seedance_2.5")
 	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
 	return cmd
 }

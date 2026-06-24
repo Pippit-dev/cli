@@ -69,7 +69,7 @@ func TestGenerateVideo(t *testing.T) {
 			if param["duration_sec"] != float64(5) {
 				t.Fatalf("duration_sec = %v, want 5", param["duration_sec"])
 			}
-			if param["ratio"] != "9:16" || param["model"] != "seedance2.0_vision" || param["resolution"] != "720p" {
+			if param["ratio"] != "9:16" || param["model"] != "Seedance_2.5" || param["resolution"] != "720p" {
 				t.Fatalf("param = %#v, want ratio/model/resolution", param)
 			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
@@ -106,7 +106,7 @@ func TestGenerateVideo(t *testing.T) {
 		"--audio", audio1,
 		"--duration", "5",
 		"--ratio", "9:16",
-		"--model", "seedance2.0_vision",
+		"--model", "Seedance_2.5",
 		"--resolution", "720p",
 	})
 
@@ -166,75 +166,6 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "缺少必填参数 --prompt") {
 		t.Fatalf("error = %q, want prompt validation", err)
-	}
-}
-
-func TestGenerateVideoRejectsTooManyImages(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when image count is invalid")
-	}))
-	defer server.Close()
-
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("image", ".jpg", 10) {
-		args = append(args, "--image", path)
-	}
-	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want image count validation")
-	}
-	if !strings.Contains(err.Error(), "参考图片最多支持 9 个，当前传入 10 个") {
-		t.Fatalf("error = %q, want image count validation", err)
-	}
-}
-
-func TestGenerateVideoRejectsTooManyVideos(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when video count is invalid")
-	}))
-	defer server.Close()
-
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("video", ".mp4", 4) {
-		args = append(args, "--video", path)
-	}
-	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want video count validation")
-	}
-	if !strings.Contains(err.Error(), "参考视频最多支持 3 个，当前传入 4 个") {
-		t.Fatalf("error = %q, want video count validation", err)
-	}
-}
-
-func TestGenerateVideoRejectsTooManyAudios(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when audio count is invalid")
-	}))
-	defer server.Close()
-
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("audio", ".mp3", 4) {
-		args = append(args, "--audio", path)
-	}
-	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want audio count validation")
-	}
-	if !strings.Contains(err.Error(), "参考音频最多支持 3 个，当前传入 4 个") {
-		t.Fatalf("error = %q, want audio count validation", err)
 	}
 }
 
@@ -616,12 +547,4 @@ func assertAssetRefs(t *testing.T, got any, want []string) {
 			t.Fatalf("asset refs[%d] = %#v, want %s", i, item, want[i])
 		}
 	}
-}
-
-func mediaPaths(prefix string, ext string, count int) []string {
-	paths := make([]string, 0, count)
-	for i := 0; i < count; i++ {
-		paths = append(paths, prefix+string(rune('a'+i))+ext)
-	}
-	return paths
 }
