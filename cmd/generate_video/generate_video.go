@@ -45,6 +45,6 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
 	flags.StringVar(&opts.Model, "model", "", "video model; supported: Seedance_2.0_mini_lite, seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini, Seedance_2.5")
-	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
+	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 480p, 720p, 1080p")
 	return cmd
 }

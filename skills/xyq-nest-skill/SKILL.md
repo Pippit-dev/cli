@@ -58,7 +58,98 @@ python3 {baseDir}/scripts/submit_run.py --message "生一个动漫视频"
 
 # 向已有会话发送消息
 python3 {baseDir}/scripts/submit_run.py --message "再生成一个故事视频" --thread-id THREAD_ID
+
+# 传入通用 Agent 设置
+python3 {baseDir}/scripts/submit_run.py --message "生成视频" --general-agent-settings '{"video_model":"Seedance_2.5","ratio":3,"resolution":"720p"}'
 ```
+
+### GeneralAgentSettings 模型参数
+
+`submit_run.py` 支持通过 `--general-agent-settings` 传入 JSON object，字段会原样作为请求体里的 `general_agent_settings` 发给服务端。
+
+```bash
+# 完整参数示例
+python3 {baseDir}/scripts/submit_run.py \
+  --message "用户的原始描述" \
+  --general-agent-settings '{"video_model":"Seedance_2.5","ratio":3,"resolution":"720p"}'
+```
+
+只有当用户明确提出模型参数时才传 `--general-agent-settings`。如果用户只是普通创作需求，不要补默认参数，直接提交原始 `message`。
+
+如果用户在自然语言中写了比例、时长、分辨率、清晰度等参数，但没有明确指定模型，不要提交请求。先询问用户使用哪个模型，再调用 `submit_run.py`。不要自行根据比例、时长或分辨率推断模型；用户说“默认模型”也不算明确模型。
+
+传 `general_agent_settings` 时遵循一个原则：用户说了什么传什么，没说的不补。用户只明确指定模型时，可以只传 `video_model`；如果用户自己提及比例、分辨率或时长，则必须把对应参数填入 `general_agent_settings`。不要为了凑字段自行补默认比例、默认分辨率或默认时长。
+
+`--message` 始终保留用户原始描述，包括模型、比例、分辨率、时长等关键词；`--general-agent-settings` 是对这些参数的结构化表达，两者同时传入不冲突。
+
+决策流程：
+
+```text
+用户是否提到了模型、比例、分辨率或时长？
+├─ 否 → 不传 --general-agent-settings，直接 submit_run.py --message "..."
+└─ 是 → 用户是否明确指定了 video_model？
+   ├─ 否 → 先询问用户使用哪个模型，不要提交请求
+   └─ 是 → 检查用户是否提到 ratio/resolution/duration → 拼装 JSON → submit_run.py
+```
+
+示例：
+
+```bash
+# 用户说：“用 Seedance 2.5 生成视频”
+python3 {baseDir}/scripts/submit_run.py \
+  --message "用 Seedance 2.5 生成视频" \
+  --general-agent-settings '{"video_model":"Seedance_2.5"}'
+
+# 用户说：“用 Seedance 2.5，9:16，720p，8 秒生成视频”
+python3 {baseDir}/scripts/submit_run.py \
+  --message "用 Seedance 2.5，9:16，720p，8 秒生成视频" \
+  --general-agent-settings '{"video_model":"Seedance_2.5","ratio":3,"resolution":"720p","duration_start":8,"duration_end":8}'
+```
+
+| 字段 | 必填 | 类型 | 说明                                           |
+|------|------|------|----------------------------------------------|
+| `video_model` | 是 | string | 生视频模型；只要传 `general_agent_settings`，就必须有明确模型。 |
+| `ratio` | 否 | number | 仅当用户明确指定比例时传。                                |
+| `resolution` | 否 | string | 仅当用户明确指定分辨率时传，如 `480p`、`720p`、`1080p`。       |
+| `duration_start` | 否 | number | 仅当用户明确指定时长时传，表示期望时长下限，单位秒。                   |
+| `duration_end` | 否 | number | 仅当用户明确指定时长时传，表示期望时长上限，单位秒。                   |
+
+`video_model` 只使用服务端支持的精确枚举值：
+
+| 用户明确说法 | 传入值 |
+|-------------|--------|
+| Seedance 2.5 / 2.5 模型 | `Seedance_2.5` |
+| Seedance 2.0 Vision / 2.0 Vision 模型 | `seedance2.0_vision` |
+| Seedance 2.0 Fast Vision / Fast Vision 模型 | `seedance2.0_fast_vision` |
+| Seedance 2.0 Mini / Mini 模型 | `Seedance_2.0_mini` |
+
+**重要规则：模型名必须精确匹配上表后才能传 `video_model`。** 如果用户提到的模型名无法精确匹配，必须先向用户确认具体版本，禁止自行推断，禁止传 `general_agent_settings`，也不要提交请求。例如用户只说 `Seedance` 或 `2.0` 时，不要直接选择某个模型。
+
+`ratio` 只支持以下四种。CLI 也接受左侧字符串并转换为右侧枚举值；建议客户端 Agent 直接传数字。
+
+| 用户说法 | 传入 ratio |
+|---------|------------|
+| `16:9` / 横屏 / 横版 / 宽屏 | `2` |
+| `9:16` / 竖屏 / 竖版 | `3` |
+| `4:3` | `4` |
+| `3:4` | `5` |
+
+其他比例不支持。如果用户要求 `1:1`、方形、`2:1`、原始比例、自定义比例等，不要提交请求，先告知当前只支持 `9:16`、`16:9`、`3:4`、`4:3` 并让用户重新选择。
+
+分辨率规则：
+
+- `resolution=1080p` 只支持 `video_model=seedance2.0_vision`。如果用户要求 1080p 但没有指定模型，先询问模型；如果用户指定了其他模型，先让用户在模型和分辨率之间重新选择。
+- `resolution=720p` 可以和支持的模型一起使用。
+- `resolution=480p` 可以和支持的模型一起使用。
+- 其他分辨率不支持。如果用户要求 `高清`、`超清`、`4K`、`2K` 等，不要提交请求，先告知当前只支持 `480p`、`720p`、`1080p` ，并让用户重新选择。
+
+时长规则：
+
+- 用户明确说“8 秒”：传 `duration_start=8`、`duration_end=8`。
+- 用户明确说“5 到 10 秒”：传 `duration_start=5`、`duration_end=10`。
+- 时长必须是正整数，`duration_start` 和 `duration_end` 必须成对传入，且 `duration_start` 不能大于 `duration_end`。
+- 用户明确指定模型但没有明确时长：不要传 `duration_start`、`duration_end`，可以提交请求。
+- 用户没有明确模型，也没有明确比例、分辨率、时长等参数：不传 `--general-agent-settings`，直接提交原始 `message`。
 
 ### 2. 查询会话进展
 
@@ -223,6 +314,8 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 2. **提交任务**：把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
 3. **传话**：根据 `get_thread.py` 返回的消息列表，展示过程中的意图询问、创作信息等
 4. **取件**：`get_thread.py` 轮询结果 → 检查结果 → 下载产物 → 结果展示给用户
+
+参数提取例外：当用户明确提到模型、比例、分辨率、时长等技术参数时，将这些参数提取到 `general_agent_settings` 中；其余创作描述仍原封不动作为 `message` 传入。
 
 **绝对不要做的事：**
 - 不要替用户扩写、润色、翻译 prompt（用户说"帮我推演分镜"，就直接传"帮我推演分镜"，不要自己先写个分镜表再逐条发）

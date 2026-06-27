@@ -14,20 +14,27 @@ SUBMIT_RUN_PATH = "/api/biz/v1/skill/submit_run"
 GET_THREAD_PATH = "/api/biz/v1/skill/get_thread"
 UPLOAD_FILE_PATH = "/api/biz/v1/skill/upload_file"
 HTTP_TIMEOUT_SECONDS = 30 * 60
+SUBMIT_RUN_PPE_HEADERS = {
+    "x-use-ppe": "1",
+    "x-tt-env": "ppe_seedance_25",
+}
 
 if not ACCESS_KEY:
     print("错误：请设置 XYQ_ACCESS_KEY 环境变量", file=sys.stderr)
     sys.exit(1)
 
 
-def _headers():
-    return {
+def _headers(extra_headers: dict = None):
+    headers = {
         "Authorization": f"Bearer {ACCESS_KEY}",
         "Content-Type": "application/json",
     }
+    if extra_headers:
+        headers.update(extra_headers)
+    return headers
 
 
-def api_post(path: str, body: dict) -> dict:
+def api_post(path: str, body: dict, extra_headers: dict = None) -> dict:
     """POST 请求 agent-im OpenAPI"""
     url = f"{XYQ_BASE.rstrip('/')}{path}"
     data = json.dumps(body).encode("utf-8")
@@ -35,7 +42,7 @@ def api_post(path: str, body: dict) -> dict:
         url,
         data=data,
         method="POST",
-        headers=_headers(),
+        headers=_headers(extra_headers),
     )
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
@@ -79,7 +86,12 @@ def parse_response(resp: dict) -> dict:
     return resp.get("data", {})
 
 
-def submit_run(thread_id: str = "", message: str = "", asset_ids: list = None) -> dict:
+def submit_run(
+    thread_id: str = "",
+    message: str = "",
+    asset_ids: list = None,
+    general_agent_settings: dict = None,
+) -> dict:
     """
     创建会话或向已有会话发消息。
     返回 data: { projectUuid, sessionId }。
@@ -91,7 +103,9 @@ def submit_run(thread_id: str = "", message: str = "", asset_ids: list = None) -
         body["message"] = message
     if asset_ids:
         body["asset_ids"] = asset_ids
-    resp = api_post(SUBMIT_RUN_PATH, body)
+    if general_agent_settings:
+        body["general_agent_settings"] = general_agent_settings
+    resp = api_post(SUBMIT_RUN_PATH, body, extra_headers=SUBMIT_RUN_PPE_HEADERS)
     return parse_response(resp)
 
 
