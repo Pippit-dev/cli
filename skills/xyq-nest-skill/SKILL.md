@@ -245,7 +245,8 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 ### 轮询策略
 
 - **间隔**：每 10 秒查询一次
-- **增量拉取**：首次用 --after-seq 0，后续根据messages消息列表长度，计算新的 seq 值
+- **增量拉取**：首次用 --after-seq 0；如果脚本返回了重复消息，本地只能对已展示的内容项去重，不能按 `message_id` 跳过整条 assistant 消息
+- **消息展示去重**：服务端可能在同一个 assistant `message_id` 下追加新的 `content`，尤其服务端主动询问用户时（如`dynamic_questionnaire`工具） ；如果需要避免重复展示进度文本，按内容项本身是否已展示判断，不要因为 `message_id` 已见过就跳过该消息
 - **完成判断**：当创作任务完成且 `messages[].content[]` 中存在产物对象，并且该产物对象的 `data.url` 有值
 - **超时**：连续轮询 `48 小时`仍无结果，告知用户"生成时间较长，可稍后查看"，不再继续轮询
 - **错误重试**：单次查询失败可重试 1 次，连续 3 次失败则停止并告知用户
