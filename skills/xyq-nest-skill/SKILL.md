@@ -185,6 +185,10 @@ python3 {baseDir}/scripts/upload_file.py /path/to/audio.mp3
 python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir ./xyq_output --prefix "artifact"
 ```
 
+产物下载 URL 提取规则：
+- 单个产物可能包含多个url字段，下载前先去重
+- 不要从产物结果中扫出所有 URL，也不要把预览图、封面图、缩略图、跳转页、备选地址等字段里的 URL 传给 `download_results.py`，否则会导致同一产物被重复下载。
+
 ## 典型工作流
 
 理解这些工作流，才能正确组合上面的脚本完成用户需求。
@@ -203,9 +207,9 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
       → 向用户展示问题，等待用户回复
       → 使用 `thread_id` 重新提交任务（保持同一会话，产生新的 run_id）
       → 回到步骤 2 继续轮询（可能多轮，直到不再意图确认）
-    - 如果 content 中包含产物 URL：
+    - 如果 content 中包含产物对象，且产物对象的 `data.url` 有值：
       → 信息展示 → 下载产物 → 结果展示
-5. 自动下载：download_results.py --urls URL1 URL2 URL3 --output-dir 输出目录 --prefix 有意义的前缀
+5. 自动下载：仅将每个产物 `data.url` 收集出的 URL 列表传给 download_results.py --urls URL1 URL2 URL3 --output-dir 输出目录 --prefix 有意义的前缀
 6. 向用户展示：过程中的创作信息，以及下载后的本地文件列表
 ```
 
@@ -242,7 +246,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 - **间隔**：每 10 秒查询一次
 - **增量拉取**：首次用 --after-seq 0，后续根据messages消息列表长度，计算新的 seq 值
-- **完成判断**：当创作任务完成且messages的content中包含产物结果 URL（图片/视频地址）
+- **完成判断**：当创作任务完成且 `messages[].content[]` 中存在产物对象，并且该产物对象的 `data.url` 有值
 - **超时**：连续轮询 `48 小时`仍无结果，告知用户"生成时间较长，可稍后查看"，不再继续轮询
 - **错误重试**：单次查询失败可重试 1 次，连续 3 次失败则停止并告知用户
 
@@ -273,12 +277,17 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
       {
         "type": "{type}",
         "subtype": "{sub_type}",
-        "data": {..., "url": "{url}"....}
+        "data": {
+          "url": "{download_source_url}",
+          "other_url_field": "{do_not_download_this_url}"
+        }
       }
     ]}
   ]
 }
 ```
+
+下载产物时只读取每个产物 `data.url` 的值；示例里的 `other_url_field` 代表服务端可能返回的其他 URL 字段，不能作为下载源。
 
 **upload_file** 返回：
 ```json
@@ -303,8 +312,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
   - 展示过程中的创作信息等，继续轮询
 - 任务完成（run 结束）：
   - 若涉及意图确认/流程中断（如"请回答以下问题"）→ 展示问题 → 等待用户回复 → 使用同一 `thread_id` 重新提交任务 → 继续轮询（可能多轮）
-  - 若 content 中包含产物 URL：
-  - 结果地址：来自 `get_thread` 返回的 `messages` 中，任务创作完成会包含产物 URL，将产物链接、下载的本地文件等信息告知用户。
+  - 若 content 中包含产物对象，且产物对象的 `data.url` 有值 → 将这些 `data.url` 作为结果地址，下载并展示本地文件列表
 
 ## 核心原则：用户侧不做创作，只做传话
 
@@ -350,4 +358,4 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 - 创建会话时 `message` 是用户的指令要求，不能为空
 - 查询会话时可用 --after-seq 做增量拉取，便于轮询新消息（含 assistant 回复与生图/生视频结果）
 - 上传文件仅支持图片（image/*）、视频（video/*）和 `.mp3/.wav` 音频文件，其他类型会被拒绝，文件大小须在 200MB 以下
-- 生成过程中将过程中的创作信息展示给用户；任务完成后给出**产物结果（图片/视频）URL链接**和下载的**本地文件列表**。
+- 生成过程中将过程中的创作信息展示给用户；任务完成后给出每个产物 `data.url` 对应的**结果链接**和下载的**本地文件列表**。
