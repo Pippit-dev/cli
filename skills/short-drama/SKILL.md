@@ -59,6 +59,17 @@ metadata:
 - 不替用户决定创意内容，例如风格、剧情方向、角色设定、镜头方案。只能清洗流程选项，不能代替用户选择创作偏好。
 - 如果服务端问题混入跨度过大的多个流程选项，重新组织成当前阶段可回答的问题，并说明已按主流程剔除不合理或跳跃选项。
 
+## 宿主提问工具优先
+
+当后端 Agent 通过 `readable_text` 要求用户补充信息、选择选项、确认流程或确认创意内容时，优先使用当前宿主提供的 ask-question / confirmation / form 类工具向用户提问，而不是只在普通聊天里输出问题。
+
+使用宿主提问工具前，先按“表单与问卷选项处理原则”清洗问题和选项：
+
+- 只把当前阶段合理、必要、可执行的选项放进提问工具。
+- 不把已剔除的跳跃流程、倒退流程或不合理选项放进提问工具。
+- 对普通开放问题，用单个清晰问题询问用户；对明确互斥选项，用宿主支持的选择控件。
+- 如果当前宿主没有暴露可调用的 ask-question / confirmation / form 工具，才退回普通聊天提问，并说明需要用户回复后才能继续。
+
 ## 前置要求
 
 需要已安装 `pippit-tool-cli`：
@@ -74,6 +85,40 @@ Access Key 创建地址：https://xyq.jianying.com/home?tab_name=home
 ```bash
 export XYQ_ACCESS_KEY="<access-key>"
 ```
+
+## 小云雀界面打开契约
+
+`+submit-run` 返回 `web_thread_link` 后，用户侧 Agent 必须优先把小云雀短剧 WebUI 打开给用户，而不是只展示链接。
+
+按当前宿主适配打开方式：
+
+**Codex Desktop**
+
+1. 如果 `browser:control-in-app-browser` skill 可用，先读取并按该 skill 连接 Codex in-app browser。
+2. 使用 in-app browser 打开 `web_thread_link`，并让浏览器可见。
+3. 继续执行 `get-thread`、`list-thread-file` 和 `download-result`；打开 WebUI 不替代 CLI 轮询和产物下载。
+
+**WorkBuddy**
+
+1. 如果当前 WorkBuddy 会话暴露内置浏览器或页面打开能力，使用宿主提供的能力打开 `web_thread_link`。
+2. 不要套用 Codex Desktop 的 `browser:control-in-app-browser`、`node_repl` 或 `agent.browsers.get("iab")` 实现。
+3. 如果 WorkBuddy 当前没有暴露可调用浏览器工具，说明无法自动打开，并把 `web_thread_link` 交给用户在 WorkBuddy 内置浏览器或普通浏览器中打开。
+
+**TRAE Work**
+
+1. 如果当前 TRAE Work 会话暴露内置浏览器或页面打开能力，使用宿主提供的能力打开 `web_thread_link`。
+2. 不要套用 Codex Desktop 的 in-app browser 实现。
+3. 如果 TRAE Work 当前没有暴露可调用浏览器工具，说明无法自动打开，并把 `web_thread_link` 交给用户手动打开。
+
+**其他宿主或未知环境**
+
+如果没有明确的宿主浏览器能力、工具不可用或连接失败：
+
+- 明确说明未能自动打开小云雀界面的具体原因。
+- 仍然把 `web_thread_link` 展示给用户，作为手动打开入口。
+- 不要因此跳过后续进展查询和文件下载。
+
+打开界面的目的只是让用户能进入小云雀编辑/确认界面做视觉 review、流程确认或手动调整；短剧任务提交、状态查询和重要资产落盘仍以 `pippit-tool-cli` 为准。
 
 ## 使用方法
 
@@ -152,7 +197,7 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
 ```
 1. pippit-tool-cli short-drama +submit-run --message "用户的原始短剧需求"
    → 拿到 thread_id、run_id 和 web_thread_link
-2. 立即将 web_thread_link 展示给用户
+2. 立即展示 web_thread_link，并按“小云雀界面打开契约”优先用 in-app browser 打开该链接
 3. 并行发起，二者同等重要：
    a. pippit-tool-cli get-thread --thread-id THREAD_ID --run-id RUN_ID
    b. pippit-tool-cli list-thread-file --thread-id THREAD_ID --page-num PAGE_NUM --page-size 200
@@ -183,8 +228,9 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
    → 拿到 asset_id
 3. pippit-tool-cli short-drama +submit-run --message "用户的原始短剧需求" --asset-ids asset_id
    → 拿到 thread_id、run_id 和 web_thread_link
-4. 记录该 thread_id 已绑定这个剧本文件；后续同一 thread_id 的续写或修改只传 --thread-id，不再传新的剧本 asset_id
-5. 后续同场景 1 的并行查询、重要资产发现和文件下载流程
+4. 立即展示 web_thread_link，并按“小云雀界面打开契约”优先用 in-app browser 打开该链接
+5. 记录该 thread_id 已绑定这个剧本文件；后续同一 thread_id 的续写或修改只传 --thread-id，不再传新的剧本 asset_id
+6. 后续同场景 1 的并行查询、重要资产发现和文件下载流程
 ```
 
 ### 场景 3：在已有短剧会话中续写或修改
@@ -192,8 +238,9 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
 ```
 1. pippit-tool-cli short-drama +submit-run --message "用户的新需求" --thread-id THREAD_ID
    → 拿到新的 run_id 和 web_thread_link
-2. 如果该 THREAD_ID 已经绑定过剧本文件，不要再上传或通过 --asset-ids 追加第二个剧本文件
-3. 继续按场景 1 展示进展、处理用户补充问题、获取新增会话文件列表，并及时下载新增重要资产
+2. 立即展示 web_thread_link，并按“小云雀界面打开契约”优先用 in-app browser 打开该链接
+3. 如果该 THREAD_ID 已经绑定过剧本文件，不要再上传或通过 --asset-ids 追加第二个剧本文件
+4. 继续按场景 1 展示进展、处理用户补充问题、获取新增会话文件列表，并及时下载新增重要资产
 ```
 
 ## 轮询策略
@@ -205,7 +252,7 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
 - **重要资产识别**：每轮都检查 `list-thread-file` 返回的文件。剧本设计、场景设计、场景图、人物角色设计、人物图、分集草稿、故事板、最终视频产物都是重要资产。
 - **文件下载**：解析 `list-thread-file` 的结果后，对带 `download_url` 的重要资产立即调用 `download-result` 下载资源；不要在 `list-thread-file` 阶段检查文件是否已存在，存在性检查由下载工具内部处理。
 - **下载完成标准**：不要把文件元信息展示当成下载完成；必须拿到本地 `file_path`，或明确记录该文件在重试后仍下载失败。
-- **用户确认**：如果消息中出现需要用户确认、补充设定或回答问题的内容，先判断是否包含表单、问卷、选项或按钮；包含时按“短剧主流程顺序”和“表单与问卷选项处理原则”清洗选项，再展示给用户并等待回复。
+- **用户确认**：如果消息中出现需要用户确认、补充设定或回答问题的内容，先判断是否包含表单、问卷、选项或按钮；包含时按“短剧主流程顺序”和“表单与问卷选项处理原则”清洗选项，再按“宿主提问工具优先”向用户提问并等待回复。
 - **超时**：如果长时间无结果，告知用户任务仍在生成中，可稍后通过 `web_thread_link` 查看。
 - **错误处理**：`get-thread`、`list-thread-file` 或 `download-result` 任一调用失败时，记录失败原因和参数，在后续轮询中主动重试；重试期间继续处理其他成功返回的消息和文件。连续多轮失败后再向用户说明仍未完成的查询或下载项。
 
@@ -214,10 +261,11 @@ pippit-tool-cli download-result --url DOWNLOAD_URL --output-path FILE_PATH --upd
 一次短剧任务不能只以 `get-thread` 返回的 `readable_text` 作为结束条件。完成前必须同时检查：
 
 1. 已处理 `get-thread` 返回的最新 `readable_text`、用户确认问题和最终消息。
-2. 已用 `--page-size 200` 调用 `list-thread-file` 获取会话文件列表；如果本轮 `total` 达到 200，已在后续轮询中递增 `page-num` 查询新一页。
-3. 对所有带 `download_url` 的重要资产，已调用 `download-result` 下载到本地 `file_path`。
-4. 已按短剧主流程顺序检查服务端表单、问卷和选项，没有把跳过必要阶段的选项直接呈现给用户；如果跳过 `剧本标准化`，已明确这是可选阶段。
-5. 对查询失败或下载失败的资产，已在后续轮询中主动重试，并在最终回复中列出仍失败的文件或命令。
+2. 已展示 `web_thread_link`，并按当前宿主尝试打开小云雀 WebUI：Codex Desktop 用 in-app browser；WorkBuddy / TRAE Work 用各自宿主提供的内置浏览器或页面打开能力；如果不能自动打开，已说明原因并提供手动链接。
+3. 已用 `--page-size 200` 调用 `list-thread-file` 获取会话文件列表；如果本轮 `total` 达到 200，已在后续轮询中递增 `page-num` 查询新一页。
+4. 对所有带 `download_url` 的重要资产，已调用 `download-result` 下载到本地 `file_path`。
+5. 已按短剧主流程顺序检查服务端表单、问卷和选项，没有把跳过必要阶段的选项直接呈现给用户；如果跳过 `剧本标准化`，已明确这是可选阶段。
+6. 对查询失败或下载失败的资产，已在后续轮询中主动重试，并在最终回复中列出仍失败的文件或命令。
 
 ## 输出格式
 
@@ -310,8 +358,9 @@ Thread: thread_...
 ## 向用户展示内容
 
 - 任务提交后：立即展示 `web_thread_link`。
+- 在支持内置浏览器或页面打开能力的宿主中：任务提交后按“小云雀界面打开契约”优先打开 `web_thread_link`，让用户能进入小云雀 WebUI 查看和调整；不同宿主只使用各自提供的浏览器能力，不复用 Codex Desktop 的实现细节。
 - 任务进行中：展示后端 Agent 返回的过程消息。
-- 需要用户补充信息时：如果是普通问题，展示后端 Agent 的问题并等待用户回复；如果包含表单、问卷、选项或按钮，先按短剧主流程清洗不合理或跳跃的流程选项，再展示给用户。
+- 需要用户补充信息时：如果是普通问题，按“宿主提问工具优先”提问并等待用户回复；如果包含表单、问卷、选项或按钮，先按短剧主流程清洗不合理或跳跃的流程选项，再用宿主提问工具呈现；没有可用提问工具时才退回普通聊天。
 - 任务完成后：展示短剧内容、分集草稿、设定说明或其他结果信息，同时检查是否有未下载的重要资产。
 - 获取会话文件后：展示或记录文件元信息，不把它当成已下载结果。
 - 文件资源下载后：展示已落盘的本地文件路径；已存在而跳过下载的文件也要标明。
