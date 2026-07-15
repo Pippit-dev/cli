@@ -9,11 +9,19 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 通用创作技能，支持 NestAgent 图片/视频生成与编辑，并在视频模型直出时调用 `pippit-tool-cli generate-video`。 | `skills/xyq-nest-skill/` |
+
+### 技能路由
+
+- 通用图片/视频生成、编辑和复杂参考素材编排使用 `xyq-skill`。
+- 用户明确要求视频模型直出、指定视频模型或直接调用 CLI 时，由 `xyq-skill` 调用 `pippit-tool-cli generate-video`，再用 `query-result` 查询和下载结果。
+- 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`，不要与通用创作流程混用。
+
+两份技能需要用户补充、选择或确认时，优先调用宿主的结构化提问工具：Codex 使用 `request_user_input`，WorkBuddy 使用 `ask_user_question`，Trae 和其他宿主使用实际暴露的同类工具；没有同类工具时退回普通聊天提问。
 
 ## 通用 NestAgent 技能
 
-`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。
+`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载；视频模型直出请求直接使用 `pippit-tool-cli generate-video`。
 
 ### 功能特性
 
@@ -23,6 +31,7 @@
 | 查询会话进展 | 增量拉取会话消息，轮询创作进度和产物结果。 |
 | 上传文件 | 上传图片/视频/mp3或wav音频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
 | 下载结果 | 批量下载生成的图片/视频到本地，支持并行下载。 |
+| 视频模型直出 | 调用 `generate-video` 提交请求，展示 `web_thread_link`，再用 `query-result` 查询并下载视频。 |
 
 小云雀平台能力覆盖：
 
@@ -213,6 +222,37 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 短剧命令的错误日志会追加写入本地每日日志文件：`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`。日志路径会基于当前用户主目录和系统路径分隔符生成，因此可在 macOS、Linux 和 Windows 上使用。
 
+## 生图 CLI
+
+`generate-image` 会上传本地参考图片，然后向综合 Nest Agent 提交生图请求：
+
+```bash
+pippit-tool-cli generate-image \
+  --prompt "生成一张小猫海报" \
+  --image "~/images/cat.png" \
+  --model "seedream_4.5" \
+  --ratio 6 \
+  --generate-image-count 2
+```
+
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交 HTTP 请求时，`agent_name` 固定为 `pippit_nest_agent`，参考图会使用上传接口返回的 `pippit_asset_id` 写入顶层 `asset_ids`，生图模型写入 `general_agent_settings.image_model`，比例写入 `general_agent_settings.ratio`，生图数量写入 `general_agent_settings.generate_image_count`。`--model` 为必填参数，CLI 只做非空校验，具体模型值是否可用由服务端决定。
+
+`--ratio` 可选，填写服务端 `Ratio` 枚举值。CLI 只做整数格式解析，不检查枚举值是否在下表范围内；具体值是否可用由服务端决定。常用枚举值含义如下：
+
+| ratio 参数 | IDL 枚举 | 含义 |
+| ---: | --- | --- |
+| `0` | `CanvasRatioOriginal` | 原始比例（自动） |
+| `2` | `CanvasRatio16To9` | 16:9（横屏） |
+| `13` | `CanvasRatio21To9` | 21:9（电影） |
+| `3` | `CanvasRatio9To16` | 9:16（竖屏） |
+| `4` | `CanvasRatio4To3` | 4:3 |
+| `5` | `CanvasRatio3To4` | 3:4 |
+| `6` | `CanvasRatio1To1` | 1:1 |
+
+`--generate-image-count` 可选，填写生图数量，对应 IDL 字段 `GeneralSettingsPart.GenerateImageCount` / JSON 字段 `generate_image_count`。CLI 只校验不能为负数；具体数量范围由服务端决定。
+
+图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 整数格式、generate-image-count 非负和文件后缀。
+
 ## 生视频 CLI
 
 `generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
@@ -233,7 +273,7 @@ pippit-tool-cli generate-video \
 
 命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，仅支持 `.mp3`、`.wav`。普通用户支持模型 `Seedance_2.0_mini_lite`；`seedance2.0_vision`、`seedance2.0_fast_vision` 和 `Seedance_2.0_mini` 为 VIP 专属模型。CLI 会在提交前校验 prompt、素材数量和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
 
-查询并下载生视频结果：
+查询并下载生图/生视频结果：
 
 ```bash
 pippit-tool-cli query-result \
@@ -242,7 +282,7 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频产物，`completed=true`，`videos` 中只包含 `download_url` 和 `output_path`；Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
+`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
 
 ## HTTP 客户端
 

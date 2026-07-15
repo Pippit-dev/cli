@@ -32,10 +32,17 @@ type QueryResultResult struct {
 	RunID        string             `json:"run_id"`
 	ErrorMessage string             `json:"error_message"`
 	Videos       []QueryResultVideo `json:"videos"`
+	Images       []QueryResultImage `json:"images"`
 }
 
 // QueryResultVideo describes a downloaded video from query-result.
 type QueryResultVideo struct {
+	DownloadURL string `json:"download_url"`
+	OutputPath  string `json:"output_path"`
+}
+
+// QueryResultImage describes a downloaded image from query-result.
+type QueryResultImage struct {
 	DownloadURL string `json:"download_url"`
 	OutputPath  string `json:"output_path"`
 }
@@ -69,6 +76,7 @@ type queryContent struct {
 
 type queryContentData struct {
 	Video        *queryVideo     `json:"video"`
+	Image        *queryImage     `json:"image"`
 	ErrorMessage string          `json:"error_message"`
 	ErrorCode    json.RawMessage `json:"error_code"`
 }
@@ -78,6 +86,16 @@ type queryVideo struct {
 	Title       string `json:"title"`
 	VID         string `json:"vid"`
 	AssetID     string `json:"asset_id"`
+}
+
+type queryImage struct {
+	DownloadURL string         `json:"url"`
+	AssetID     string         `json:"asset_id"`
+	Metadata    queryImageMeta `json:"metadata"`
+}
+
+type queryImageMeta struct {
+	Format string `json:"format"`
 }
 
 func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.Runner) (*QueryResultResult, error) {
@@ -111,6 +129,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 			RunID:     opts.RunID,
 			Videos:    []QueryResultVideo{},
+			Images:    []QueryResultImage{},
 		}
 		if run.State == failedRunState {
 			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 失败")
@@ -119,17 +138,19 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 
 	videos := extractQueryVideos(run)
-	if len(videos) == 0 {
-		return nil, fmt.Errorf("下载失败：未找到可下载的视频产物")
+	images := extractQueryImages(run)
+	if len(videos) == 0 && len(images) == 0 {
+		return nil, fmt.Errorf("下载失败：未找到可下载的产物")
 	}
 
-	downloadDir, err := expandPath(opts.DownloadDir)
+	downloadDir, err := common.ExpandPath(opts.DownloadDir)
 	if err != nil {
 		return nil, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
 	}
 
+	usedNames := make(map[string]int, len(videos)+len(images))
+
 	resultVideos := make([]QueryResultVideo, 0, len(videos))
-	usedNames := make(map[string]int, len(videos))
 	for i, video := range videos {
 		if strings.TrimSpace(video.DownloadURL) == "" {
 			return nil, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
@@ -155,11 +176,38 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		})
 	}
 
+	resultImages := make([]QueryResultImage, 0, len(images))
+	for i, image := range images {
+		if strings.TrimSpace(image.DownloadURL) == "" {
+			return nil, fmt.Errorf("下载失败：第 %d 个图片产物 download_url 为空", i+1)
+		}
+		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(imageFileName(image, i+1), usedNames))
+		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
+			URL:        image.DownloadURL,
+			OutputPath: outputPath,
+			Workers:    5,
+		}, runner)
+		if err != nil {
+			return nil, fmt.Errorf("下载失败：%w", err)
+		}
+		actualOutputPath := outputPath
+		if len(download.Downloaded) > 0 {
+			actualOutputPath = download.Downloaded[0]
+		} else if len(download.AlreadyExist) > 0 {
+			actualOutputPath = download.AlreadyExist[0]
+		}
+		resultImages = append(resultImages, QueryResultImage{
+			DownloadURL: image.DownloadURL,
+			OutputPath:  actualOutputPath,
+		})
+	}
+
 	return &QueryResultResult{
 		Completed: true,
 		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 		RunID:     opts.RunID,
 		Videos:    resultVideos,
+		Images:    resultImages,
 	}, nil
 }
 
@@ -181,6 +229,7 @@ func queryResultFromGetThreadBusinessError(err error, opts *QueryResultOptions) 
 		RunID:        opts.RunID,
 		ErrorMessage: message,
 		Videos:       []QueryResultVideo{},
+		Images:       []QueryResultImage{},
 	}, true
 }
 
@@ -288,6 +337,23 @@ func extractQueryVideos(run queryRun) []queryVideo {
 	return videos
 }
 
+func extractQueryImages(run queryRun) []queryImage {
+	images := make([]queryImage, 0)
+	for _, entry := range run.EntryList {
+		artifact := entry.Artifact
+		for _, content := range artifact.Content {
+			if content.SubType != "biz/x_data_image" {
+				continue
+			}
+			data := content.Data
+			if data.Image != nil {
+				images = append(images, *data.Image)
+			}
+		}
+	}
+	return images
+}
+
 func extractQueryErrorMessage(run queryRun) string {
 	if message := firstNonEmpty(run.ErrorMessage, run.ErrorMsg, run.Errmsg); message != "" {
 		return message
@@ -342,6 +408,42 @@ func hasVideoExtension(name string) bool {
 	}
 }
 
+func imageFileName(image queryImage, index int) string {
+	name := image.AssetID
+	if name == "" {
+		name = "result_" + strconv.Itoa(index)
+	}
+	name = sanitizeFileName(name)
+	if !hasImageExtension(name) {
+		name += "." + normalizeImageFormatExt(image.Metadata.Format)
+	}
+	return name
+}
+
+// normalizeImageFormatExt maps the server-provided metadata.format to a safe
+// file extension. Only a known allowlist is accepted; anything else (including
+// "image/jpeg", ".jpeg", or empty values) falls back to "png".
+func normalizeImageFormatExt(format string) string {
+	format = strings.ToLower(strings.TrimSpace(format))
+	format = strings.TrimPrefix(format, "image/")
+	format = strings.TrimPrefix(format, ".")
+	switch format {
+	case "jpg", "jpeg", "png", "gif", "bmp", "webp", "svg":
+		return format
+	default:
+		return "png"
+	}
+}
+
+func hasImageExtension(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(filepath.Ext(name))) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg":
+		return true
+	default:
+		return false
+	}
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
@@ -355,7 +457,7 @@ func firstNonEmpty(values ...string) string {
 func sanitizeFileName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return "result.mp4"
+		return "result"
 	}
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) || r == '/' || r == '\\' || strings.ContainsRune(`<>:"|?*`, r) {
