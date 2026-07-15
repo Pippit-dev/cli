@@ -27,12 +27,14 @@ type Options struct {
 	ImagePaths         []string
 	Model              string
 	Ratio              string
+	Resolution         string
 	GenerateImageCount *int
 }
 
 type generalAgentSettings struct {
 	ImageModel         string `json:"image_model"`
 	Ratio              *int   `json:"ratio,omitempty"`
+	Resolution         string `json:"resolution,omitempty"`
 	GenerateImageCount *int   `json:"generate_image_count,omitempty"`
 }
 
@@ -142,6 +144,7 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string) map[string]any {
 		"general_agent_settings": generalAgentSettings{
 			ImageModel:         strings.TrimSpace(opts.Model),
 			Ratio:              ratio,
+			Resolution:         strings.ToUpper(strings.TrimSpace(opts.Resolution)),
 			GenerateImageCount: opts.GenerateImageCount,
 		},
 	}

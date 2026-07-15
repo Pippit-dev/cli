@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求视频模型直出、指定视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-video。覆盖文生图、文生视频、图生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
+description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video。覆盖文生图、文生视频、图生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
 user-invocable: true
 metadata:
   {
@@ -17,7 +17,7 @@ metadata:
   }
 ---
 
-# 小云雀创作与视频模型直出
+# 小云雀创作与图片/视频模型直出
 
 通过 小云雀的API 创建会话、发送消息（生图、生视频、编辑视频等）、上传图片/视频/mp3或wav音频文件，并查询会话消息进展。
 
@@ -28,11 +28,44 @@ metadata:
 - **编辑**：局部修改、元素替换、镜头调整、风格迁移
 - **复杂创作**：复刻已有视频风格做 TVC/宣传片、用音乐生成 MV、产品展示片制作
 
-除“视频模型直出”外，创作和编辑需求通过发送自然语言消息来完成，后端 Agent 会自主编排工作流。复杂任务耗时较长，需耐心轮询。
+除“图片/视频模型直出”外，创作和编辑需求通过发送自然语言消息来完成，后端 Agent 会自主编排工作流。复杂任务耗时较长，需耐心轮询。
 
 ## 执行路由（必须先判断）
 
-### 路由 A：视频模型直出
+### 路由 A：图片模型直出
+
+满足任一条件时，必须直接使用 `pippit-tool-cli generate-image`，不要改走 `submit_run.py`：
+
+- 用户明确说“图片模型直出”、“直接调图片模型”或明确要求用 CLI 生图。
+- 用户指定了具体图片模型（如 `seedream_5.0_pro`），并希望单次直接生成图片。
+- 上游流程已明确将任务标记为图片 direct-model / 模型直出。
+
+执行原则：
+
+1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用时报告阻塞，不要悄悄降级到会话 API。
+2. 真实提交会消耗 credits；如果用户本轮尚未明确确认生成，按“用户确认与反问”规则征得明确确认后再运行。
+3. 保留用户原始 prompt，不要自行扩写、润色、翻译或增加风格词。
+4. `--model` 必填；用户未提供图片模型时，先询问使用哪个模型。只添加用户已经给出的 `--ratio`、`--resolution`、`--generate-image-count`、`--image` 参数，不补默认值。
+5. `--resolution` 的使用说明是：仅 `seedream_5.0_pro` 支持 `1K`、`2K`、`4K`。不要在 skill 侧维护额外 allowlist 或自行改写用户值，实际合法性由服务端决定。
+6. `generate-image` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
+7. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `images[].output_path`。
+
+```bash
+pippit-tool-cli generate-image \
+  --prompt "用户原始描述" \
+  --model IMAGE_MODEL
+  --ratio RATIO
+  --resolution RESOLUTION
+  --generate-image-count COUNT
+  --image 参考图路径
+
+pippit-tool-cli query-result \
+  --thread-id THREAD_ID \
+  --run-id RUN_ID \
+  --download-dir OUTPUT_DIR
+```
+
+### 路由 B：视频模型直出
 
 满足任一条件时，必须直接使用 `pippit-tool-cli generate-video`，不要改走 `submit_run.py`：
 
@@ -60,13 +93,13 @@ pippit-tool-cli query-result \
 
 `--image` 最多重复 9 次，`--video` 和 `--audio` 最多各重复 3 次。
 
-### 路由 B：小云雀后端 Agent 编排
+### 路由 C：小云雀后端 Agent 编排
 
 需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出时，继续使用本技能内置的 `submit_run.py` / `get_thread.py` 会话工作流。
 
-### 路由 C：短剧工作流
+### 路由 D：短剧工作流
 
-用户要求短剧生成、续写、改写、剧情扩展、人物设定、分集草稿或短剧会话文件处理时，停止本技能流程并转交 `xyq-short-drama-skill`，不要用 `submit_run.py` 或 `generate-video` 假装执行完整短剧流程。
+用户要求短剧生成、续写、改写、剧情扩展、人物设定、分集草稿或短剧会话文件处理时，停止本技能流程并转交 `xyq-short-drama-skill`，不要用 `submit_run.py`、`generate-image` 或 `generate-video` 假装执行完整短剧流程。
 
 ## 用户确认与反问
 
@@ -87,7 +120,8 @@ pippit-tool-cli query-result \
 2. **查询会话进展** - 根据 `thread_id` 、 `run_id`、`after_seq` 增量拉取该会话的消息列表，用于轮询创作过程的消息和最终产物结果
 3. **上传文件** - 支持上传`单张图片`、`单个视频文件`或`单个mp3/wav音频文件`到小云雀资产库，得到文件对应的 `asset_id`（编辑或参考已有图片/视频/音频时需要先上传）
 4. **下载结果** - 将会话中生成的图片/视频批量下载到本地，支持指定输出目录和文件名前缀。
-5. **视频模型直出** - 使用 `pippit-tool-cli generate-video` 直接调用视频模型，使用 `query-result` 查询并下载结果。
+5. **图片模型直出** - 使用 `pippit-tool-cli generate-image` 直接调用图片模型，使用 `query-result` 查询并下载图片结果。
+6. **视频模型直出** - 使用 `pippit-tool-cli generate-video` 直接调用视频模型，使用 `query-result` 查询并下载视频结果。
 
 
 ## 前置要求
@@ -98,7 +132,7 @@ export XYQ_ACCESS_KEY="your-access-key"
 
 可选：`XYQ_OPENAPI_BASE` 或 `XYQ_BASE_URL`，默认 `https://xyq.jianying.com`。
 
-会话 API 路由无需安装额外依赖，仅使用 Python 标准库。视频模型直出路由额外要求 `pippit-tool-cli` 在 `PATH` 中可用。
+会话 API 路由无需安装额外依赖，仅使用 Python 标准库。图片/视频模型直出路由额外要求 `pippit-tool-cli` 在 `PATH` 中可用。
 
 ## 使用方法
 
@@ -170,7 +204,18 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 6. 向用户展示：过程中的创作信息，以及下载后的本地文件列表
 ```
 
-### 场景 2：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
+### 场景 2：用户明确要求图片模型直出
+
+```
+1. command -v pippit-tool-cli  →  确认 CLI 可用
+2. 检查图片模型：用户未提供时先询问，不要自行选择
+3. pippit-tool-cli generate-image --prompt "用户原始描述" --model IMAGE_MODEL [仅添加用户已给出的其他参数]
+4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
+5. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
+6. completed=true 后展示并下载 images[].output_path；出现 error_message 时停止并报告
+```
+
+### 场景 3：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
 
 ```
 1. upload_file.py /path/to/video.mp4  →  拿到 asset_id1
@@ -181,7 +226,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 用户给了文件路径 + 编辑指令 = 先上传文件，再把编辑指令和 所有asset_id 一起发送。
 
-### 场景 3：用户提供参考图/视频/音频要求生成新内容
+### 场景 4：用户提供参考图/视频/音频要求生成新内容
 
 ```
 1. upload_file.py /path/to/ref1.png  →  拿到 asset_id1
@@ -192,7 +237,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 6. 后续同场景 1 的步骤 2-6
 ```
 
-### 场景 4：在已有会话中追加新需求
+### 场景 5：在已有会话中追加新需求
 
 ```
 1. submit_run.py --message "新的描述" --thread-id THREAD_ID  →  拿到 thread_id、run_id、web_thread_link
@@ -269,12 +314,12 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 ## 核心原则：用户侧不做创作，只做传话
 
-你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；模型直出路由把用户原始参数传给 CLI。你要做的是：
+你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出路由把用户原始参数传给 CLI。你要做的是：
 
-1. **上传**：如果用户给了本地文件 → `upload_file.py` 拿到 asset_id
-2. **提交任务**：先按“执行路由”判断；模型直出调用 `pippit-tool-cli generate-video`，其余任务把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
+1. **准备素材**：会话 API 路由用 `upload_file.py` 把本地文件转为 asset_id；图片/视频模型直出路由把本地路径直接交给 CLI 的 `--image` / `--video` / `--audio` 参数
+2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，其余任务把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
 3. **传话**：根据 `get_thread.py` 返回的消息列表，展示过程中的意图询问、创作信息等
-4. **取件**：`get_thread.py` 轮询结果 → 检查结果 → 下载产物 → 结果展示给用户
+4. **取件**：会话 API 路由用 `get_thread.py` 轮询，图片/视频模型直出路由用 `query-result` 轮询 → 检查结果 → 下载产物 → 结果展示给用户
 
 **绝对不要做的事：**
 - 不要替用户扩写、润色、翻译 prompt（用户说"帮我推演分镜"，就直接传"帮我推演分镜"，不要自己先写个分镜表再逐条发）
@@ -310,4 +355,4 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 - 查询会话时可用 --after-seq 做增量拉取，便于轮询新消息（含 assistant 回复与生图/生视频结果）
 - 上传文件仅支持图片（image/*）、视频（video/*）和 `.mp3/.wav` 音频文件，其他类型会被拒绝，文件大小须在 200MB 以下
 - 生成过程中将过程中的创作信息展示给用户；任务完成后给出**产物结果（图片/视频）URL链接**和下载的**本地文件列表**。
-- 模型直出任务必须保留 `generate-video` 返回的 `thread_id` / `run_id`，并用 `query-result` 取回最终视频。
+- 图片/视频模型直出任务必须保留 `generate-image` / `generate-video` 返回的 `thread_id` / `run_id`，并用 `query-result` 取回最终图片或视频。
