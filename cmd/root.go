@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
@@ -32,7 +33,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root := &cobra.Command{
 		Use:           "pippit-tool-cli",
 		Short:         "Pippit CLI",
-		Long:          "Pippit CLI generates videos, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
+		Long:          "Pippit CLI generates videos and images, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
 		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -45,6 +46,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
+	root.AddCommand(generate_image.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewQueryResultCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))

@@ -16,7 +16,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 
 	cmd := &cobra.Command{
 		Use:   "query-result",
-		Short: "Query a generate-video run result and download completed videos",
+		Short: "Query a run result and download completed videos or images",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := internalgen.QueryResult(cmd.Context(), opts, runner)
@@ -37,7 +37,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 	cmd.SetErr(stderr)
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from generate-video output")
 	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate-video output")
-	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos into")
+	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos or images into")
 	return cmd
 }
 
@@ -45,6 +45,7 @@ func queryResultFromError(err error, opts *internalgen.QueryResultOptions) *inte
 	result := &internalgen.QueryResultResult{
 		ErrorMessage: err.Error(),
 		Videos:       []internalgen.QueryResultVideo{},
+		Images:       []internalgen.QueryResultImage{},
 	}
 	if opts != nil {
 		result.ThreadID = strings.TrimSpace(opts.ThreadID)
