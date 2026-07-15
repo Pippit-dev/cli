@@ -446,7 +446,7 @@ func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
-	if got["error_message"] != "下载失败：未找到可下载的视频产物" {
+	if got["error_message"] != "下载失败：未找到可下载的产物" {
 		t.Fatalf("error_message = %v, want no downloadable video error", got["error_message"])
 	}
 	videos, ok := got["videos"].([]any)
