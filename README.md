@@ -9,11 +9,19 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 通用 NestAgent 技能，支持图片/视频生成、编辑、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 通用创作技能，支持 NestAgent 图片/视频生成与编辑，并在视频模型直出时调用 `pippit-tool-cli generate-video`。 | `skills/xyq-nest-skill/` |
+
+### 技能路由
+
+- 通用图片/视频生成、编辑和复杂参考素材编排使用 `xyq-skill`。
+- 用户明确要求视频模型直出、指定视频模型或直接调用 CLI 时，由 `xyq-skill` 调用 `pippit-tool-cli generate-video`，再用 `query-result` 查询和下载结果。
+- 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`，不要与通用创作流程混用。
+
+两份技能需要用户补充、选择或确认时，优先调用宿主的结构化提问工具：Codex 使用 `request_user_input`，WorkBuddy 使用 `ask_user_question`，Trae 和其他宿主使用实际暴露的同类工具；没有同类工具时退回普通聊天提问。
 
 ## 通用 NestAgent 技能
 
-`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载。
+`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载；视频模型直出请求直接使用 `pippit-tool-cli generate-video`。
 
 ### 功能特性
 
@@ -23,6 +31,7 @@
 | 查询会话进展 | 增量拉取会话消息，轮询创作进度和产物结果。 |
 | 上传文件 | 上传图片/视频/mp3或wav音频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
 | 下载结果 | 批量下载生成的图片/视频到本地，支持并行下载。 |
+| 视频模型直出 | 调用 `generate-video` 提交请求，展示 `web_thread_link`，再用 `query-result` 查询并下载视频。 |
 
 小云雀平台能力覆盖：
 
