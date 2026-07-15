@@ -33,6 +33,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 					"image":                strings.Join(opts.ImagePaths, ","),
 					"model":                strings.TrimSpace(opts.Model),
 					"ratio":                strings.TrimSpace(opts.Ratio),
+					"resolution":           strings.ToUpper(strings.TrimSpace(opts.Resolution)),
 					"generate_image_count": optionalIntString(opts.GenerateImageCount),
 				})
 				return err
@@ -47,6 +48,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
 	flags.StringVar(&opts.Model, "model", "", "image model; supported: seedream_5.0_pro, seedream_5.0, seedream_4.3, nova2, seedream_4.5, seedream_4.1, seedream_4")
 	flags.StringVar(&opts.Ratio, "ratio", "", "image ratio; "+internalgen.SupportedRatioUsage())
+	flags.StringVar(&opts.Resolution, "resolution", "", "image resolution; only seedream_5.0_pro supports these options: 1K, 2K, 4K")
 	flags.IntVar(&generateImageCount, "generate-image-count", 0, "generated image count")
 	return cmd
 }

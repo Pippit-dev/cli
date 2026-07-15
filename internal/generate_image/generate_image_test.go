@@ -42,6 +42,18 @@ func TestValidateOptionsAllowsServerDecidedRatio(t *testing.T) {
 	}
 }
 
+func TestValidateOptionsAllowsServerDecidedResolution(t *testing.T) {
+	opts := &Options{
+		Prompt:     "x",
+		Model:      "seedream_4.5",
+		Resolution: "8K",
+	}
+
+	if err := ValidateOptions(opts); err != nil {
+		t.Fatalf("ValidateOptions() error = %v, want nil", err)
+	}
+}
+
 func TestValidateOptionsRejectsNegativeGenerateImageCount(t *testing.T) {
 	count := -1
 	opts := &Options{
@@ -116,8 +128,9 @@ func TestBuildSubmitRunBodyWithGeneralAgentSettings(t *testing.T) {
 	count := 2
 	opts := &Options{
 		Prompt:             "  生成小猫海报  ",
-		Model:              " seedream_4.5 ",
+		Model:              " seedream_5.0_pro ",
 		Ratio:              "6",
+		Resolution:         " 4k ",
 		GenerateImageCount: &count,
 	}
 
@@ -132,11 +145,14 @@ func TestBuildSubmitRunBodyWithGeneralAgentSettings(t *testing.T) {
 	if !ok {
 		t.Fatalf("general_agent_settings = %#v, want object", body["general_agent_settings"])
 	}
-	if settings.ImageModel != "seedream_4.5" {
-		t.Fatalf("image_model = %q, want seedream_4.5", settings.ImageModel)
+	if settings.ImageModel != "seedream_5.0_pro" {
+		t.Fatalf("image_model = %q, want seedream_5.0_pro", settings.ImageModel)
 	}
 	if settings.Ratio == nil || *settings.Ratio != 6 {
 		t.Fatalf("ratio = %#v, want 6", settings.Ratio)
+	}
+	if settings.Resolution != "4K" {
+		t.Fatalf("resolution = %q, want 4K", settings.Resolution)
 	}
 	if settings.GenerateImageCount == nil || *settings.GenerateImageCount != 2 {
 		t.Fatalf("generate_image_count = %#v, want 2", settings.GenerateImageCount)

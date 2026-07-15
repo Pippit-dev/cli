@@ -66,11 +66,14 @@ func TestGenerateImage(t *testing.T) {
 			if !ok {
 				t.Fatalf("general_agent_settings = %#v, want object", body["general_agent_settings"])
 			}
-			if settings["image_model"] != "seedream_4.5" {
-				t.Fatalf("image_model = %v, want seedream_4.5", settings["image_model"])
+			if settings["image_model"] != "seedream_5.0_pro" {
+				t.Fatalf("image_model = %v, want seedream_5.0_pro", settings["image_model"])
 			}
 			if settings["ratio"] != float64(6) {
 				t.Fatalf("ratio = %v, want 6", settings["ratio"])
+			}
+			if settings["resolution"] != "4K" {
+				t.Fatalf("resolution = %v, want 4K", settings["resolution"])
 			}
 			if settings["generate_image_count"] != float64(2) {
 				t.Fatalf("generate_image_count = %v, want 2", settings["generate_image_count"])
@@ -97,8 +100,9 @@ func TestGenerateImage(t *testing.T) {
 		"generate-image",
 		"--prompt", "生成小猫海报",
 		"--image", image,
-		"--model", "seedream_4.5",
+		"--model", "seedream_5.0_pro",
 		"--ratio", "6",
+		"--resolution", "4K",
 		"--generate-image-count", "2",
 	})
 
