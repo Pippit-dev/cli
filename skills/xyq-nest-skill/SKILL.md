@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video。覆盖文生图、文生视频、图生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
+description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video。覆盖文生图、文生视频、图生视频、首尾帧生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
 user-invocable: true
 metadata:
   {
@@ -71,6 +71,7 @@ pippit-tool-cli query-result \
 
 - 用户明确说“视频模型直出”、“直接调模型”或“直接调用 CLI”。
 - 用户指定了具体视频模型（如 Seedance），并希望单次直接生成视频。
+- 用户明确要求“首尾帧生视频”、指定首帧和尾帧，或要求从第一张图过渡到第二张图。
 - 上游流程已明确将任务标记为 direct-model / 模型直出。
 
 执行原则：
@@ -78,12 +79,19 @@ pippit-tool-cli query-result \
 1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用时报告阻塞，不要悄悄降级到会话 API。
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认生成，按“用户确认与反问”规则征得明确确认后再运行。
 3. 保留用户原始 prompt，不要自行扩写、润色、翻译或增加风格词。
-4. 只添加用户已经给出的 `--model`、`--duration`、`--ratio`、`--resolution`、`--image`、`--video`、`--audio` 参数；未给参数交给 CLI 默认值。
-5. `generate-video` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
-6. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
+4. 只添加用户已经给出的 `--model`、`--duration`、`--ratio`、`--resolution`、`--image`、`--video`、`--audio`、`--generate-type` 参数；未给参数交给 CLI 默认值。
+5. 首尾帧请求固定传 `--generate-type 1`，并按首帧、尾帧顺序传入两次 `--image`，不得重排。用户未明确两张图片的角色或缺少任一张时，先询问用户；不要在 skill 侧维护额外的 `generate_type` 枚举 allowlist，其他值原样交给服务端处理。
+6. `generate-video` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
+7. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
 
 ```bash
 pippit-tool-cli generate-video --prompt "用户原始描述"
+
+pippit-tool-cli generate-video \
+  --prompt "用户原始描述" \
+  --image FIRST_FRAME_PATH \
+  --image LAST_FRAME_PATH \
+  --generate-type 1
 
 pippit-tool-cli query-result \
   --thread-id THREAD_ID \
@@ -95,7 +103,7 @@ pippit-tool-cli query-result \
 
 ### 路由 C：小云雀后端 Agent 编排
 
-需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出时，继续使用本技能内置的 `submit_run.py` / `get_thread.py` 会话工作流。
+需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出时，继续使用本技能内置的 `submit_run.py` / `get_thread.py` 会话工作流；明确的首尾帧请求除外，必须走路由 B。
 
 ### 路由 D：短剧工作流
 
@@ -215,7 +223,18 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 6. completed=true 后展示并下载 images[].output_path；出现 error_message 时停止并报告
 ```
 
-### 场景 3：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
+### 场景 3：用户明确要求视频模型直出（含首尾帧）
+
+```
+1. command -v pippit-tool-cli  →  确认 CLI 可用
+2. 普通视频模型直出：pippit-tool-cli generate-video --prompt "用户原始描述" [仅添加用户已给出的其他参数]
+3. 首尾帧直出：确认两张图片的首帧/尾帧角色，按顺序执行 generate-video --image FIRST_FRAME_PATH --image LAST_FRAME_PATH --generate-type 1
+4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
+5. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
+6. completed=true 后展示并下载 videos[].output_path；出现 error_message 时停止并报告
+```
+
+### 场景 4：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
 
 ```
 1. upload_file.py /path/to/video.mp4  →  拿到 asset_id1
@@ -226,7 +245,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 用户给了文件路径 + 编辑指令 = 先上传文件，再把编辑指令和 所有asset_id 一起发送。
 
-### 场景 4：用户提供参考图/视频/音频要求生成新内容
+### 场景 5：用户提供参考图/视频/音频要求生成新内容
 
 ```
 1. upload_file.py /path/to/ref1.png  →  拿到 asset_id1
@@ -237,7 +256,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 6. 后续同场景 1 的步骤 2-6
 ```
 
-### 场景 5：在已有会话中追加新需求
+### 场景 6：在已有会话中追加新需求
 
 ```
 1. submit_run.py --message "新的描述" --thread-id THREAD_ID  →  拿到 thread_id、run_id、web_thread_link
@@ -316,7 +335,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出路由把用户原始参数传给 CLI。你要做的是：
 
-1. **准备素材**：会话 API 路由用 `upload_file.py` 把本地文件转为 asset_id；图片/视频模型直出路由把本地路径直接交给 CLI 的 `--image` / `--video` / `--audio` 参数
+1. **准备素材**：会话 API 路由用 `upload_file.py` 把本地文件转为 asset_id；图片/视频模型直出路由把本地路径直接交给 CLI 的 `--image` / `--video` / `--audio` 参数；首尾帧任务固定传 `--generate-type 1` 并保持首帧、尾帧顺序
 2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，其余任务把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
 3. **传话**：根据 `get_thread.py` 返回的消息列表，展示过程中的意图询问、创作信息等
 4. **取件**：会话 API 路由用 `get_thread.py` 轮询，图片/视频模型直出路由用 `query-result` 轮询 → 检查结果 → 下载产物 → 结果展示给用户

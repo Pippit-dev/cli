@@ -273,6 +273,22 @@ pippit-tool-cli generate-video \
 
 命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片最多 9 张，支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频最多 3 个，支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频最多 3 个，仅支持 `.mp3`、`.wav`。普通用户支持模型 `Seedance_2.0_mini_lite`；`seedance2.0_vision`、`seedance2.0_fast_vision` 和 `Seedance_2.0_mini` 为 VIP 专属模型。CLI 会在提交前校验 prompt、素材数量和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
 
+首尾帧生视频时，按首帧、尾帧的顺序传入两次 `--image`，并设置 `--generate-type 1`：
+
+```bash
+pippit-tool-cli generate-video \
+  --prompt "让镜头从首帧平滑过渡到尾帧" \
+  --image "~/images/first.jpg" \
+  --image "~/images/last.jpg" \
+  --duration 5 \
+  --ratio "16:9" \
+  --model "Seedance_2.0_mini" \
+  --resolution "720p" \
+  --generate-type 1
+```
+
+`--generate-type` 可选，填写后原样写入 `video_part_tool_param.generate_type`；值 `1` 表示首尾帧生成。CLI 保持图片上传和请求中的输入顺序，不在本地校验该参数的枚举值，具体能力与约束由服务端决定。
+
 查询并下载生图/生视频结果：
 
 ```bash
