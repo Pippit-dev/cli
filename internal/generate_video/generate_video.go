@@ -28,14 +28,15 @@ var (
 
 // Options is the stable command-facing request shape for generate-video.
 type Options struct {
-	Prompt      string
-	ImagePaths  []string
-	VideoPaths  []string
-	AudioPaths  []string
-	DurationSec *int
-	Ratio       string
-	Model       string
-	Resolution  string
+	Prompt       string
+	ImagePaths   []string
+	VideoPaths   []string
+	AudioPaths   []string
+	DurationSec  *int
+	Ratio        string
+	Model        string
+	Resolution   string
+	GenerateType *int64
 }
 
 type mediaAsset struct {
@@ -43,14 +44,15 @@ type mediaAsset struct {
 }
 
 type videoPartToolParam struct {
-	Images      []mediaAsset `json:"images,omitempty"`
-	Prompt      string       `json:"prompt"`
-	DurationSec *int         `json:"duration_sec,omitempty"`
-	Ratio       string       `json:"ratio,omitempty"`
-	Videos      []mediaAsset `json:"videos,omitempty"`
-	Audios      []mediaAsset `json:"audios,omitempty"`
-	Model       string       `json:"model,omitempty"`
-	Resolution  string       `json:"resolution,omitempty"`
+	Images       []mediaAsset `json:"images,omitempty"`
+	Prompt       string       `json:"prompt"`
+	DurationSec  *int         `json:"duration_sec,omitempty"`
+	Ratio        string       `json:"ratio,omitempty"`
+	Videos       []mediaAsset `json:"videos,omitempty"`
+	Audios       []mediaAsset `json:"audios,omitempty"`
+	Model        string       `json:"model,omitempty"`
+	Resolution   string       `json:"resolution,omitempty"`
+	GenerateType *int64       `json:"generate_type,omitempty"`
 }
 
 // Result is the JSON envelope printed by `pippit-tool-cli generate-video`.
@@ -171,14 +173,15 @@ func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner)
 
 func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string, audioAssetIDs []string) map[string]any {
 	param := videoPartToolParam{
-		Images:      assetRefs(imageAssetIDs),
-		Prompt:      strings.TrimSpace(opts.Prompt),
-		DurationSec: opts.DurationSec,
-		Ratio:       strings.TrimSpace(opts.Ratio),
-		Videos:      assetRefs(videoAssetIDs),
-		Audios:      assetRefs(audioAssetIDs),
-		Model:       strings.TrimSpace(opts.Model),
-		Resolution:  strings.TrimSpace(opts.Resolution),
+		Images:       assetRefs(imageAssetIDs),
+		Prompt:       strings.TrimSpace(opts.Prompt),
+		DurationSec:  opts.DurationSec,
+		Ratio:        strings.TrimSpace(opts.Ratio),
+		Videos:       assetRefs(videoAssetIDs),
+		Audios:       assetRefs(audioAssetIDs),
+		Model:        strings.TrimSpace(opts.Model),
+		Resolution:   strings.TrimSpace(opts.Resolution),
+		GenerateType: opts.GenerateType,
 	}
 
 	return map[string]any{

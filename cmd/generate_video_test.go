@@ -72,6 +72,9 @@ func TestGenerateVideo(t *testing.T) {
 			if param["ratio"] != "9:16" || param["model"] != "seedance2.0_vision" || param["resolution"] != "720p" {
 				t.Fatalf("param = %#v, want ratio/model/resolution", param)
 			}
+			if param["generate_type"] != float64(1) {
+				t.Fatalf("generate_type = %v, want 1", param["generate_type"])
+			}
 			assertAssetRefs(t, param["images"], []string{"image_asset_1", "image_asset_2"})
 			assertAssetRefs(t, param["videos"], []string{"video_asset_1", "video_asset_2"})
 			assertAssetRefs(t, param["audios"], []string{"audio_asset_1"})
@@ -108,6 +111,7 @@ func TestGenerateVideo(t *testing.T) {
 		"--ratio", "9:16",
 		"--model", "seedance2.0_vision",
 		"--resolution", "720p",
+		"--generate-type", "1",
 	})
 
 	if err := root.Execute(); err != nil {
@@ -124,6 +128,21 @@ func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/biz/v1/skill/submit_run":
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			var body map[string]any
+			if err := sonic.Unmarshal(data, &body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			param, ok := body["video_part_tool_param"].(map[string]any)
+			if !ok {
+				t.Fatalf("video_part_tool_param = %#v, want object", body["video_part_tool_param"])
+			}
+			if param["generate_type"] != float64(99) {
+				t.Fatalf("generate_type = %v, want 99", param["generate_type"])
+			}
 			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"run":{"thread_id":"thread_123","run_id":"run_456"}}}`))
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
@@ -140,6 +159,7 @@ func TestGenerateVideoSkipsSemanticValidation(t *testing.T) {
 		"--ratio", "1:1",
 		"--model", "bad_model",
 		"--resolution", "bad_resolution",
+		"--generate-type", "99",
 	})
 
 	if err := root.Execute(); err != nil {

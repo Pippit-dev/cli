@@ -13,6 +13,7 @@ import (
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	opts := &internalgen.Options{}
 	var durationSec int
+	var generateType int64
 
 	cmd := &cobra.Command{
 		Use:   "generate-video",
@@ -21,6 +22,9 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Flags().Changed("duration") {
 				opts.DurationSec = &durationSec
+			}
+			if cmd.Flags().Changed("generate-type") {
+				opts.GenerateType = &generateType
 			}
 
 			result, err := internalgen.Run(cmd.Context(), opts, runner)
@@ -46,5 +50,6 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
 	flags.StringVar(&opts.Model, "model", "", "video model; normal users: Seedance_2.0_mini_lite; VIP-only: seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini")
 	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
+	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide two --image values in first-frame, last-frame order")
 	return cmd
 }
