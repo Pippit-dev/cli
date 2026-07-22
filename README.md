@@ -289,6 +289,33 @@ pippit-tool-cli generate-video \
 
 `--generate-type` 可选，填写后原样写入 `video_part_tool_param.generate_type`；值 `1` 表示首尾帧生成。CLI 保持图片上传和请求中的输入顺序，不在本地校验该参数的枚举值，具体能力与约束由服务端决定。
 
+## 视频处理工具 CLI
+
+`video-super-resolution` 会上传一个本地视频并提交视频超分任务：
+
+```bash
+pippit-tool-cli video-super-resolution \
+  --video "~/videos/source.mp4" \
+  --output-resolution "1080p" \
+  --tool-version "standard"
+```
+
+`--output-resolution` 必填，当前服务端支持 `720p`、`1080p`、`2k`、`4k`。`--tool-version` 可选，当前服务端支持 `standard`、`professional_v1`、`professional_v2`；省略时由服务端使用 `standard`。CLI 不重复校验这些枚举值，具体能力与约束由服务端决定。
+
+`erase-video-subtitle` 会上传一个本地视频并提交擦字幕任务：
+
+```bash
+pippit-tool-cli erase-video-subtitle \
+  --video "~/videos/with-subtitle.mp4"
+```
+
+两个命令都会把 `agent_name` 固定为 `pippit_video_part_agent`。上传接口返回的 `pippit_asset_id` 不会写入顶层 `asset_ids` 或普通参考视频列表，而是分别写入以下服务端专属参数：
+
+- 超分：`video_part_tool_param.mini_tool_param.tool_param.video_super_resolution_tool_param.video.pippit_asset_id`
+- 擦字幕：`video_part_tool_param.mini_tool_param.tool_param.erase_video_subtitle_tool_param.video.pippit_asset_id`
+
+两个命令都输出 `thread_id`、`run_id` 和 `web_thread_link`。拿到任务 ID 后，可继续使用 `query-result` 查询并下载结果。
+
 查询并下载生图/生视频结果：
 
 ```bash
