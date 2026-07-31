@@ -71,7 +71,7 @@ pippit-tool-cli query-result \
 满足任一条件时，必须直接使用 `pippit-tool-cli generate-video`，不要改走 `submit_run.py`：
 
 - 用户明确说“视频模型直出”、“直接调模型”或“直接调用 CLI”。
-- 用户指定了具体视频模型（如 Seedance），并希望单次直接生成视频。
+- 用户指定了具体视频模型（如 `Seedance_2.5`），并希望单次直接生成视频。
 - 用户明确要求“首尾帧生视频”、指定首帧和尾帧，或要求从第一张图过渡到第二张图。
 - 上游流程已明确将任务标记为 direct-model / 模型直出。
 
@@ -81,12 +81,13 @@ pippit-tool-cli query-result \
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认生成，按“用户确认与反问”规则征得明确确认后再运行。
 3. 保留用户原始 prompt，不要自行扩写、润色、翻译或增加风格词。
 4. 只添加用户已经给出的 `--model`、`--duration`、`--ratio`、`--resolution`、`--image`、`--video`、`--audio`、`--generate-type` 参数；未给参数交给 CLI 默认值。
-5. 首尾帧请求固定传 `--generate-type 1`，并按首帧、尾帧顺序传入两次 `--image`，不得重排。用户未明确两张图片的角色或缺少任一张时，先询问用户；不要在 skill 侧维护额外的 `generate_type` 枚举 allowlist，其他值原样交给服务端处理。
-6. `generate-video` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
-7. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
+5. 普通用户支持模型 `Seedance_2.0_mini_lite`；VIP 专属模型包括 `seedance2.0_vision`、`seedance2.0_fast_vision`、`Seedance_2.0_mini` 和 `Seedance_2.5`。该列表仅用于指导用户选择和传入准确的 `--model` 值，不要在 skill 侧增加模型枚举校验，实际合法性由服务端决定。
+6. 首尾帧请求固定传 `--generate-type 1`，并按首帧、尾帧顺序传入两次 `--image`，不得重排。用户未明确两张图片的角色或缺少任一张时，先询问用户；不要在 skill 侧维护额外的 `generate_type` 枚举 allowlist，其他值原样交给服务端处理。
+7. `generate-video` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
+8. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
 
 ```bash
-pippit-tool-cli generate-video --prompt "用户原始描述"
+pippit-tool-cli generate-video --prompt "用户原始描述" --model "Seedance_2.5"
 
 pippit-tool-cli generate-video \
   --prompt "用户原始描述" \
