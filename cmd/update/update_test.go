@@ -159,15 +159,16 @@ func TestTelemetryBaseURL(t *testing.T) {
 	}
 }
 
-func TestStripPrereleaseVersion(t *testing.T) {
-	cases := map[string]string{
-		"0.0.27":       "0.0.27",
-		"0.0.27-rc.1":  "0.0.27",
-		"1.2.3-beta.4": "1.2.3",
+func TestDefaultInstallPackageFollowsCurrentReleaseChannel(t *testing.T) {
+	tests := map[string]string{
+		"1.2.3":          "@pippit-dev/cli@latest",
+		"1.2.3-beta.4":   "@pippit-dev/cli@beta",
+		" 1.2.3-beta.4 ": "@pippit-dev/cli@beta",
+		"dev":            "@pippit-dev/cli@latest",
 	}
-	for input, want := range cases {
-		if got := stripPrereleaseVersion(input); got != want {
-			t.Fatalf("stripPrereleaseVersion(%q) = %q, want %q", input, got, want)
+	for currentVersion, want := range tests {
+		if got := defaultInstallPackage(currentVersion); got != want {
+			t.Fatalf("defaultInstallPackage(%q) = %q, want %q", currentVersion, got, want)
 		}
 	}
 }

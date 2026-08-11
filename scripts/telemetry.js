@@ -2,7 +2,7 @@ const os = require("os");
 const http = require("http");
 const https = require("https");
 
-const VERSION = require("../package.json").version.replace(/-.*$/, "");
+const VERSION = require("../package.json").version;
 const DEFAULT_BASE_URL = "https://xyq.jianying.com";
 const REPORT_PATH = "/api/biz/v1/skill/report_telemetry";
 const AUTH_HEADER = "Bearer pippit-cli-skill-telemetry";

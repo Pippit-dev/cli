@@ -8,7 +8,11 @@ const { isWindows, run } = require("./platform");
 const { cleanupLegacyGlobalSkills, installSkillsFromRoot } = require("./skills");
 const { reportBundledSkillTelemetry } = require("./telemetry");
 
-const VERSION = require("../package.json").version.replace(/-.*$/, "");
+function exactPackageVersion(value) {
+  return String(value || "").trim();
+}
+
+const VERSION = exactPackageVersion(require("../package.json").version);
 const REPO = "Pippit-dev/cli";
 const NAME = "pippit-tool-cli";
 const ROOT = path.join(__dirname, "..");
@@ -159,7 +163,7 @@ if (require.main === module) {
     console.error(`Failed to install ${NAME}: ${err.message || err}`);
     console.error(
       "\nTry:\n" +
-      "  npm install -g @pippit-dev/cli\n" +
+      `  npm install -g @pippit-dev/cli@${VERSION}\n` +
       `  node "${path.join(__dirname, "install.js")}"\n`
     );
     process.exit(1);
@@ -168,7 +172,9 @@ if (require.main === module) {
 
 module.exports = {
   archiveName,
+  exactPackageVersion,
   expectedChecksum,
   install,
+  releaseURL,
   verifyChecksum,
 };

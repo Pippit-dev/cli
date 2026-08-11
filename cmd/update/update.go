@@ -54,7 +54,7 @@ func NewCommand(stdout, stderr io.Writer) *cobra.Command {
 func runUpdate(stdout, stderr io.Writer) error {
 	pkg := os.Getenv("PIPPIT_CLI_INSTALL_PACKAGE")
 	if pkg == "" {
-		pkg = defaultPackage + "@latest"
+		pkg = defaultInstallPackage(version.Current())
 	}
 
 	fmt.Fprintf(stderr, "Updating pippit-tool-cli via npm: %s\n", pkg)
@@ -80,6 +80,14 @@ func runUpdate(stdout, stderr io.Writer) error {
 	reportBundledSkillTelemetry("update", "cli_update", stderr)
 	fmt.Fprintln(stdout, "pippit-tool-cli and skills updated")
 	return nil
+}
+
+func defaultInstallPackage(currentVersion string) string {
+	channel := "latest"
+	if strings.Contains(strings.TrimSpace(currentVersion), "-beta.") {
+		channel = "beta"
+	}
+	return defaultPackage + "@" + channel
 }
 
 func globalPackageRoot(pkg string) (string, error) {
@@ -203,14 +211,7 @@ func telemetryBaseURL() string {
 }
 
 func telemetryCliVersion() string {
-	return stripPrereleaseVersion(version.Current())
-}
-
-func stripPrereleaseVersion(value string) string {
-	if idx := strings.Index(value, "-"); idx >= 0 {
-		return value[:idx]
-	}
-	return value
+	return version.Current()
 }
 
 func runInherit(stderr io.Writer, name string, args ...string) error {

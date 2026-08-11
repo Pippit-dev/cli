@@ -6,7 +6,11 @@ const { isWindows, run, runSilent } = require("./platform");
 const { DEFAULT_PKG, installGlobalPackageSkills } = require("./skills");
 const { reportBundledSkillTelemetry } = require("./telemetry");
 
-const VERSION = require("../package.json").version.replace(/-.*$/, "");
+function exactPackageVersion(value) {
+  return String(value || "").trim();
+}
+
+const VERSION = exactPackageVersion(require("../package.json").version);
 
 function defaultInstallPackage() {
   return `${DEFAULT_PKG}@${VERSION}`;
@@ -88,6 +92,7 @@ if (require.main === module) {
 
 module.exports = {
   defaultInstallPackage,
+  exactPackageVersion,
   installPackage,
   main,
 };

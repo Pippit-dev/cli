@@ -11,24 +11,54 @@ function defaultCacheFile() {
 }
 
 function currentVersion() {
-  return require("../package.json").version.replace(/-.*$/, "");
+  return require("../package.json").version;
 }
 
 function parseSemver(version) {
-  const match = String(version || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+  const match = String(version || "").trim().match(
+    /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
+  );
   if (!match) return null;
-  return match.slice(1).map(Number);
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    prerelease: match[4] ? match[4].split(".") : [],
+  };
 }
 
 function compareSemver(a, b) {
   const parsedA = parseSemver(a);
   const parsedB = parseSemver(b);
   if (!parsedA || !parsedB) return 0;
-  for (let i = 0; i < 3; i++) {
-    const diff = parsedA[i] - parsedB[i];
+  for (const key of ["major", "minor", "patch"]) {
+    const diff = parsedA[key] - parsedB[key];
     if (diff !== 0) return diff;
   }
+
+  if (parsedA.prerelease.length === 0 || parsedB.prerelease.length === 0) {
+    if (parsedA.prerelease.length === parsedB.prerelease.length) return 0;
+    return parsedA.prerelease.length === 0 ? 1 : -1;
+  }
+  const count = Math.max(parsedA.prerelease.length, parsedB.prerelease.length);
+  for (let i = 0; i < count; i++) {
+    const identifierA = parsedA.prerelease[i];
+    const identifierB = parsedB.prerelease[i];
+    if (identifierA === undefined) return -1;
+    if (identifierB === undefined) return 1;
+    if (identifierA === identifierB) continue;
+    const numericA = /^\d+$/.test(identifierA);
+    const numericB = /^\d+$/.test(identifierB);
+    if (numericA && numericB) return Number(identifierA) - Number(identifierB);
+    if (numericA !== numericB) return numericA ? -1 : 1;
+    return identifierA < identifierB ? -1 : 1;
+  }
   return 0;
+}
+
+function distTagForVersion(version) {
+  const parsed = parseSemver(version);
+  return parsed && parsed.prerelease[0] === "beta" ? "beta" : "latest";
 }
 
 function readCache(cacheFile) {
@@ -48,8 +78,8 @@ function writeCache(cacheFile, data) {
   }
 }
 
-function fetchLatestVersion(pkg = DEFAULT_PKG) {
-  return runSilent("npm", ["view", pkg, "version"], { timeout: 3000 }).toString().trim();
+function fetchLatestVersion(pkg = DEFAULT_PKG, distTag = "latest") {
+  return runSilent("npm", ["view", `${pkg}@${distTag}`, "version"], { timeout: 3000 }).toString().trim();
 }
 
 function shouldSkip(args, env) {
@@ -69,29 +99,35 @@ function maybeWarnNewVersion(args = [], opts = {}) {
   const now = opts.now || Date.now();
   const cacheFile = opts.cacheFile || defaultCacheFile();
   const cache = readCache(cacheFile);
-  const cacheFresh = cache && now - cache.checkedAt < CHECK_INTERVAL_MS;
+  const current = opts.currentVersion || currentVersion();
+  const channel = distTagForVersion(current);
+  const cacheFresh = cache && cache.channel === channel && now - cache.checkedAt < CHECK_INTERVAL_MS;
 
   let latest = cacheFresh ? cache.latest : "";
   if (!latest) {
     try {
-      latest = (opts.fetchLatestVersion || fetchLatestVersion)(opts.pkg || DEFAULT_PKG);
-      writeCache(cacheFile, { latest, checkedAt: now });
+      latest = (opts.fetchLatestVersion || fetchLatestVersion)(opts.pkg || DEFAULT_PKG, channel);
+      writeCache(cacheFile, { channel, latest, checkedAt: now });
     } catch (_) {
       return;
     }
   }
 
-  const current = opts.currentVersion || currentVersion();
   if (compareSemver(latest, current) <= 0) return;
 
   const warn = opts.warn || console.error;
-  warn(`[pippit-tool-cli] New version available: ${current} -> ${latest}. Run: pippit-tool-cli update`);
+  const updateCommand = channel === "beta"
+    ? `npx ${opts.pkg || DEFAULT_PKG}@beta install`
+    : "pippit-tool-cli update";
+  warn(`[pippit-tool-cli] New version available: ${current} -> ${latest}. Run: ${updateCommand}`);
 }
 
 module.exports = {
   CHECK_INTERVAL_MS,
   compareSemver,
   defaultCacheFile,
+  distTagForVersion,
+  fetchLatestVersion,
   maybeWarnNewVersion,
   parseSemver,
 };
