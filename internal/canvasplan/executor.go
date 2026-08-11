@@ -151,38 +151,36 @@ func (executor *Executor) reverifyCompleted(
 	assetIDs := DocumentAssetIDs(document)
 	queried, err := executor.api.Get(ctx, assetIDs)
 	if err != nil {
-		journal.Verification = &Verification{ExpectedAssetCount: len(assetIDs), Verified: false}
-		return failExecution(
-			journalPath,
-			journal,
-			plan,
-			StateVerificationFailed,
-			fmt.Errorf("verify completed CanvasPlan with current authentication: %w", err),
-		)
+		result := executionResult(journalPath, journal, plan)
+		result.Warning = fmt.Sprintf("query previously verified Canvas with current authentication: %v", err)
+		return result, fmt.Errorf("%s", result.Warning)
 	}
-	verification := VerifyDocument(document, queried.Assets)
+	if queried == nil {
+		result := executionResult(journalPath, journal, plan)
+		result.Warning = "query previously verified Canvas with current authentication returned no result"
+		return result, fmt.Errorf("%s", result.Warning)
+	}
+	verification := verifyJournalAssetHashes(journal.AssetSHA256, queried.Assets)
 	verification.LogID = queried.LogID
-	journal.Verification = &verification
-	if !verification.Verified {
-		return failExecution(
-			journalPath,
-			journal,
-			plan,
-			StateVerificationFailed,
-			fmt.Errorf(
-				"completed CanvasPlan no longer matches current authenticated assets: missing=%d unverifiable=%d mismatched=%d",
-				len(verification.MissingAssetIDs),
-				len(verification.UnverifiableAssetIDs),
-				len(verification.MismatchedAssetIDs),
-			),
+	verification.RecoveredFromQuery = true
+	if len(verification.MissingAssetIDs) != 0 || len(verification.UnverifiableAssetIDs) != 0 {
+		result := executionResult(journalPath, journal, plan)
+		result.Warning = fmt.Sprintf(
+			"previously verified Canvas is not fully accessible with current authentication: missing=%d unverifiable=%d",
+			len(verification.MissingAssetIDs),
+			len(verification.UnverifiableAssetIDs),
+		)
+		return result, fmt.Errorf("%s", result.Warning)
+	}
+	changed := append([]string(nil), verification.MismatchedAssetIDs...)
+	result := executionResult(journalPath, journal, plan)
+	if len(changed) != 0 {
+		result.Warning = fmt.Sprintf(
+			"%d Canvas asset(s) changed after the import was originally verified; current access is valid and apply was not replayed",
+			len(changed),
 		)
 	}
-	journal.State = StateVerified
-	journal.LastError = ""
-	if err := saveJournal(journalPath, journal); err != nil {
-		return executionResult(journalPath, journal, plan), err
-	}
-	return executionResult(journalPath, journal, plan), nil
+	return result, nil
 }
 
 func (executor *Executor) ensureRoot(
@@ -388,16 +386,11 @@ func (executor *Executor) applyAndVerify(
 	}
 	applyResult, err := executor.api.Apply(ctx, canvas.ApplyOptions{ProjectID: journal.Create.ProjectID, Request: request})
 	if err != nil {
-		journal.Apply.Status = "ambiguous"
-		return failExecution(journalPath, journal, plan, StateApplyAmbiguous, err)
+		return executor.recoverAmbiguousApplyByQuery(ctx, journalPath, journal, plan, document, assetIDs, err)
 	}
 	if applyResult == nil || len(applyResult.Results) != 1 {
-		journal.Apply.Status = "ambiguous"
-		return failExecution(
-			journalPath,
-			journal,
-			plan,
-			StateApplyAmbiguous,
+		return executor.recoverAmbiguousApplyByQuery(
+			ctx, journalPath, journal, plan, document, assetIDs,
 			fmt.Errorf("canvas apply acknowledgement is incomplete; query affected assets and do not replay blindly"),
 		)
 	}
@@ -435,6 +428,67 @@ func (executor *Executor) applyAndVerify(
 		return executionResult(journalPath, journal, plan), err
 	}
 	return executionResult(journalPath, journal, plan), nil
+}
+
+func (executor *Executor) recoverAmbiguousApplyByQuery(
+	ctx context.Context,
+	journalPath string,
+	journal *Journal,
+	plan Plan,
+	document *Document,
+	assetIDs []string,
+	applyCause error,
+) (*ExecutionResult, error) {
+	journal.Apply.Status = "ambiguous"
+	journal.State = StateApplyAmbiguous
+	journal.LastError = sanitizeJournalError(applyCause.Error())
+	if err := saveJournal(journalPath, journal); err != nil {
+		return executionResult(journalPath, journal, plan), fmt.Errorf(
+			"%w; additionally failed to persist ambiguous Canvas apply: %v",
+			applyCause,
+			err,
+		)
+	}
+
+	queried, queryErr := executor.api.Get(ctx, assetIDs)
+	if queryErr != nil {
+		return executionResult(journalPath, journal, plan), fmt.Errorf(
+			"%w; exact query-back after the ambiguous response also failed: %v",
+			applyCause,
+			queryErr,
+		)
+	}
+	if queried == nil {
+		return executionResult(journalPath, journal, plan), fmt.Errorf(
+			"%w; exact query-back after the ambiguous response returned no result",
+			applyCause,
+		)
+	}
+	verification := VerifyDocument(document, queried.Assets)
+	verification.LogID = queried.LogID
+	verification.RecoveredFromQuery = true
+	if !verification.Verified {
+		result := executionResult(journalPath, journal, plan)
+		result.Verification = &verification
+		return result, fmt.Errorf(
+			"%w; exact query-back after the ambiguous response did not verify: missing=%d unverifiable=%d mismatched=%d; apply was not replayed",
+			applyCause,
+			len(verification.MissingAssetIDs),
+			len(verification.UnverifiableAssetIDs),
+			len(verification.MismatchedAssetIDs),
+		)
+	}
+
+	journal.Verification = &verification
+	journal.Apply.Status = "verified"
+	journal.State = StateVerified
+	journal.LastError = ""
+	if err := saveJournal(journalPath, journal); err != nil {
+		return executionResult(journalPath, journal, plan), err
+	}
+	result := executionResult(journalPath, journal, plan)
+	result.Warning = "Canvas apply response was ambiguous; all expected assets were recovered by exact query-back and apply was not replayed"
+	return result, nil
 }
 
 func prepareApplyRequest(journal *Journal, document *Document, rootVersion int64) (canvas.ApplyRequest, error) {
@@ -492,13 +546,14 @@ func executionResult(journalPath string, journal *Journal, plan Plan) *Execution
 		return nil
 	}
 	result := &ExecutionResult{
-		State:          journal.State,
-		JournalPath:    journalPath,
-		OperationID:    journal.OperationID,
-		DocumentSHA256: journal.DocumentSHA256,
-		NodeCount:      len(plan.Nodes) + len(plan.Groups),
-		EdgeCount:      len(plan.Edges),
-		Verification:   journal.Verification,
+		State:            journal.State,
+		JournalPath:      journalPath,
+		OperationID:      journal.OperationID,
+		DocumentSHA256:   journal.DocumentSHA256,
+		NodeCount:        len(plan.Nodes) + len(plan.Groups),
+		EdgeCount:        len(plan.Edges),
+		DegradationCount: len(plan.Degradations),
+		Verification:     journal.Verification,
 	}
 	if journal.DocumentSHA256 != "" {
 		result.AssetCount = len(journal.AssetSHA256)

@@ -163,6 +163,7 @@ type ExecutionResult struct {
 	AssetCount            int           `json:"asset_count,omitempty"`
 	NodeCount             int           `json:"node_count,omitempty"`
 	EdgeCount             int           `json:"edge_count,omitempty"`
+	DegradationCount      int           `json:"degradation_count,omitempty"`
 	TransactionID         string        `json:"transaction_id,omitempty"`
 	Verification          *Verification `json:"verification,omitempty"`
 	Warning               string        `json:"warning,omitempty"`
