@@ -1,13 +1,13 @@
 {
   "name": "@pippit-dev/cli",
-  "version": "1.0.17",
+  "version": "1.1.0-beta.1",
   "description": "Pippit CLI",
   "bin": {
     "pippit-tool-cli": "scripts/run.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && go test ./... && go vet ./..."
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && node scripts/run.test.js && node adapters/libtv/plan.test.mjs && go test ./... && go vet ./..."
   },
   "os": [
     "darwin",
@@ -29,6 +29,7 @@
   "files": [
     "cmd",
     "internal",
+    "adapters",
     "skills",
     "scripts/install.js",
     "scripts/install-wizard.js",

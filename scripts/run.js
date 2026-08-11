@@ -39,6 +39,21 @@ if (process.platform === "win32" && fs.existsSync(oldBin)) {
 // should run the JS setup flow before the native binary exists.
 if (args[0] === "install") {
   require("./install-wizard.js").main();
+} else if (args[0] === "libtv") {
+  // The LibTV adapter is intentionally local-only and runs before the native
+  // binary is installed. It never receives Pippit credentials or PPE headers.
+  const adapterEnv = { ...process.env };
+  delete adapterEnv.XYQ_ACCESS_KEY;
+  delete adapterEnv.PIPPIT_ACCESS_KEY;
+  delete adapterEnv.PIPPIT_CLI_PPE_ENV;
+  try {
+    execFileSync(process.execPath, [
+      path.join(__dirname, "..", "adapters", "libtv", "cli.mjs"),
+      ...args.slice(1),
+    ], { stdio: "inherit", env: adapterEnv });
+  } catch (e) {
+    process.exit(e.status || 1);
+  }
 } else {
   maybeWarnNewVersion(args);
 

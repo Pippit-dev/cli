@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "pippit-canvas-import-upload-manifest/0.1",
+  "auth": {
+    "mode": "access_key",
+    "teamId": "must-not-leak"
+  },
+  "uploads": [
+    {
+      "sourceNodeId": "video-1",
+      "fileName": "nested/input.mp4",
+      "assetId": "must-not-leak",
+      "pippitAssetId": "must-not-leak"
+    },
+    {
+      "sourceNodeId": "audio-1",
+      "fileName": "input.wav",
+      "assetId": "must-not-leak",
+      "pippitAssetId": "must-not-leak"
+    }
+  ]
+}

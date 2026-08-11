@@ -199,6 +199,42 @@ python3 skills/xyq-nest-skill/scripts/download_results.py \
 - 超时：连续轮询 48 小时无结果则停止。
 - 错误重试：单次失败可重试 1 次，连续 3 次失败则停止。
 
+## Canvas beta
+
+Canvas beta 暴露个人漫剧画布的通用原子命令，不在服务端增加任何第三方“导入”语义：
+
+```bash
+npx @pippit-dev/cli@beta install
+export XYQ_ACCESS_KEY="<access-key>"
+
+# 仅测试 PPE 时配置；生产环境不要设置
+export PIPPIT_CLI_PPE_ENV="ppe_cli_canvas_ak"
+# 也可以在任意命令上使用：--ppe-env ppe_cli_canvas_ak
+
+pippit-tool-cli canvas create --title "Imported draft" --request-id request_001 --wait
+pippit-tool-cli canvas upload --path ./clip.mp4
+pippit-tool-cli canvas get --asset-id CANVAS_ASSET_ID
+pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
+```
+
+`canvas create/get/apply/upload` 的输出均为单行 JSON，所有资源 ID 保持字符串，便于脚本和 Agent 调用。`create` 的 `request_id` 当前用于追踪和恢复，不是跨服务崩溃窗口的严格幂等键；请求结果不明确时不要盲目重试。beta 的 `apply` 每次只接受一个 transaction（可以包含多个 patches），并严格检查该 transaction 的 ACK 和每个资产版本；当前服务端仍不保证跨资产 all-or-nothing，调用方应在写后执行 `get` 校验，并持久化自己的 operation journal。
+
+PPE 只影响 Pippit API 同源请求。CLI 不会把 Access Key、`x-tt-env`、`x-use-ppe` 或 `x-schedule-vdc` 转发给第三方绝对 URL；`--ppe-env` 的优先级高于 `PIPPIT_CLI_PPE_ENV`，二者都未提供时访问生产环境。
+
+### LibTV 本地 adapter
+
+beta 同时提供一个无网络的 LibTV provider adapter，将导出的 snapshot 转成 ID-neutral `pippit-canvas-plan/0.1`：
+
+```bash
+pippit-tool-cli libtv plan \
+  --snapshot ./libtv-snapshot.json \
+  --media-manifest ./bundle-media.json \
+  --title "Imported draft" \
+  --output ./canvas-plan.json
+```
+
+adapter 不读取 Pippit AK、不访问 LibTV、不分配 Pippit ID，也不执行 create/apply。后续 executor 只需把 plan 编译为上述通用 Canvas 命令即可。若 snapshot 只提供带签名参数的素材 URL，plan 会以 `0600` 权限保留它们以供后续下载；不要把 plan 打进日志、提交到仓库或分享给他人。完整边界见 `adapters/libtv/README.md`。
+
 ## 短剧工作流技能
 
 包发布后可以通过 npm 安装。安装器会按当前系统下载匹配的预构建二进制文件，支持 macOS、Linux 和 Windows：
