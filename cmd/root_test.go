@@ -2,13 +2,44 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/spf13/cobra"
 )
+
+func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
+	received := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		received = append(received, request.Header.Get("Authorization"))
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	cfg := config.Load()
+	cfg.BaseURL = server.URL
+	cfg.HTTPTimeout = time.Second
+	cfg.AccessKey = "first-key"
+	runner := newRootRunner(cfg)
+
+	for _, accessKey := range []string{"first-key", "second-key"} {
+		runner.Config.AccessKey = accessKey
+		var response map[string]any
+		if err := runner.Client.SendRequest(context.Background(), "/probe", map[string]any{}, &response); err != nil {
+			t.Fatalf("SendRequest(%q) error = %v", accessKey, err)
+		}
+	}
+	if got, want := strings.Join(received, ","), "Bearer first-key,Bearer second-key"; got != want {
+		t.Fatalf("Authorization headers = %q, want %q", got, want)
+	}
+}
 
 func TestPPEEnvFlagOverridesEnvironment(t *testing.T) {
 	t.Setenv(config.EnvPPEEnv, "ppe_from_env")
