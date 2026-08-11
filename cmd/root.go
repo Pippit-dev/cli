@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
@@ -25,7 +26,12 @@ func Execute() error {
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
-	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
+	client := common.NewHTTPClientWithPPEEnv(
+		cfg.BaseURL,
+		cfg.HTTPTimeout,
+		common.NewAccessKeyAuthorizer(cfg.AccessKey),
+		func() string { return cfg.PPEEnv },
+	)
 	runner := common.NewRunner(cfg, client)
 	return newRootCommand(stdout, stderr, runner)
 }
@@ -43,7 +49,9 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.SetOut(stdout)
 	root.SetErr(stderr)
+	configurePPEFlag(root, runner.Config)
 	// root.AddCommand(authcmd.NewCommand(stdout, stderr, runner)) // temporarily disabled; auth is via access key injection
+	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
@@ -56,6 +64,23 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
 	localizeFlagErrors(root)
 	return root
+}
+
+func configurePPEFlag(root *cobra.Command, cfg *config.Config) {
+	root.PersistentFlags().StringVar(
+		&cfg.PPEEnv,
+		"ppe-env",
+		cfg.PPEEnv,
+		"route Pippit API requests to a PPE environment (for example, ppe_cli_canvas_ak)",
+	)
+	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+		ppeEnv, err := config.NormalizePPEEnv(cfg.PPEEnv)
+		if err != nil {
+			return err
+		}
+		cfg.PPEEnv = ppeEnv
+		return nil
+	}
 }
 
 func localizeFlagErrors(cmd *cobra.Command) {
