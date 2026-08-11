@@ -60,7 +60,7 @@ type importDependencies struct {
 	userCacheDir  func() (string, error)
 	userConfigDir func() (string, error)
 	target        func() string
-	authScope     func() string
+	authScope     func(context.Context) (string, error)
 	isInteractive func(io.Reader) bool
 	mediaPoll     time.Duration
 	mediaTimeout  time.Duration
@@ -100,7 +100,9 @@ func newImportDependencies(runner *common.Runner) importDependencies {
 		userCacheDir:  os.UserCacheDir,
 		userConfigDir: os.UserConfigDir,
 		target:        func() string { return canvasImportTarget(runner) },
-		authScope:     func() string { return canvasImportAuthScope(runner) },
+		authScope: func(ctx context.Context) (string, error) {
+			return runnerImportAuthAPI{runner: runner}.CredentialScope(ctx)
+		},
 		isInteractive: importInputIsInteractive,
 		mediaPoll:     defaultImportMediaPollInterval,
 		mediaTimeout:  defaultImportMediaWaitTimeout,
@@ -182,6 +184,19 @@ func runCanvasImport(
 	if err := preflightCanvasImportAuth(ctx, dependencies, prompts, stderr); err != nil {
 		return nil, err
 	}
+	// Bind the whole durable import to the authenticated UID and this device
+	// before exporting or creating checkpoints. Any mid-run browser login must
+	// return to this exact scope or the operation stops without reusing state.
+	authScope := ""
+	if dependencies.authScope != nil {
+		authScope, err = dependencies.authScope(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("确定小云雀登录账号的断点作用域失败：%w", err)
+		}
+	}
+	if strings.TrimSpace(authScope) == "" {
+		return nil, fmt.Errorf("小云雀登录账号缺少可验证的断点作用域")
+	}
 	bundleRoot, outputDir, exported, err := exportLibTVCanvasWithRetry(
 		ctx, sourceURL, dependencies, prompts, stderr,
 	)
@@ -223,10 +238,6 @@ func runCanvasImport(
 		return nil, err
 	}
 	target := dependencies.target()
-	authScope := ""
-	if dependencies.authScope != nil {
-		authScope = dependencies.authScope()
-	}
 	journalPath, err := resolveImportJournalPath(
 		opts.JournalPath,
 		plan.Source,
@@ -273,8 +284,8 @@ func runCanvasImport(
 			return nil, err
 		}
 		fmt.Fprintln(stderr, "小云雀授权在素材处理期间失效；已保留安全断点，不会重复上传，重新授权后将继续。")
-		if authErr := ensureCanvasImportPippitAuth(
-			ctx, dependencies.pippitAuth, true, prompts.promptPippitAuth,
+		if authErr := reauthenticateCanvasImportPippit(
+			ctx, dependencies.pippitAuth, prompts.promptPippitAuth, authScope, stderr,
 		); authErr != nil {
 			return nil, authErr
 		}
@@ -288,13 +299,13 @@ func runCanvasImport(
 	if prompts != nil {
 		pippitPrompt = prompts.promptPippitAuth
 	}
-	if err := ensureCanvasImportPippitAuth(
-		ctx, dependencies.pippitAuth, prompts != nil, pippitPrompt,
+	if err := ensureCanvasImportPippitAuthForScope(
+		ctx, dependencies.pippitAuth, prompts != nil, pippitPrompt, authScope, stderr,
 	); err != nil {
 		return nil, err
 	}
 	result, handled, reconcileErr := reconcileExistingCanvasImport(
-		ctx, journalPath, plan, resolved, opts, dependencies, stderr, prompts,
+		ctx, journalPath, plan, resolved, opts, dependencies, stderr, prompts, authScope,
 	)
 	if handled {
 		_ = removeOwnedBundle(outputDir, bundleRoot)
@@ -308,8 +319,8 @@ func runCanvasImport(
 		if err != nil {
 			if prompts != nil && isCanvasImportPippitAuthFailure(err) && canvasImportStateCanRetryAfterAuth(result) {
 				fmt.Fprintln(stderr, "小云雀授权在画布处理期间失效；断点已保存，重新授权后将从安全状态继续。")
-				if authErr := ensureCanvasImportPippitAuth(
-					ctx, dependencies.pippitAuth, true, prompts.promptPippitAuth,
+				if authErr := reauthenticateCanvasImportPippit(
+					ctx, dependencies.pippitAuth, prompts.promptPippitAuth, authScope, stderr,
 				); authErr != nil {
 					return result, authErr
 				}
@@ -327,8 +338,8 @@ func runCanvasImport(
 		if result != nil && result.State == canvasplan.StateCreatePending {
 			if prompts != nil && isCanvasImportPippitAuthFailure(errors.New(result.Warning)) {
 				fmt.Fprintln(stderr, "小云雀授权在等待漫剧画布创建期间失效；创建请求已受理，不会重复创建，重新授权后将继续等待。")
-				if authErr := ensureCanvasImportPippitAuth(
-					ctx, dependencies.pippitAuth, true, prompts.promptPippitAuth,
+				if authErr := reauthenticateCanvasImportPippit(
+					ctx, dependencies.pippitAuth, prompts.promptPippitAuth, authScope, stderr,
 				); authErr != nil {
 					return result, authErr
 				}
@@ -358,7 +369,8 @@ func canvasImportStateCanRetryAfterAuth(result *canvasplan.ExecutionResult) bool
 		return false
 	}
 	switch result.State {
-	case canvasplan.StateCreatePending,
+	case canvasplan.StateInitialized,
+		canvasplan.StateCreatePending,
 		canvasplan.StateRootReady,
 		canvasplan.StateAllocationRequested,
 		canvasplan.StateAllocated,
@@ -439,6 +451,7 @@ func reconcileExistingCanvasImport(
 	dependencies importDependencies,
 	stderr io.Writer,
 	prompts *importPromptSession,
+	expectedCredentialScope string,
 ) (*canvasplan.ExecutionResult, bool, error) {
 	info, err := os.Lstat(journalPath)
 	if os.IsNotExist(err) {
@@ -464,8 +477,8 @@ func reconcileExistingCanvasImport(
 		}
 		if prompts != nil && isCanvasImportPippitAuthFailure(reconcileErr) {
 			fmt.Fprintln(stderr, "小云雀授权在恢复画布断点期间失效；重新授权后将继续只读回查，不会重复提交写入。")
-			if authErr := ensureCanvasImportPippitAuth(
-				ctx, dependencies.pippitAuth, true, prompts.promptPippitAuth,
+			if authErr := reauthenticateCanvasImportPippit(
+				ctx, dependencies.pippitAuth, prompts.promptPippitAuth, expectedCredentialScope, stderr,
 			); authErr != nil {
 				return result, true, authErr
 			}
@@ -590,11 +603,7 @@ func resolveImportJournalPath(
 	return filepath.Join(directory, hex.EncodeToString(hash[:])+".journal.json"), nil
 }
 
-func canvasImportAuthScope(runner *common.Runner) string {
-	accessKey := ""
-	if runner != nil && runner.Config != nil {
-		accessKey = strings.TrimSpace(runner.Config.AccessKey)
-	}
+func legacyCanvasImportAuthScope(accessKey string) string {
 	hash := sha256.Sum256([]byte(accessKey))
 	return hex.EncodeToString(hash[:])
 }

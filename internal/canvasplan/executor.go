@@ -236,6 +236,25 @@ func finishCreate(journalPath string, journal *Journal, created *canvas.CreateRe
 		journal.Create = created
 	}
 	if createErr != nil {
+		if canvas.IsCredentialUnavailable(createErr) {
+			if created == nil {
+				// The shared authorizer proves that no HTTP request was issued.
+				// Roll back only this local marker so the import may authenticate
+				// and make its one allowed Create call.
+				return recordJournalError(journalPath, journal, StateInitialized, createErr)
+			}
+			// Create already returned durable IDs. Persist them as pending and
+			// let the next attempt call ResumeCreate only; never send Create again.
+			journal.State = StateCreatePending
+			journal.LastError = sanitizeJournalError(createErr.Error())
+			if strings.TrimSpace(created.Warning) == "" {
+				created.Warning = journal.LastError
+			}
+			if err := saveJournal(journalPath, journal); err != nil {
+				return fmt.Errorf("%w; additionally failed to save CanvasPlan journal: %v", createErr, err)
+			}
+			return createErr
+		}
 		state := StateCreateAmbiguous
 		if created != nil {
 			state = StateCreateFailed

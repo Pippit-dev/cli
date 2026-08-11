@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
@@ -16,28 +18,59 @@ var errCanvasImportAuthCanceled = errors.New("已取消小云雀授权")
 var errCanvasImportReauthenticationRequired = errors.New("需要重新校验小云雀授权")
 
 type importAuthAPI interface {
-	AccessKey() string
-	SetAccessKey(string) error
+	AccessKey(context.Context) (string, error)
+	Login(context.Context, io.Writer, importAuthLoginOptions) error
+	HasExplicitAccessKey() bool
+	CredentialScope(context.Context) (string, error)
 	Probe(context.Context) error
+}
+
+type importAuthLoginOptions struct {
+	ForceRefresh            bool
+	ExpectedCredentialScope string
 }
 
 type runnerImportAuthAPI struct {
 	runner *common.Runner
 }
 
-func (api runnerImportAuthAPI) AccessKey() string {
-	if api.runner == nil || api.runner.Config == nil {
-		return ""
+func (api runnerImportAuthAPI) AccessKey(ctx context.Context) (string, error) {
+	if api.runner == nil {
+		return "", fmt.Errorf("小云雀 CLI 运行时配置不完整")
 	}
-	return strings.TrimSpace(api.runner.Config.AccessKey)
+	if api.runner.Auth != nil {
+		return api.runner.Auth.ResolveAccessKey(ctx)
+	}
+	if api.runner.Config == nil {
+		return "", fmt.Errorf("小云雀 CLI 运行时配置不完整")
+	}
+	return strings.TrimSpace(api.runner.Config.AccessKey), nil
 }
 
-func (api runnerImportAuthAPI) SetAccessKey(accessKey string) error {
-	if api.runner == nil || api.runner.Config == nil {
-		return fmt.Errorf("小云雀 CLI 运行时配置不完整")
+func (api runnerImportAuthAPI) Login(ctx context.Context, progress io.Writer, options importAuthLoginOptions) error {
+	if api.runner == nil || api.runner.Auth == nil {
+		return fmt.Errorf("小云雀 CLI 浏览器授权尚未配置")
 	}
-	api.runner.Config.AccessKey = strings.TrimSpace(accessKey)
-	return nil
+	_, err := api.runner.Auth.Login(ctx, internal_auth.LoginOptions{
+		Progress:                progress,
+		ForceRefresh:            options.ForceRefresh,
+		ExpectedCredentialScope: options.ExpectedCredentialScope,
+	})
+	return err
+}
+
+func (api runnerImportAuthAPI) HasExplicitAccessKey() bool {
+	return api.runner != nil && api.runner.Config != nil && strings.TrimSpace(api.runner.Config.AccessKey) != ""
+}
+
+func (api runnerImportAuthAPI) CredentialScope(ctx context.Context) (string, error) {
+	if api.HasExplicitAccessKey() {
+		return legacyCanvasImportAuthScope(strings.TrimSpace(api.runner.Config.AccessKey)), nil
+	}
+	if api.runner == nil || api.runner.Auth == nil {
+		return "", fmt.Errorf("小云雀 CLI 浏览器授权尚未配置")
+	}
+	return api.runner.Auth.CredentialScope(ctx)
 }
 
 func (api runnerImportAuthAPI) Probe(ctx context.Context) error {
@@ -64,30 +97,42 @@ type importAuthPromptAction uint8
 
 const (
 	importAuthPromptRetry importAuthPromptAction = iota + 1
-	importAuthPromptReplace
+	importAuthPromptLogin
 	importAuthPromptCancel
 )
 
 type importAuthPromptRequest struct {
-	HasAccessKey bool
-	Failure      string
+	HasCredential     bool
+	ExplicitAccessKey bool
+	Failure           string
 }
 
 type importAuthPromptResponse struct {
-	Action    importAuthPromptAction
-	AccessKey string
+	Action importAuthPromptAction
 }
 
 type importAuthPrompt func(context.Context, importAuthPromptRequest) (importAuthPromptResponse, error)
 
 // ensureCanvasImportPippitAuth verifies Pippit authorization before the source
-// export starts. Interactive callers may retry a transient failure, replace an
-// invalid key in memory, or cancel. The key is never persisted by this flow.
+// export starts. Interactive callers may retry a transient failure or complete
+// browser authorization; Access Keys are never read from terminal input.
 func ensureCanvasImportPippitAuth(
 	ctx context.Context,
 	auth importAuthAPI,
 	interactive bool,
 	prompt importAuthPrompt,
+	progress ...io.Writer,
+) error {
+	return ensureCanvasImportPippitAuthForScope(ctx, auth, interactive, prompt, "", progress...)
+}
+
+func ensureCanvasImportPippitAuthForScope(
+	ctx context.Context,
+	auth importAuthAPI,
+	interactive bool,
+	prompt importAuthPrompt,
+	expectedCredentialScope string,
+	progress ...io.Writer,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -96,48 +141,37 @@ func ensureCanvasImportPippitAuth(
 		return fmt.Errorf("小云雀授权检查未配置")
 	}
 
-	accessKey := strings.TrimSpace(auth.AccessKey())
+	progressWriter := io.Discard
+	if len(progress) > 0 && progress[0] != nil {
+		progressWriter = progress[0]
+	}
 	failure := ""
 	for {
+		accessKey, resolveErr := auth.AccessKey(ctx)
+		accessKey = strings.TrimSpace(accessKey)
 		if accessKey == "" {
 			if !interactive {
-				return fmt.Errorf("未找到小云雀 Access Key；请先设置 XYQ_ACCESS_KEY，或在交互模式中安全粘贴 Access Key")
+				return fmt.Errorf("未登录小云雀 CLI；请先运行 pippit-tool-cli login（CI 仍可设置 XYQ_ACCESS_KEY）")
 			}
-			if prompt == nil {
-				return fmt.Errorf("未找到小云雀 Access Key，且交互授权引导未配置")
+			if resolveErr != nil && !errors.Is(resolveErr, internal_auth.ErrCredentialNotFound) &&
+				!errors.Is(resolveErr, internal_auth.ErrCredentialExpired) {
+				return fmt.Errorf("读取小云雀 CLI 登录凭证失败")
 			}
-			response, err := prompt(ctx, importAuthPromptRequest{
-				HasAccessKey: false,
-				Failure:      failure,
-			})
-			if err != nil {
-				return canvasImportAuthPromptError(err)
+			if err := auth.Login(ctx, progressWriter, importAuthLoginOptions{
+				ForceRefresh:            expectedCredentialScope != "",
+				ExpectedCredentialScope: expectedCredentialScope,
+			}); err != nil {
+				return fmt.Errorf("小云雀网页授权失败：%w", err)
 			}
-			switch response.Action {
-			case importAuthPromptCancel:
-				return errCanvasImportAuthCanceled
-			case importAuthPromptReplace:
-				accessKey = strings.TrimSpace(response.AccessKey)
-				if accessKey == "" {
-					failure = "Access Key 不能为空，请重新粘贴"
-					continue
-				}
-				if err := auth.SetAccessKey(accessKey); err != nil {
-					return fmt.Errorf("更新小云雀内存授权信息失败：%s", redactCanvasImportAuthFailure(err, accessKey))
-				}
-			case importAuthPromptRetry:
-				failure = "当前没有可重试的 Access Key，请先粘贴"
-				continue
-			default:
-				return fmt.Errorf("小云雀授权引导返回了未知操作")
-			}
+			failure = ""
+			continue
 		}
 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		if err := auth.Probe(ctx); err == nil {
-			return nil
+			return verifyCanvasImportCredentialScope(ctx, auth, expectedCredentialScope)
 		} else {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return ctxErr
@@ -152,8 +186,9 @@ func ensureCanvasImportPippitAuth(
 		}
 
 		response, err := prompt(ctx, importAuthPromptRequest{
-			HasAccessKey: true,
-			Failure:      failure,
+			HasCredential:     true,
+			ExplicitAccessKey: auth.HasExplicitAccessKey(),
+			Failure:           failure,
 		})
 		if err != nil {
 			return canvasImportAuthPromptError(err)
@@ -161,23 +196,62 @@ func ensureCanvasImportPippitAuth(
 		switch response.Action {
 		case importAuthPromptRetry:
 			continue
-		case importAuthPromptReplace:
-			replacement := strings.TrimSpace(response.AccessKey)
-			if replacement == "" {
-				accessKey = ""
-				failure = "Access Key 不能为空，请重新粘贴"
-				continue
+		case importAuthPromptLogin:
+			if auth.HasExplicitAccessKey() {
+				return fmt.Errorf("当前 XYQ_ACCESS_KEY 会覆盖浏览器登录；请先取消导入并在 shell 中 unset XYQ_ACCESS_KEY")
 			}
-			if err := auth.SetAccessKey(replacement); err != nil {
-				return fmt.Errorf("更新小云雀内存授权信息失败：%s", redactCanvasImportAuthFailure(err, replacement))
+			if err := auth.Login(ctx, progressWriter, importAuthLoginOptions{
+				ForceRefresh:            true,
+				ExpectedCredentialScope: expectedCredentialScope,
+			}); err != nil {
+				return fmt.Errorf("小云雀网页授权失败：%w", err)
 			}
-			accessKey = replacement
+			failure = ""
 		case importAuthPromptCancel:
 			return errCanvasImportAuthCanceled
 		default:
 			return fmt.Errorf("小云雀授权引导返回了未知操作")
 		}
 	}
+}
+
+func reauthenticateCanvasImportPippit(
+	ctx context.Context,
+	auth importAuthAPI,
+	prompt importAuthPrompt,
+	expectedCredentialScope string,
+	progress io.Writer,
+) error {
+	if auth == nil {
+		return fmt.Errorf("小云雀授权检查未配置")
+	}
+	if auth.HasExplicitAccessKey() {
+		return fmt.Errorf("当前 XYQ_ACCESS_KEY 会覆盖浏览器登录；请取消导入并在 shell 中 unset XYQ_ACCESS_KEY")
+	}
+	if err := auth.Login(ctx, progress, importAuthLoginOptions{
+		ForceRefresh:            true,
+		ExpectedCredentialScope: expectedCredentialScope,
+	}); err != nil {
+		return fmt.Errorf("小云雀网页重新授权失败：%w", err)
+	}
+	return ensureCanvasImportPippitAuthForScope(
+		ctx, auth, true, prompt, expectedCredentialScope, progress,
+	)
+}
+
+func verifyCanvasImportCredentialScope(ctx context.Context, auth importAuthAPI, expected string) error {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return nil
+	}
+	actual, err := auth.CredentialScope(ctx)
+	if err != nil {
+		return fmt.Errorf("重新授权后无法确认小云雀账号：%w", err)
+	}
+	if strings.TrimSpace(actual) != expected {
+		return fmt.Errorf("%w；为避免复用上一账号的素材或画布断点，本次导入已安全停止", internal_auth.ErrCredentialAccountMismatch)
+	}
+	return nil
 }
 
 func canvasImportAuthPromptError(err error) error {
@@ -211,7 +285,8 @@ func redactCanvasImportFinalError(err error, auth importAuthAPI) error {
 		return err
 	}
 	original := err.Error()
-	redacted := redactCanvasImportAuthFailure(err, auth.AccessKey())
+	accessKey, _ := auth.AccessKey(context.Background())
+	redacted := redactCanvasImportAuthFailure(err, accessKey)
 	if redacted == original {
 		return err
 	}
@@ -236,7 +311,9 @@ func isCanvasImportPippitAuthFailure(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, errCanvasImportReauthenticationRequired) {
+	if errors.Is(err, errCanvasImportReauthenticationRequired) ||
+		errors.Is(err, internal_auth.ErrCredentialNotFound) ||
+		errors.Is(err, internal_auth.ErrCredentialExpired) {
 		return true
 	}
 	message := strings.ToLower(err.Error())

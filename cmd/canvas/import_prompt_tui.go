@@ -74,26 +74,6 @@ func (prompt *importPromptTUI) readLine(label string) (string, error) {
 	return strings.TrimSpace(value), nil
 }
 
-func (prompt *importPromptTUI) readSecret(label string) (string, error) {
-	value := ""
-	field := huh.NewInput().
-		Title(strings.TrimSpace(strings.TrimRight(label, ":： "))).
-		Description("粘贴后按 Enter 确认；内容仅用于当前进程，不会保存").
-		Prompt("› ").
-		EchoMode(huh.EchoModePassword).
-		Validate(func(value string) error {
-			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("Access Key 不能为空")
-			}
-			return nil
-		}).
-		Value(&value)
-	if err := prompt.run(field); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(value), nil
-}
-
 func (prompt *importPromptTUI) run(field huh.Field) error {
 	form := huh.NewForm(huh.NewGroup(field)).
 		WithTheme(huh.ThemeCharm()).

@@ -4,29 +4,61 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
 )
 
 type trackingImportAuthAPI struct {
-	key         string
-	events      *[]string
-	probeErrors []error
-	setValues   []string
+	key             string
+	loginKey        string
+	events          *[]string
+	probeErrors     []error
+	loginErrors     []error
+	logins          int
+	explicit        bool
+	credentialScope string
+	loginScopes     []string
+	loginOptions    []importAuthLoginOptions
 }
 
-func (auth *trackingImportAuthAPI) AccessKey() string { return auth.key }
+func (auth *trackingImportAuthAPI) AccessKey(context.Context) (string, error) { return auth.key, nil }
 
-func (auth *trackingImportAuthAPI) SetAccessKey(value string) error {
-	auth.key = strings.TrimSpace(value)
-	auth.setValues = append(auth.setValues, auth.key)
+func (auth *trackingImportAuthAPI) Login(_ context.Context, _ io.Writer, options importAuthLoginOptions) error {
+	auth.logins++
+	auth.loginOptions = append(auth.loginOptions, options)
+	if len(auth.loginErrors) > 0 {
+		err := auth.loginErrors[0]
+		auth.loginErrors = auth.loginErrors[1:]
+		if err != nil {
+			return err
+		}
+	}
+	if auth.loginKey == "" {
+		auth.loginKey = "browser-managed-key"
+	}
+	auth.key = auth.loginKey
+	if len(auth.loginScopes) > 0 {
+		auth.credentialScope = auth.loginScopes[0]
+		auth.loginScopes = auth.loginScopes[1:]
+	}
 	return nil
+}
+
+func (auth *trackingImportAuthAPI) HasExplicitAccessKey() bool { return auth.explicit }
+
+func (auth *trackingImportAuthAPI) CredentialScope(context.Context) (string, error) {
+	if auth.credentialScope != "" {
+		return auth.credentialScope, nil
+	}
+	return "browser-device-scope", nil
 }
 
 func (auth *trackingImportAuthAPI) Probe(context.Context) error {
@@ -67,17 +99,28 @@ type trackingImportExporter struct {
 }
 
 type expiringImportMediaAPI struct {
-	uploads int
+	uploads         int
+	uploadSucceeds  bool
+	preflights      int
+	preflightErrors []error
 }
 
-func (api *expiringImportMediaAPI) PreflightUpload(context.Context) error { return nil }
+func (api *expiringImportMediaAPI) PreflightUpload(context.Context) error {
+	api.preflights++
+	if len(api.preflightErrors) == 0 {
+		return nil
+	}
+	err := api.preflightErrors[0]
+	api.preflightErrors = api.preflightErrors[1:]
+	return err
+}
 
 func (api *expiringImportMediaAPI) Upload(
 	context.Context,
 	validatedImportMedia,
 ) (*canvascore.UploadResult, error) {
 	api.uploads++
-	if api.uploads == 1 {
+	if api.uploads == 1 && !api.uploadSucceeds {
 		return nil, errors.New("HTTP 401")
 	}
 	return &canvascore.UploadResult{
@@ -216,7 +259,7 @@ func TestCanvasImportMissingPippitKeyStopsBeforeLibTVOrFilesystemSideEffects(t *
 	_, err := runCanvasImport(context.Background(), importOptions{
 		Provider: "libtv", SourceURL: testLibTVURL,
 	}, deps, io.Discard, nil)
-	if err == nil || !strings.Contains(err.Error(), "未找到小云雀 Access Key") {
+	if err == nil || !strings.Contains(err.Error(), "pippit-tool-cli login") {
 		t.Fatalf("runCanvasImport() error = %v, want missing-key guidance", err)
 	}
 	if sourceAuth.calls != 0 || len(exporter.inner.urls) != 0 || cacheTouched {
@@ -224,14 +267,13 @@ func TestCanvasImportMissingPippitKeyStopsBeforeLibTVOrFilesystemSideEffects(t *
 	}
 }
 
-func TestCanvasImportAuthPromptsForPippitKeyThenChecksLibTV(t *testing.T) {
-	const accessKey = "pasted-secret-access-key"
+func TestCanvasImportAuthOpensPippitBrowserLoginThenChecksLibTV(t *testing.T) {
 	events := []string{}
-	pippit := &trackingImportAuthAPI{events: &events}
+	pippit := &trackingImportAuthAPI{events: &events, loginKey: "browser-managed-key"}
 	source := &trackingSourceAuthenticator{events: &events}
 	var stderr bytes.Buffer
 	prompts := newImportPromptSessionWithTUI(
-		context.Background(), strings.NewReader(accessKey+"\n"), &stderr, false,
+		context.Background(), strings.NewReader(""), &stderr, false,
 	)
 
 	err := preflightCanvasImportAuth(context.Background(), importDependencies{
@@ -244,24 +286,25 @@ func TestCanvasImportAuthPromptsForPippitKeyThenChecksLibTV(t *testing.T) {
 	if got := strings.Join(events, ","); got != "pippit-auth,libtv-auth" {
 		t.Fatalf("auth order = %q, want Pippit then LibTV", got)
 	}
-	if pippit.key != accessKey || len(pippit.setValues) != 1 {
-		t.Fatalf("in-memory Access Key = %q / %v", pippit.key, pippit.setValues)
+	if pippit.key != "browser-managed-key" || pippit.logins != 1 {
+		t.Fatalf("browser credential/logins = %q/%d", pippit.key, pippit.logins)
 	}
-	if strings.Contains(stderr.String(), accessKey) {
-		t.Fatalf("stderr leaked pasted Access Key: %q", stderr.String())
+	if strings.Contains(stderr.String(), pippit.key) {
+		t.Fatalf("stderr leaked browser-managed Access Key: %q", stderr.String())
 	}
 }
 
-func TestCanvasImportAuthReplacesRejectedPippitKeyWithoutLeakingIt(t *testing.T) {
+func TestCanvasImportAuthReauthorizesRejectedManagedCredentialWithoutLeakingIt(t *testing.T) {
 	const oldKey = "rejected-secret-key"
-	const newKey = "replacement-secret-key"
+	const newKey = "browser-replacement-key"
 	pippit := &trackingImportAuthAPI{
 		key:         oldKey,
+		loginKey:    newKey,
 		probeErrors: []error{errors.New("HTTP 401 " + oldKey), nil},
 	}
 	var stderr bytes.Buffer
 	prompts := newImportPromptSessionWithTUI(
-		context.Background(), strings.NewReader("2\n"+newKey+"\n"), &stderr, false,
+		context.Background(), strings.NewReader("1\n"), &stderr, false,
 	)
 
 	err := preflightCanvasImportAuth(context.Background(), importDependencies{
@@ -271,8 +314,8 @@ func TestCanvasImportAuthReplacesRejectedPippitKeyWithoutLeakingIt(t *testing.T)
 	if err != nil {
 		t.Fatalf("preflightCanvasImportAuth() error = %v", err)
 	}
-	if pippit.key != newKey {
-		t.Fatalf("Access Key = %q, want replacement", pippit.key)
+	if pippit.key != newKey || pippit.logins != 1 {
+		t.Fatalf("browser credential/logins = %q/%d, want replacement once", pippit.key, pippit.logins)
 	}
 	if strings.Contains(stderr.String(), oldKey) || strings.Contains(stderr.String(), newKey) {
 		t.Fatalf("stderr leaked an Access Key: %q", stderr.String())
@@ -377,6 +420,66 @@ func TestCanvasImportReauthorizesDuringMediaWithoutBlindUploadReplay(t *testing.
 	}
 }
 
+func TestCanvasImportReauthorizesWhenCredentialExpiresAfterExport(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	media := &expiringImportMediaAPI{uploadSucceeds: true, preflightErrors: []error{
+		fmt.Errorf("credential vanished after export: %w", internal_auth.ErrCredentialExpired),
+		nil,
+	}}
+	pippit := &trackingImportAuthAPI{key: "expired-key", loginKey: "replacement-key"}
+	deps := testImportDependencies(temp, exporter, media, &fakeImportExecutor{result: verifiedImportResult()})
+	deps.pippitAuth = pippit
+	var stderr bytes.Buffer
+	prompts := newImportPromptSessionWithTUI(context.Background(), strings.NewReader(""), &stderr, false)
+
+	result, err := runCanvasImport(context.Background(), importOptions{
+		Provider: "libtv", SourceURL: testLibTVURL,
+	}, deps, &stderr, prompts)
+	if err != nil {
+		t.Fatalf("runCanvasImport() error = %v", err)
+	}
+	if result == nil || result.State != canvasplan.StateVerified || media.uploads != 1 || pippit.logins != 1 {
+		t.Fatalf("result/uploads/logins = %#v/%d/%d", result, media.uploads, pippit.logins)
+	}
+	if len(pippit.loginOptions) != 1 || !pippit.loginOptions[0].ForceRefresh ||
+		pippit.loginOptions[0].ExpectedCredentialScope != "browser-device-scope" {
+		t.Fatalf("login options = %#v, want task-bound forced refresh", pippit.loginOptions)
+	}
+}
+
+func TestCanvasImportRejectsDifferentAccountDuringReauthentication(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	media := &expiringImportMediaAPI{}
+	pippit := &trackingImportAuthAPI{
+		key:             "account-a-key",
+		loginKey:        "account-b-key",
+		credentialScope: "account-a-scope",
+		loginScopes:     []string{"account-b-scope"},
+	}
+	deps := testImportDependencies(temp, exporter, media, &fakeImportExecutor{result: verifiedImportResult()})
+	deps.pippitAuth = pippit
+	deps.authScope = pippit.CredentialScope
+	var stderr bytes.Buffer
+	prompts := newImportPromptSessionWithTUI(context.Background(), strings.NewReader(""), &stderr, false)
+
+	_, err := runCanvasImport(context.Background(), importOptions{
+		Provider: "libtv", SourceURL: testLibTVURL,
+	}, deps, &stderr, prompts)
+	if !errors.Is(err, internal_auth.ErrCredentialAccountMismatch) {
+		t.Fatalf("runCanvasImport() error = %v, want account mismatch", err)
+	}
+	if media.uploads != 1 || pippit.logins != 1 {
+		t.Fatalf("uploads/logins = %d/%d, want stop immediately after first rejected request and reauth", media.uploads, pippit.logins)
+	}
+	if len(pippit.loginOptions) != 1 || pippit.loginOptions[0].ExpectedCredentialScope != "account-a-scope" {
+		t.Fatalf("login options = %#v, want account-a binding", pippit.loginOptions)
+	}
+}
+
 func TestCanvasImportWaitsForAcceptedCreateInSameProcess(t *testing.T) {
 	temp := t.TempDir()
 	plan, mediaBytes := testImportPlan(t, false)
@@ -416,7 +519,8 @@ func TestCanvasImportReauthorizesWhileWaitingForAcceptedCreate(t *testing.T) {
 		verifiedImportResult(),
 	}}
 	pippit := &trackingImportAuthAPI{
-		key: "expired-key",
+		key:      "expired-key",
+		loginKey: "replacement-key",
 		probeErrors: []error{
 			nil,
 			nil,
@@ -429,7 +533,7 @@ func TestCanvasImportReauthorizesWhileWaitingForAcceptedCreate(t *testing.T) {
 	deps.mediaPoll = time.Millisecond
 	var stderr bytes.Buffer
 	prompts := newImportPromptSessionWithTUI(
-		context.Background(), strings.NewReader("2\nreplacement-key\n"), &stderr, false,
+		context.Background(), strings.NewReader("1\n"), &stderr, false,
 	)
 
 	result, err := runCanvasImport(context.Background(), importOptions{
@@ -458,7 +562,8 @@ func TestCanvasImportReauthorizesAmbiguousApplyThenQueriesWithoutReplay(t *testi
 		errors: []error{errors.New("canvas apply failed; exact query-back failed: HTTP 401")},
 	}
 	pippit := &trackingImportAuthAPI{
-		key: "expired-key",
+		key:      "expired-key",
+		loginKey: "replacement-key",
 		probeErrors: []error{
 			nil,
 			nil,
@@ -470,7 +575,7 @@ func TestCanvasImportReauthorizesAmbiguousApplyThenQueriesWithoutReplay(t *testi
 	deps.pippitAuth = pippit
 	var stderr bytes.Buffer
 	prompts := newImportPromptSessionWithTUI(
-		context.Background(), strings.NewReader("2\nreplacement-key\n"), &stderr, false,
+		context.Background(), strings.NewReader("1\n"), &stderr, false,
 	)
 
 	result, err := runCanvasImport(context.Background(), importOptions{
@@ -530,7 +635,8 @@ func TestCanvasImportReauthorizesExistingAmbiguousJournal(t *testing.T) {
 		errors: []error{errors.New("query assets failed: ret=1015")},
 	}
 	pippit := &trackingImportAuthAPI{
-		key: "expired-key",
+		key:      "expired-key",
+		loginKey: "replacement-key",
 		probeErrors: []error{
 			nil,
 			nil,
@@ -542,7 +648,7 @@ func TestCanvasImportReauthorizesExistingAmbiguousJournal(t *testing.T) {
 	deps.pippitAuth = pippit
 	var stderr bytes.Buffer
 	prompts := newImportPromptSessionWithTUI(
-		context.Background(), strings.NewReader("2\nreplacement-key\n"), &stderr, false,
+		context.Background(), strings.NewReader("1\n"), &stderr, false,
 	)
 
 	result, err := runCanvasImport(context.Background(), importOptions{

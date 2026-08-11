@@ -83,11 +83,21 @@ func (api runnerImportMediaAPI) PreflightUpload(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if api.runner == nil || api.runner.Config == nil {
+	if api.runner == nil {
 		return fmt.Errorf("画布素材上传器尚未配置")
 	}
-	if strings.TrimSpace(api.runner.Config.AccessKey) == "" {
-		return fmt.Errorf("缺少 XYQ_ACCESS_KEY；请先完成小云雀 CLI 授权，再导入素材")
+	accessKey := ""
+	if api.runner.Auth != nil {
+		resolved, err := api.runner.Auth.ResolveAccessKey(ctx)
+		if err != nil {
+			return fmt.Errorf("未找到可用的小云雀 CLI 登录凭证；请先运行 pippit-tool-cli login: %w", err)
+		}
+		accessKey = resolved
+	} else if api.runner.Config != nil {
+		accessKey = api.runner.Config.AccessKey
+	}
+	if strings.TrimSpace(accessKey) == "" {
+		return fmt.Errorf("未登录小云雀 CLI；请先运行 pippit-tool-cli login")
 	}
 	return nil
 }

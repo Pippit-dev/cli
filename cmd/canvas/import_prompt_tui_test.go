@@ -81,30 +81,6 @@ func TestImportPromptTUIReadsPastedURL(t *testing.T) {
 	}
 }
 
-func TestImportPromptTUIKeepsAccessKeyMasked(t *testing.T) {
-	t.Setenv("TERM", "xterm-256color")
-	const accessKey = "tui-secret-access-key"
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	var output bytes.Buffer
-	session := newImportPromptSessionWithTUI(
-		ctx,
-		&delayedImportPromptReader{Reader: bytes.NewBufferString(accessKey + "\r")},
-		&output,
-		true,
-	)
-	value, eof, err := session.readSecret("粘贴小云雀 Access Key：")
-	if err != nil {
-		t.Fatalf("readSecret() error = %v; output = %q", err, output.String())
-	}
-	if eof || value != accessKey {
-		t.Fatalf("readSecret() = %q/%v, want masked value", value, eof)
-	}
-	if strings.Contains(output.String(), accessKey) {
-		t.Fatalf("TUI output leaked Access Key: %q", output.String())
-	}
-}
-
 func TestImportPromptTUIHonorsContextCancellation(t *testing.T) {
 	t.Setenv("TERM", "xterm-256color")
 	ctx, cancel := context.WithCancel(context.Background())

@@ -7,8 +7,6 @@ import (
 	"strings"
 )
 
-const pippitAccessKeySettingsURL = "https://xyq.jianying.com/home?tab_name=home"
-
 func preflightCanvasImportAuth(
 	ctx context.Context,
 	dependencies importDependencies,
@@ -22,7 +20,7 @@ func preflightCanvasImportAuth(
 	}
 
 	fmt.Fprintln(stderr, "阶段：正在检查小云雀授权…")
-	if err := ensureCanvasImportPippitAuth(ctx, dependencies.pippitAuth, interactive, pippitPrompt); err != nil {
+	if err := ensureCanvasImportPippitAuth(ctx, dependencies.pippitAuth, interactive, pippitPrompt, stderr); err != nil {
 		return err
 	}
 	fmt.Fprintln(stderr, "小云雀授权校验通过。")
@@ -76,51 +74,40 @@ func (prompts *importPromptSession) promptPippitAuth(
 	if strings.TrimSpace(request.Failure) != "" {
 		fmt.Fprintf(prompts.stderr, "小云雀授权提示：%s\n", request.Failure)
 	}
-	if !request.HasAccessKey {
-		fmt.Fprintf(
-			prompts.stderr,
-			"未检测到小云雀 Access Key。请先在个人设置页创建或查看：%s\n"+
-				"随后在下方粘贴；它只保存在当前 CLI 进程内，不会写入配置、日志或断点记录。\n",
-			pippitAccessKeySettingsURL,
+	if request.ExplicitAccessKey {
+		choice, err := prompts.askChoice(
+			"当前 XYQ_ACCESS_KEY 校验失败：",
+			[]importPromptChoice{
+				{label: "重新校验当前环境变量"},
+				{label: "取消导入并在 shell 中取消 XYQ_ACCESS_KEY（默认）"},
+			},
+			2,
 		)
-		accessKey, eof, err := prompts.readSecret("粘贴小云雀 Access Key：")
 		if err != nil {
 			return importAuthPromptResponse{}, err
 		}
-		if eof && strings.TrimSpace(accessKey) == "" {
-			return importAuthPromptResponse{Action: importAuthPromptCancel}, nil
+		if choice == 1 {
+			return importAuthPromptResponse{Action: importAuthPromptRetry}, nil
 		}
-		return importAuthPromptResponse{Action: importAuthPromptReplace, AccessKey: accessKey}, nil
-	}
-
-	defaultChoice := 1
-	if strings.Contains(request.Failure, "401") || strings.Contains(request.Failure, "403") {
-		defaultChoice = 2
+		return importAuthPromptResponse{Action: importAuthPromptCancel}, nil
 	}
 	choice, err := prompts.askChoice(
 		"小云雀授权下一步：",
 		[]importPromptChoice{
-			{label: "重新校验当前 Access Key"},
-			{label: "粘贴新的 Access Key"},
+			{label: "重新打开浏览器授权（默认）"},
+			{label: "重新校验当前登录"},
 			{label: "取消导入"},
 		},
-		defaultChoice,
+		1,
 	)
 	if err != nil {
 		return importAuthPromptResponse{}, err
 	}
 	switch choice {
 	case 1:
-		return importAuthPromptResponse{Action: importAuthPromptRetry}, nil
+		return importAuthPromptResponse{Action: importAuthPromptLogin}, nil
 	case 2:
-		accessKey, eof, readErr := prompts.readSecret("粘贴新的小云雀 Access Key：")
-		if readErr != nil {
-			return importAuthPromptResponse{}, readErr
-		}
-		if eof && strings.TrimSpace(accessKey) == "" {
-			return importAuthPromptResponse{Action: importAuthPromptCancel}, nil
-		}
-		return importAuthPromptResponse{Action: importAuthPromptReplace, AccessKey: accessKey}, nil
+		return importAuthPromptResponse{Action: importAuthPromptRetry}, nil
 	default:
 		return importAuthPromptResponse{Action: importAuthPromptCancel}, nil
 	}

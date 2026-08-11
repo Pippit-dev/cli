@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/canvas"
 )
 
@@ -364,6 +365,96 @@ func TestExecutorNeverReplaysAmbiguousCreate(t *testing.T) {
 	}
 }
 
+func TestExecutorRetriesOnlyProvenPreSendCredentialFailure(t *testing.T) {
+	plan, resolved := testPlanAndResolved()
+	api := newFakeCanvasAPI(len(plan.Nodes))
+	api.createErr = fmt.Errorf("prepare canvas create: %w", internal_auth.ErrCredentialExpired)
+	executor := &Executor{api: api}
+	journalPath := filepath.Join(t.TempDir(), "pre-send-auth.json")
+
+	result, err := executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if !errors.Is(err, internal_auth.ErrCredentialExpired) || result == nil || result.State != StateInitialized {
+		t.Fatalf("first Execute() result=%#v error=%v, want initialized typed credential failure", result, err)
+	}
+	if api.createCalls != 1 || api.resumeCreateCalls != 0 {
+		t.Fatalf("first call create=%d resume=%d, want create=1 resume=0", api.createCalls, api.resumeCreateCalls)
+	}
+	journal := readJournal(t, journalPath)
+	if journal.State != StateInitialized || journal.Create != nil {
+		t.Fatalf("journal after pre-send failure = %#v, want initialized without accepted create", journal)
+	}
+
+	api.createErr = nil
+	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if err != nil || result == nil || result.State != StateVerified {
+		t.Fatalf("second Execute() result=%#v error=%v, want verified", result, err)
+	}
+	if api.createCalls != 2 || api.resumeCreateCalls != 0 {
+		t.Fatalf("calls after safe retry create=%d resume=%d, want create=2 resume=0", api.createCalls, api.resumeCreateCalls)
+	}
+}
+
+func TestExecutorNeverRecreatesAfterAcceptedCreateCredentialExpiry(t *testing.T) {
+	plan, resolved := testPlanAndResolved()
+	api := newFakeCanvasAPI(len(plan.Nodes))
+	api.createErr = fmt.Errorf("poll accepted canvas create: %w", internal_auth.ErrCredentialExpired)
+	api.createAcceptedOnError = true
+	executor := &Executor{api: api}
+	journalPath := filepath.Join(t.TempDir(), "accepted-create-auth.json")
+
+	result, err := executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if !errors.Is(err, internal_auth.ErrCredentialExpired) || result == nil || result.State != StateCreatePending {
+		t.Fatalf("first Execute() result=%#v error=%v, want pending typed credential failure", result, err)
+	}
+	if result.ProjectID == "" || api.createCalls != 1 || api.resumeCreateCalls != 0 {
+		t.Fatalf("accepted create result=%#v calls create=%d resume=%d", result, api.createCalls, api.resumeCreateCalls)
+	}
+	journal := readJournal(t, journalPath)
+	if journal.State != StateCreatePending || journal.Create == nil || journal.Create.ProjectID == "" {
+		t.Fatalf("journal did not preserve accepted IDs: %#v", journal)
+	}
+
+	api.createErr = nil
+	api.createAcceptedOnError = false
+	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if err != nil || result == nil || result.State != StateVerified {
+		t.Fatalf("second Execute() result=%#v error=%v, want verified", result, err)
+	}
+	if api.createCalls != 1 || api.resumeCreateCalls != 1 {
+		t.Fatalf("accepted create was replayed: create=%d resume=%d", api.createCalls, api.resumeCreateCalls)
+	}
+}
+
+func TestExecutorKeepsAcceptedCreatePendingAcrossResumeCredentialFailure(t *testing.T) {
+	plan, resolved := testPlanAndResolved()
+	api := newFakeCanvasAPI(len(plan.Nodes))
+	api.createPending = true
+	executor := &Executor{api: api}
+	journalPath := filepath.Join(t.TempDir(), "resume-create-auth.json")
+
+	result, err := executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if err != nil || result == nil || result.State != StateCreatePending {
+		t.Fatalf("first Execute() result=%#v error=%v, want pending", result, err)
+	}
+	api.resumeCreateErr = fmt.Errorf("resume accepted canvas create: %w", internal_auth.ErrCredentialNotFound)
+	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if !errors.Is(err, internal_auth.ErrCredentialNotFound) || result == nil || result.State != StateCreatePending {
+		t.Fatalf("second Execute() result=%#v error=%v, want pending typed credential failure", result, err)
+	}
+	if api.createCalls != 1 || api.resumeCreateCalls != 1 {
+		t.Fatalf("calls after resume failure create=%d resume=%d, want create=1 resume=1", api.createCalls, api.resumeCreateCalls)
+	}
+
+	api.resumeCreateErr = nil
+	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if err != nil || result == nil || result.State != StateVerified {
+		t.Fatalf("third Execute() result=%#v error=%v, want verified", result, err)
+	}
+	if api.createCalls != 1 || api.resumeCreateCalls != 2 {
+		t.Fatalf("accepted create was replayed: create=%d resume=%d", api.createCalls, api.resumeCreateCalls)
+	}
+}
+
 func TestExecutorReportsQueryBackMismatchWithoutReplay(t *testing.T) {
 	plan, resolved := testPlanAndResolved()
 	api := newFakeCanvasAPI(len(plan.Nodes))
@@ -490,6 +581,8 @@ type fakeCanvasAPI struct {
 	applyCalls             int
 	createPending          bool
 	createErr              error
+	createAcceptedOnError  bool
+	resumeCreateErr        error
 	getErr                 error
 	getNil                 bool
 	applyErr               error
@@ -506,6 +599,12 @@ func newFakeCanvasAPI(nodeCount int) *fakeCanvasAPI {
 func (api *fakeCanvasAPI) Create(context.Context, canvas.CreateOptions) (*canvas.CreateResult, error) {
 	api.createCalls++
 	if api.createErr != nil {
+		if api.createAcceptedOnError {
+			return &canvas.CreateResult{
+				RequestID: "request-1", State: canvas.StateCreating, ProjectID: "123", ThreadID: "thread-1", RunID: "run-1",
+				CanvasAssetID: "root-asset", WebURL: "/novel/detail/canvas?projectId=123", Warning: api.createErr.Error(),
+			}, api.createErr
+		}
 		return nil, api.createErr
 	}
 	state := canvas.StateReady
@@ -522,6 +621,12 @@ func (api *fakeCanvasAPI) Create(context.Context, canvas.CreateOptions) (*canvas
 
 func (api *fakeCanvasAPI) ResumeCreate(context.Context, *canvas.CreateResult, canvas.ResumeCreateOptions) (*canvas.CreateResult, error) {
 	api.resumeCreateCalls++
+	if api.resumeCreateErr != nil {
+		return &canvas.CreateResult{
+			RequestID: "request-1", State: canvas.StateCreating, ProjectID: "123", ThreadID: "thread-1", RunID: "run-1",
+			CanvasAssetID: "root-asset", WebURL: "/novel/detail/canvas?projectId=123", Warning: api.resumeCreateErr.Error(),
+		}, api.resumeCreateErr
+	}
 	api.createPending = false
 	return &canvas.CreateResult{
 		RequestID: "request-1", State: canvas.StateReady, ProjectID: "123", ThreadID: "thread-1", RunID: "run-1",

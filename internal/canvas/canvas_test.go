@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
@@ -121,6 +122,61 @@ func TestCreateTransportFailureExplainsAmbiguousOutcome(t *testing.T) {
 	_, err := Create(context.Background(), CreateOptions{RequestID: "request-1"}, runnerWithClient(client))
 	if err == nil || !strings.Contains(err.Error(), "outcome may be ambiguous, do not retry blindly") {
 		t.Fatalf("Create() error = %v, want ambiguous outcome guidance", err)
+	}
+}
+
+func TestCreateCredentialUnavailableBeforeRequestIsProvenRetryable(t *testing.T) {
+	client := &fakeClient{send: func(context.Context, string, any, any) error {
+		return fmt.Errorf("authorizer rejected request: %w", internal_auth.ErrCredentialExpired)
+	}}
+	result, err := Create(context.Background(), CreateOptions{RequestID: "request-1"}, runnerWithClient(client))
+	if result != nil || !errors.Is(err, internal_auth.ErrCredentialExpired) ||
+		!strings.Contains(err.Error(), "was not sent") || strings.Contains(err.Error(), "outcome may be ambiguous") {
+		t.Fatalf("Create() result/error = %#v/%v, want typed pre-send credential failure", result, err)
+	}
+}
+
+func TestCreatePollingCredentialExpiryPreservesAcceptedTypedError(t *testing.T) {
+	getThreadCalls := 0
+	client := &fakeClient{send: func(_ context.Context, path string, _ any, out any) error {
+		switch path {
+		case CreatePath:
+			return decodeInto(out, `{"ret":"0","data":{"state":"creating","project_id":"100","thread_id":"thread-1","run_id":"run-1","canvas_asset_id":"200","web_url":"https://xyq.jianying.com/novel/detail/canvas?projectId=100&canvasId=200"}}`)
+		case "/api/biz/v1/skill/get_thread":
+			getThreadCalls++
+			return fmt.Errorf("get_thread auth: %w", internal_auth.ErrCredentialExpired)
+		default:
+			return fmt.Errorf("unexpected path %s", path)
+		}
+	}}
+	result, err := Create(context.Background(), CreateOptions{
+		RequestID: "request-1", Wait: true, PollInterval: time.Millisecond, WaitTimeout: time.Second,
+	}, runnerWithClient(client))
+	if result == nil || result.ProjectID != "100" || result.ThreadID != "thread-1" || getThreadCalls != 1 ||
+		!errors.Is(err, internal_auth.ErrCredentialExpired) || !strings.Contains(err.Error(), "accepted canvas IDs") {
+		t.Fatalf("Create() result/error/calls = %#v/%v/%d", result, err, getThreadCalls)
+	}
+}
+
+func TestResumeCreatePollingCredentialMissingPreservesAcceptedTypedError(t *testing.T) {
+	getThreadCalls := 0
+	client := &fakeClient{send: func(_ context.Context, path string, _ any, _ any) error {
+		if path != "/api/biz/v1/skill/get_thread" {
+			return fmt.Errorf("unexpected path %s", path)
+		}
+		getThreadCalls++
+		return fmt.Errorf("get_thread auth: %w", internal_auth.ErrCredentialNotFound)
+	}}
+	accepted := &CreateResult{
+		RequestID: "request-1", State: StateCreating, ProjectID: "100", ThreadID: "thread-1", RunID: "run-1",
+		CanvasAssetID: "200", WebURL: "https://xyq.jianying.com/novel/detail/canvas?projectId=100&canvasId=200",
+	}
+	result, err := ResumeCreate(context.Background(), accepted, ResumeCreateOptions{
+		PollInterval: time.Millisecond, WaitTimeout: time.Second,
+	}, runnerWithClient(client))
+	if result == nil || result.ProjectID != accepted.ProjectID || getThreadCalls != 1 ||
+		!errors.Is(err, internal_auth.ErrCredentialNotFound) || !strings.Contains(err.Error(), "accepted canvas IDs") {
+		t.Fatalf("ResumeCreate() result/error/calls = %#v/%v/%d", result, err, getThreadCalls)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
@@ -93,6 +94,11 @@ func Create(ctx context.Context, opts CreateOptions, runner *common.Runner) (*Cr
 		Base:      base(),
 	}, &envelope)
 	if err != nil {
+		if IsCredentialUnavailable(err) {
+			// The authorizer rejected the request before http.Client.Do. This is
+			// the only create failure that is proven safe to retry after login.
+			return nil, fmt.Errorf("canvas create request was not sent because authentication is unavailable: %w", err)
+		}
 		return nil, fmt.Errorf("canvas create request failed; outcome may be ambiguous, do not retry blindly: %w", err)
 	}
 	if err := envelope.validate("canvas create"); err != nil {
@@ -127,6 +133,9 @@ func Create(ctx context.Context, opts CreateOptions, runner *common.Runner) (*Cr
 	result.PollAttempts = attempts
 	if waitErr != nil {
 		result.Warning = waitErr.Error()
+		if IsCredentialUnavailable(waitErr) {
+			return result, acceptedCreationError(result, waitErr)
+		}
 		var terminal *CreationTerminalError
 		if errors.As(waitErr, &terminal) {
 			result.State = "failed"
@@ -154,10 +163,22 @@ func finalizeReadyCanvas(ctx context.Context, result *CreateResult, runner *comm
 	if _, err := queryAssets(ctx, []string{result.CanvasAssetID}, true, runner); err != nil {
 		result.State = StateCreating
 		result.Warning = fmt.Sprintf("canvas overview is complete but the root asset is not queryable yet: %v", err)
+		if IsCredentialUnavailable(err) {
+			return result, acceptedCreationError(result, err)
+		}
 		return result, nil
 	}
 	result.State = StateReady
 	return result, nil
+}
+
+// IsCredentialUnavailable identifies local credential state errors that the
+// shared authorizer returns before issuing an HTTP request. errors.Is remains
+// intact through every canvas/create wrapper so callers never infer safety
+// from user-facing warning text.
+func IsCredentialUnavailable(err error) bool {
+	return errors.Is(err, internal_auth.ErrCredentialNotFound) ||
+		errors.Is(err, internal_auth.ErrCredentialExpired)
 }
 
 func acceptedCreationError(result *CreateResult, cause error) error {

@@ -5,35 +5,78 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 type fakeImportAuthAPI struct {
-	accessKey   string
-	setValues   []string
-	probeErrors []error
-	probes      int
-	setErr      error
+	accessKey       string
+	loginKey        string
+	probeErrors     []error
+	probes          int
+	logins          int
+	loginErr        error
+	resolveErr      error
+	explicit        bool
+	credentialScope string
+	loginOptions    []importAuthLoginOptions
 }
 
-func (api *fakeImportAuthAPI) AccessKey() string {
-	return api.accessKey
+type credentialErrorAuthManager struct{ err error }
+
+func (manager credentialErrorAuthManager) ResolveAccessKey(context.Context) (string, error) {
+	return "", manager.err
 }
 
-func (api *fakeImportAuthAPI) SetAccessKey(accessKey string) error {
-	api.setValues = append(api.setValues, accessKey)
-	if api.setErr != nil {
-		return api.setErr
+func (credentialErrorAuthManager) Login(context.Context, internal_auth.LoginOptions) (*internal_auth.Credential, error) {
+	return nil, errors.New("unexpected login")
+}
+
+func (credentialErrorAuthManager) Status(context.Context) (*internal_auth.Status, error) {
+	return nil, errors.New("unexpected status")
+}
+
+func (credentialErrorAuthManager) Logout(context.Context, bool) error {
+	return errors.New("unexpected logout")
+}
+
+func (credentialErrorAuthManager) CredentialScope(context.Context) (string, error) {
+	return "", errors.New("unexpected scope")
+}
+
+func (api *fakeImportAuthAPI) AccessKey(context.Context) (string, error) {
+	return api.accessKey, api.resolveErr
+}
+
+func (api *fakeImportAuthAPI) Login(_ context.Context, _ io.Writer, options importAuthLoginOptions) error {
+	api.logins++
+	api.loginOptions = append(api.loginOptions, options)
+	if api.loginErr != nil {
+		return api.loginErr
 	}
-	api.accessKey = accessKey
+	if strings.TrimSpace(api.loginKey) == "" {
+		api.loginKey = "browser-managed-key"
+	}
+	api.accessKey = api.loginKey
+	api.resolveErr = nil
 	return nil
+}
+
+func (api *fakeImportAuthAPI) HasExplicitAccessKey() bool { return api.explicit }
+
+func (api *fakeImportAuthAPI) CredentialScope(context.Context) (string, error) {
+	if api.credentialScope == "" {
+		return "browser-device-scope", nil
+	}
+	return api.credentialScope, nil
 }
 
 func (api *fakeImportAuthAPI) Probe(context.Context) error {
@@ -62,8 +105,8 @@ func TestEnsureCanvasImportPippitAuthAcceptsExistingKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ensureCanvasImportPippitAuth() error = %v", err)
 	}
-	if auth.probes != 1 || prompted || len(auth.setValues) != 0 {
-		t.Fatalf("probes/prompted/sets = %d/%v/%v, want 1/false/none", auth.probes, prompted, auth.setValues)
+	if auth.probes != 1 || prompted || auth.logins != 0 {
+		t.Fatalf("probes/prompted/logins = %d/%v/%d, want 1/false/0", auth.probes, prompted, auth.logins)
 	}
 }
 
@@ -71,48 +114,36 @@ func TestEnsureCanvasImportPippitAuthMissingKeyIsSideEffectFreeWhenNonInteractiv
 	auth := &fakeImportAuthAPI{}
 
 	err := ensureCanvasImportPippitAuth(context.Background(), auth, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "未找到小云雀 Access Key") {
+	if err == nil || !strings.Contains(err.Error(), "pippit-tool-cli login") {
 		t.Fatalf("ensureCanvasImportPippitAuth() error = %v, want missing-key guidance", err)
 	}
-	if auth.probes != 0 || len(auth.setValues) != 0 {
-		t.Fatalf("probes/sets = %d/%v, want no side effects", auth.probes, auth.setValues)
+	if auth.probes != 0 || auth.logins != 0 {
+		t.Fatalf("probes/logins = %d/%d, want no side effects", auth.probes, auth.logins)
 	}
 }
 
-func TestEnsureCanvasImportPippitAuthPromptsForMissingKeyWithoutProbingEmptyInput(t *testing.T) {
-	auth := &fakeImportAuthAPI{}
-	responses := []importAuthPromptResponse{
-		{Action: importAuthPromptReplace, AccessKey: "  "},
-		{Action: importAuthPromptReplace, AccessKey: " pasted-key "},
-	}
-	requests := make([]importAuthPromptRequest, 0, len(responses))
+func TestEnsureCanvasImportPippitAuthMissingCredentialStartsBrowserLoginBeforeProbe(t *testing.T) {
+	auth := &fakeImportAuthAPI{loginKey: "browser-key"}
+	prompted := false
 
 	err := ensureCanvasImportPippitAuth(
 		context.Background(),
 		auth,
 		true,
-		func(_ context.Context, request importAuthPromptRequest) (importAuthPromptResponse, error) {
-			requests = append(requests, request)
-			response := responses[0]
-			responses = responses[1:]
-			return response, nil
+		func(context.Context, importAuthPromptRequest) (importAuthPromptResponse, error) {
+			prompted = true
+			return importAuthPromptResponse{}, nil
 		},
 	)
 	if err != nil {
 		t.Fatalf("ensureCanvasImportPippitAuth() error = %v", err)
 	}
-	if len(requests) != 2 || requests[0].HasAccessKey || requests[1].HasAccessKey {
-		t.Fatalf("prompt requests = %#v, want two missing-key prompts", requests)
-	}
-	if !strings.Contains(requests[1].Failure, "不能为空") {
-		t.Fatalf("second prompt failure = %q, want empty-key guidance", requests[1].Failure)
-	}
-	if auth.probes != 1 || strings.Join(auth.setValues, ",") != "pasted-key" {
-		t.Fatalf("probes/sets = %d/%v, want one verified in-memory update", auth.probes, auth.setValues)
+	if auth.logins != 1 || auth.probes != 1 || prompted {
+		t.Fatalf("logins/probes/prompted = %d/%d/%v, want 1/1/false", auth.logins, auth.probes, prompted)
 	}
 }
 
-func TestEnsureCanvasImportPippitAuthRetriesAndReplacesInvalidKey(t *testing.T) {
+func TestEnsureCanvasImportPippitAuthRetriesThenUsesBrowserLogin(t *testing.T) {
 	auth := &fakeImportAuthAPI{
 		accessKey: "invalid-secret-key",
 		probeErrors: []error{
@@ -123,7 +154,7 @@ func TestEnsureCanvasImportPippitAuthRetriesAndReplacesInvalidKey(t *testing.T) 
 	}
 	responses := []importAuthPromptResponse{
 		{Action: importAuthPromptRetry},
-		{Action: importAuthPromptReplace, AccessKey: "replacement-key"},
+		{Action: importAuthPromptLogin},
 	}
 	requests := make([]importAuthPromptRequest, 0, len(responses))
 
@@ -141,10 +172,13 @@ func TestEnsureCanvasImportPippitAuthRetriesAndReplacesInvalidKey(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ensureCanvasImportPippitAuth() error = %v", err)
 	}
-	if auth.probes != 3 || strings.Join(auth.setValues, ",") != "replacement-key" {
-		t.Fatalf("probes/sets = %d/%v, want retry then replacement", auth.probes, auth.setValues)
+	if auth.probes != 3 || auth.logins != 1 {
+		t.Fatalf("probes/logins = %d/%d, want retry then browser login", auth.probes, auth.logins)
 	}
-	if len(requests) != 2 || !requests[0].HasAccessKey || !requests[1].HasAccessKey {
+	if len(auth.loginOptions) != 1 || !auth.loginOptions[0].ForceRefresh {
+		t.Fatalf("login options = %#v, want forced replacement after rejected AK", auth.loginOptions)
+	}
+	if len(requests) != 2 || !requests[0].HasCredential || !requests[1].HasCredential {
 		t.Fatalf("prompt requests = %#v, want failed-key prompts", requests)
 	}
 	if strings.Contains(requests[0].Failure, "invalid-secret-key") || !strings.Contains(requests[0].Failure, "HTTP 401") {
@@ -169,8 +203,8 @@ func TestEnsureCanvasImportPippitAuthCanCancelAfterProbeFailure(t *testing.T) {
 	if !errors.Is(err, errCanvasImportAuthCanceled) {
 		t.Fatalf("ensureCanvasImportPippitAuth() error = %v, want cancellation", err)
 	}
-	if auth.probes != 1 || len(auth.setValues) != 0 {
-		t.Fatalf("probes/sets = %d/%v, want one read-only probe and no update", auth.probes, auth.setValues)
+	if auth.probes != 1 || auth.logins != 0 {
+		t.Fatalf("probes/logins = %d/%d, want one read-only probe and no login", auth.probes, auth.logins)
 	}
 }
 
@@ -179,7 +213,7 @@ func TestEnsureCanvasImportPippitAuthDoesNotExposePromptErrorText(t *testing.T) 
 
 	err := ensureCanvasImportPippitAuth(
 		context.Background(),
-		&fakeImportAuthAPI{},
+		&fakeImportAuthAPI{accessKey: "invalid-key", probeErrors: []error{errors.New("HTTP 401")}},
 		true,
 		func(context.Context, importAuthPromptRequest) (importAuthPromptResponse, error) {
 			return importAuthPromptResponse{}, errors.New("failed after reading " + candidate)
@@ -231,7 +265,7 @@ func TestRunnerImportAuthAPIUsesReadOnlyCanvasQueryAndMemoryOnlyKey(t *testing.T
 	}))
 	defer server.Close()
 
-	cfg := &config.Config{BaseURL: server.URL, HTTPTimeout: time.Second}
+	cfg := &config.Config{BaseURL: server.URL, HTTPTimeout: time.Second, AccessKey: "pasted-key"}
 	runner := common.NewRunner(cfg, nil)
 	runner.Client = common.NewHTTPClient(
 		cfg.BaseURL,
@@ -240,17 +274,21 @@ func TestRunnerImportAuthAPIUsesReadOnlyCanvasQueryAndMemoryOnlyKey(t *testing.T
 	)
 	auth := runnerImportAuthAPI{runner: runner}
 
-	if err := auth.SetAccessKey(" pasted-key "); err != nil {
-		t.Fatalf("SetAccessKey() error = %v", err)
-	}
 	if err := auth.Probe(context.Background()); err != nil {
 		t.Fatalf("Probe() error = %v", err)
 	}
 	if method != http.MethodPost || strings.Join(assetIDs, ",") != "9223372036854775807" {
 		t.Fatalf("probe method/assets = %q/%v, want read-only Canvas query sentinel 9223372036854775807", method, assetIDs)
 	}
-	if cfg.AccessKey != "pasted-key" {
-		t.Fatalf("Config.AccessKey = %q, want trimmed in-memory key", cfg.AccessKey)
+}
+
+func TestRunnerImportMediaPreflightPreservesCredentialState(t *testing.T) {
+	for _, cause := range []error{internal_auth.ErrCredentialNotFound, internal_auth.ErrCredentialExpired} {
+		api := runnerImportMediaAPI{runner: &common.Runner{Auth: credentialErrorAuthManager{err: cause}}}
+		err := api.PreflightUpload(context.Background())
+		if !errors.Is(err, cause) {
+			t.Fatalf("PreflightUpload() error = %v, want wrapped %v", err, cause)
+		}
 	}
 }
 
@@ -289,6 +327,15 @@ func TestCanvasImportPippitAuthFailureRecognizesBusinessRetCode(t *testing.T) {
 	for _, message := range []string{`query failed: ret=1015`, `query failed: ret="1015"`} {
 		if !isCanvasImportPippitAuthFailure(errors.New(message)) {
 			t.Fatalf("isCanvasImportPippitAuthFailure(%q) = false, want true", message)
+		}
+	}
+}
+
+func TestCanvasImportPippitAuthFailureRecognizesWrappedCredentialState(t *testing.T) {
+	for _, cause := range []error{internal_auth.ErrCredentialNotFound, internal_auth.ErrCredentialExpired} {
+		err := fmt.Errorf("upload preflight: %w", cause)
+		if !isCanvasImportPippitAuthFailure(err) {
+			t.Fatalf("wrapped credential error was not recognized: %v", err)
 		}
 	}
 }

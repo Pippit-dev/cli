@@ -7,8 +7,6 @@ import (
 	"io"
 	"os"
 	"strings"
-
-	charmterm "github.com/charmbracelet/x/term"
 )
 
 const importFlagsHint = `--from libtv --url "https://www.liblib.tv/canvas?projectId=<project-id>"`
@@ -164,23 +162,6 @@ func prepareCanvasImportOptions(
 		opts.Open = choice == 1
 	}
 	return opts, prompts, nil
-}
-
-func (prompts *importPromptSession) readSecret(label string) (string, bool, error) {
-	if prompts.tui != nil {
-		value, err := prompts.tui.readSecret(label)
-		return value, false, err
-	}
-	if file, ok := prompts.input.(*os.File); ok && importFileIsTerminal(file) {
-		fmt.Fprint(prompts.stderr, label)
-		value, err := charmterm.ReadPassword(file.Fd())
-		fmt.Fprintln(prompts.stderr)
-		if err != nil {
-			return "", false, fmt.Errorf("安全读取 Access Key 失败：%w", err)
-		}
-		return strings.TrimSpace(string(value)), false, nil
-	}
-	return prompts.readLine(label)
 }
 
 func (prompts *importPromptSession) askChoice(

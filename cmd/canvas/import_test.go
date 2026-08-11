@@ -22,8 +22,6 @@ import (
 
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
-	"github.com/Pippit-dev/pippit-cli/internal/common"
-	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 type fakeImportExporter struct {
@@ -953,15 +951,15 @@ func TestMediaCheckpointDoesNotMarkMissingAKAsUploadRequested(t *testing.T) {
 	}
 }
 
-func TestDefaultJournalPathSeparatesPippitAccessKeys(t *testing.T) {
+func TestLegacyCanvasImportAuthScopeSeparatesExplicitAccessKeys(t *testing.T) {
 	configDirectory := t.TempDir()
 	configDir := func() (string, error) { return configDirectory, nil }
 	source := canvasplan.Source{
 		Provider: "libtv", ProjectID: "037a5c49e1b344e5adbc899ad93fdca9", Fingerprint: "sha256:" + strings.Repeat("1", 64),
 	}
 	target := "https://xyq.jianying.com|ppe_cli_canvas_ak"
-	firstScope := canvasImportAuthScope(&common.Runner{Config: &config.Config{AccessKey: "first-account-ak"}})
-	secondScope := canvasImportAuthScope(&common.Runner{Config: &config.Config{AccessKey: "second-account-ak"}})
+	firstScope := legacyCanvasImportAuthScope("first-account-ak")
+	secondScope := legacyCanvasImportAuthScope("second-account-ak")
 	firstPath, err := resolveImportJournalPath("", source, target, firstScope, configDir)
 	if err != nil {
 		t.Fatal(err)
@@ -1125,9 +1123,11 @@ func testImportDependencies(
 		userCacheDir:  func() (string, error) { return filepath.Join(root, "cache"), nil },
 		userConfigDir: func() (string, error) { return filepath.Join(root, "config"), nil },
 		target:        func() string { return "https://xyq.jianying.com|ppe_cli_canvas_ak" },
-		authScope:     func() string { return strings.Repeat("a", 64) },
-		mediaPoll:     time.Millisecond,
-		mediaTimeout:  time.Second,
+		authScope: func(context.Context) (string, error) {
+			return "browser-device-scope", nil
+		},
+		mediaPoll:    time.Millisecond,
+		mediaTimeout: time.Second,
 	}
 }
 

@@ -51,6 +51,9 @@ func ResumeCreate(
 	result.PollAttempts += attempts
 	if waitErr != nil {
 		result.Warning = waitErr.Error()
+		if IsCredentialUnavailable(waitErr) {
+			return &result, acceptedCreationError(&result, waitErr)
+		}
 		var terminal *CreationTerminalError
 		if errors.As(waitErr, &terminal) {
 			result.State = "failed"
