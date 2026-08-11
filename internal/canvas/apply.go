@@ -86,14 +86,14 @@ func Apply(ctx context.Context, opts ApplyOptions, runner *common.Runner) (*Appl
 	var data applyData
 	if err := json.Unmarshal(envelope.Data, &data); err != nil {
 		return nil, common.NewLogIDError(
-			fmt.Sprintf("canvas apply returned invalid data: %v; query affected assets before retrying because outcome cannot be confirmed", err),
+			fmt.Sprintf("canvas apply returned invalid data: %v; outcome cannot be verified, query affected asset IDs before retrying and do not replay blindly", err),
 			envelope.LogID,
 		)
 	}
 	ordered, err := validateApplyResults(request.Transactions, data.Results)
 	if err != nil {
 		return nil, common.NewLogIDError(
-			fmt.Sprintf("%s; query affected assets before retrying because outcome cannot be confirmed", err),
+			fmt.Sprintf("%s; outcome cannot be verified, query affected asset IDs before retrying and do not replay blindly", err),
 			envelope.LogID,
 		)
 	}

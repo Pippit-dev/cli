@@ -331,7 +331,7 @@ func TestApplyRequiresAcknowledgementAndEveryAssetVersion(t *testing.T) {
 		return decodeInto(out, `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"ack","asset_versions":{}}]}}`)
 	}}
 	_, err = Apply(context.Background(), ApplyOptions{Request: request}, runnerWithClient(missingVersion))
-	if err == nil || !strings.Contains(err.Error(), "omitted version") {
+	if err == nil || !strings.Contains(err.Error(), "omitted version") || !strings.Contains(err.Error(), "do not replay blindly") {
 		t.Fatalf("Apply() error = %v, want missing version rejection", err)
 	}
 }
