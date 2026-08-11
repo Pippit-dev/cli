@@ -31,6 +31,18 @@ type fakeImportExporter struct {
 	mediaBytes map[string][]byte
 	urls       []string
 	bundles    []string
+	authCalls  int
+	authErrors []error
+}
+
+func (exporter *fakeImportExporter) Authenticate(context.Context, bool, io.Writer) error {
+	exporter.authCalls++
+	if len(exporter.authErrors) == 0 {
+		return nil
+	}
+	err := exporter.authErrors[0]
+	exporter.authErrors = exporter.authErrors[1:]
+	return err
 }
 
 func (exporter *fakeImportExporter) Export(
@@ -307,15 +319,15 @@ func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
 		t.Fatalf("opened = %q, want wizard default Yes", opened)
 	}
 	for _, message := range []string{
-		"Source provider:", "1) LibTV (default)", "LibTV canvas URL", "Resume journal:",
-		"1) Automatic (recommended, default)", "2) Custom path", "After import:",
-		"1) Open Canvas (default)", "2) Do not open",
-		"Resume journal: " + executor.opts.JournalPath,
-		`Media progress: processed=1/2 remaining=1 action=uploaded file="one.png"`,
-		`Media progress: processed=2/2 remaining=0 action=reused file="two.png"`,
-		`Media progress: processed=0/2 remaining=2 action=uploading file="one.png"`,
-		"Phase canvas: create/resume, materialize, apply, then verify remote Canvas assets.",
-		"Phase canvas: Canvas import verified by query-back.",
+		"导入来源：", "1) LibTV（默认）", "LibTV 画布链接", "断点续跑记录：",
+		"1) 自动生成（推荐，默认）", "2) 自定义路径", "导入完成后：",
+		"1) 打开画布（默认）", "2) 暂不打开",
+		"断点续跑记录：" + executor.opts.JournalPath,
+		`素材进度：已处理=1/2，剩余=1，状态=已上传，文件="one.png"`,
+		`素材进度：已处理=2/2，剩余=0，状态=已复用，文件="two.png"`,
+		`素材进度：已处理=0/2，剩余=2，状态=正在上传，文件="one.png"`,
+		"阶段：正在创建或续跑画布、写入节点与连线，并回读验证远端画布素材…",
+		"阶段：画布导入已通过回读验证。",
 	} {
 		if !strings.Contains(stderr.String(), message) {
 			t.Fatalf("stderr missing %q:\n%s", message, stderr.String())
@@ -323,6 +335,26 @@ func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
 	}
 	if strings.Count(stdout.String(), "\n") != 1 || !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
 		t.Fatalf("stdout = %q, want one final JSON line", stdout.String())
+	}
+}
+
+func TestImportCommandHelpUsesChineseCopy(t *testing.T) {
+	var stdout bytes.Buffer
+	cmd := newImportCommand(&stdout, io.Discard, importDependencies{})
+	cmd.SetArgs([]string{"--help"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	for _, expected := range []string{
+		"将外部项目导入个人漫剧画布",
+		"不传来源参数时会进入交互式向导",
+		"导入来源（当前仅支持 libtv）",
+		"来源项目链接",
+		"断点续跑记录路径（省略时自动生成）",
+	} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("help output missing %q:\n%s", expected, stdout.String())
+		}
 	}
 }
 
@@ -355,7 +387,7 @@ func TestImportCommandInteractiveWizardRetriesAndUsesNumberedCustomChoices(t *te
 	if opened {
 		t.Fatal("wizard option 2 unexpectedly opened the Canvas")
 	}
-	if got := strings.Count(stderr.String(), "Please select a number from 1 to"); got != 3 {
+	if got := strings.Count(stderr.String(), "请输入 1 到"); got != 3 {
 		t.Fatalf("invalid choice messages = %d, want 3:\n%s", got, stderr.String())
 	}
 	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
@@ -377,8 +409,8 @@ func TestImportCommandInteractiveWizardWarnsAndContinuesDegradations(t *testing.
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "known nonfatal degradation(s)") ||
-		!strings.Contains(stderr.String(), "empty-media placeholders or semantic downgrades") ||
+	if !strings.Contains(stderr.String(), "已知的非致命能力降级") ||
+		!strings.Contains(stderr.String(), "空素材占位或语义降级") ||
 		!strings.Contains(stderr.String(), "degradation_count") {
 		t.Fatalf("stderr = %q, want auditable automatic degradation warning", stderr.String())
 	}
@@ -406,7 +438,7 @@ func TestImportCommandInteractiveWizardHonorsExplicitDegradationRejection(t *tes
 	if executor.calls != 0 {
 		t.Fatalf("executor calls = %d, want no Canvas write after explicit rejection", executor.calls)
 	}
-	if strings.Contains(stderr.String(), "continuing the interactive import") {
+	if strings.Contains(stderr.String(), "交互式导入将自动继续") {
 		t.Fatalf("stderr = %q, explicit false must not be ignored by the wizard", stderr.String())
 	}
 }
@@ -421,8 +453,8 @@ func TestImportCommandInteractiveCustomJournalEOFIsActionable(t *testing.T) {
 	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n2\n"))
 	cmd.SilenceUsage = true
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "custom journal path") ||
-		!strings.Contains(err.Error(), "choose 1 for Automatic") {
+	if err == nil || !strings.Contains(err.Error(), "自定义断点记录路径") ||
+		!strings.Contains(err.Error(), "请选择 1 自动生成") {
 		t.Fatalf("Execute() error = %v, want actionable custom path EOF", err)
 	}
 	if len(exporter.urls) != 0 {
@@ -439,7 +471,7 @@ func TestImportCommandMissingFlagsFailsActionablyWithoutInteractiveInput(t *test
 	cmd.SetIn(strings.NewReader(""))
 	cmd.SilenceUsage = true
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "stdin is not interactive") ||
+	if err == nil || !strings.Contains(err.Error(), "当前输入不是交互式终端") ||
 		!strings.Contains(err.Error(), "--from libtv --url") {
 		t.Fatalf("Execute() error = %v, want actionable non-interactive flags", err)
 	}
@@ -469,7 +501,7 @@ func TestImportCommandInteractiveEOFMissingURLFailsBeforeExport(t *testing.T) {
 	cmd.SetIn(strings.NewReader("\n"))
 	cmd.SilenceUsage = true
 	err := cmd.Execute()
-	if err == nil || !strings.Contains(err.Error(), "ended before a LibTV URL") ||
+	if err == nil || !strings.Contains(err.Error(), "尚未提供 LibTV 画布链接") ||
 		!strings.Contains(err.Error(), "--from libtv --url") {
 		t.Fatalf("Execute() error = %v, want actionable EOF guidance", err)
 	}
@@ -562,9 +594,9 @@ func TestImportCommandWaitsForProcessingUploadAndContinuesSameInvocation(t *test
 		t.Fatalf("upload/query/execute = %d/%d/%d, want 1/3/1 in one invocation", media.uploads, media.queries, executor.calls)
 	}
 	for _, progress := range []string{
-		`Media progress: processed=0/1 remaining=1 action=processing file="one.png"`,
-		`Media progress: processed=0/1 remaining=1 action=waiting file="one.png"`,
-		`Media progress: processed=1/1 remaining=0 action=uploaded file="one.png"`,
+		`素材进度：已处理=0/1，剩余=1，状态=正在处理，文件="one.png"`,
+		`素材进度：已处理=0/1，剩余=1，状态=等待处理中，文件="one.png"`,
+		`素材进度：已处理=1/1，剩余=0，状态=已上传，文件="one.png"`,
 	} {
 		if !strings.Contains(stderr.String(), progress) {
 			t.Fatalf("stderr = %q, want progress %q", stderr.String(), progress)
@@ -572,6 +604,37 @@ func TestImportCommandWaitsForProcessingUploadAndContinuesSameInvocation(t *test
 	}
 	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
 		t.Fatalf("stdout = %q, want completed import JSON", stdout.String())
+	}
+}
+
+func TestImportCommandContinuesAfterInteractiveMediaProcessingWindow(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testSingleMediaPlan(t)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	media := &fakeImportMediaAPI{
+		uploadState: canvascore.StateProcessing,
+		queryReady:  []bool{false, true},
+	}
+	executor := &fakeImportExecutor{result: verifiedImportResult()}
+	deps := testImportDependencies(temp, exporter, media, executor)
+	deps.mediaPoll = 2 * time.Millisecond
+	deps.mediaTimeout = time.Millisecond
+	var stderr bytes.Buffer
+	prompts := newImportPromptSessionWithTUI(
+		context.Background(), strings.NewReader(""), &stderr, false,
+	)
+
+	result, err := runCanvasImport(context.Background(), importOptions{
+		Provider: "libtv", SourceURL: testLibTVURL,
+	}, deps, &stderr, prompts)
+	if err != nil {
+		t.Fatalf("runCanvasImport() error = %v, stderr = %s", err, stderr.String())
+	}
+	if result == nil || result.State != canvasplan.StateVerified || media.uploads != 1 || media.queries != 2 {
+		t.Fatalf("result/upload/query = %#v/%d/%d, want one upload and continued queries", result, media.uploads, media.queries)
+	}
+	if !strings.Contains(stderr.String(), "继续只读查询，不会重复上传") {
+		t.Fatalf("stderr = %q, want noninterrupting processing progress", stderr.String())
 	}
 }
 
@@ -624,8 +687,8 @@ func TestImportMediaProcessingQueryAuthErrorStopsAndPreservesIDs(t *testing.T) {
 	}
 	api := &fakeImportMediaAPI{queryErr: errors.New("HTTP 401 Unauthorized")}
 	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "read/authentication error") ||
-		!strings.Contains(err.Error(), "401 Unauthorized") || !strings.Contains(err.Error(), "durable IDs remain") {
+	if err == nil || !strings.Contains(err.Error(), "读取或授权错误") ||
+		!strings.Contains(err.Error(), "401 Unauthorized") || !strings.Contains(err.Error(), "持久化素材 ID 仍保存在") {
 		t.Fatalf("resolveImportMedia() error = %v, want immediate explicit auth/query error", err)
 	}
 	if api.uploads != 0 || api.queries != 1 {
@@ -774,7 +837,7 @@ func TestImportMediaRejectsLegacyPNGCheckpointWhenPixelsChange(t *testing.T) {
 	opts, oldSHA := testPNGCheckpointMigrationOptions(t, oldPNG, currentPNG)
 	api := &fakeImportMediaAPI{}
 	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "image content changed") {
+	if err == nil || !strings.Contains(err.Error(), "图片内容在断点记录创建后发生了变化") {
 		t.Fatalf("resolveImportMedia() error = %v, want normalized-content mismatch rejection", err)
 	}
 	if api.uploads != 0 || api.queries != 0 {
@@ -815,7 +878,7 @@ func TestImportMediaProgressReportsEmptySet(t *testing.T) {
 	}
 	if len(resolved.Media) != 0 || !strings.Contains(
 		stderr.String(),
-		`Media progress: processed=0/0 remaining=0 action=complete file="(none)"`,
+		`素材进度：已处理=0/0，剩余=0，状态=完成，文件="（无）"`,
 	) {
 		t.Fatalf("resolved/stderr = %#v/%q, want explicit 0/0 progress", resolved, stderr.String())
 	}
@@ -878,7 +941,7 @@ func TestMediaCheckpointDoesNotMarkMissingAKAsUploadRequested(t *testing.T) {
 	opts := testMediaResolutionOptions(t)
 	api := &missingAKPreflightMediaAPI{}
 	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "authentication failed") {
+	if err == nil || !strings.Contains(err.Error(), "授权检查失败") {
 		t.Fatalf("resolveImportMedia() error = %v, want explicit authentication failure", err)
 	}
 	if api.uploads != 0 {
@@ -935,7 +998,7 @@ func TestReadyMediaCheckpointMustBelongToCurrentPippitAccount(t *testing.T) {
 	}
 	api := &fakeImportMediaAPI{queryErr: errors.New("asset not found for current account")}
 	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "current Pippit account") {
+	if err == nil || !strings.Contains(err.Error(), "当前小云雀账号") {
 		t.Fatalf("resolveImportMedia() error = %v, want cross-account checkpoint rejection", err)
 	}
 	if api.queries != 1 || api.uploads != 0 {
@@ -1053,6 +1116,8 @@ func testImportDependencies(
 	executor importExecutor,
 ) importDependencies {
 	return importDependencies{
+		pippitAuth:    &fakeImportAuthAPI{accessKey: "test-access-key"},
+		sourceAuth:    exporter.(importSourceAuthenticator),
 		exporter:      exporter,
 		media:         media,
 		executor:      executor,
