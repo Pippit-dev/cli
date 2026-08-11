@@ -205,7 +205,7 @@ Canvas beta 暴露个人漫剧画布的通用原子命令，不在服务端增�
 
 ```bash
 npx @pippit-dev/cli@beta install
-export XYQ_ACCESS_KEY="<access-key>"
+pippit-tool-cli login
 
 # 仅测试 PPE 时配置；生产环境不要设置
 export PIPPIT_CLI_PPE_ENV="ppe_cli_canvas_ak"
@@ -219,7 +219,9 @@ pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 
 `canvas create/get/apply/upload` 的输出均为单行 JSON，所有资源 ID 保持字符串，便于脚本和 Agent 调用。`create` 的 `request_id` 当前用于追踪和恢复，不是跨服务崩溃窗口的严格幂等键；请求结果不明确时不要盲目重试。beta 的 `apply` 每次只接受一个 transaction（可以包含多个 patches），并严格检查该 transaction 的 ACK 和每个资产版本；当前服务端仍不保证跨资产 all-or-nothing，调用方应在写后执行 `get` 校验，并持久化自己的 operation journal。
 
-PPE 只影响 Pippit API 同源请求。CLI 不会把 Access Key、`x-tt-env`、`x-use-ppe` 或 `x-schedule-vdc` 转发给第三方绝对 URL；`--ppe-env` 的优先级高于 `PIPPIT_CLI_PPE_ENV`，二者都未提供时访问生产环境。
+`login` 会打开小云雀网页完成授权，并把本机设备专属凭证保存到系统安全凭证库；不会在终端显示 Access Key。后续原生 CLI 命令会自动读取该凭证。`XYQ_ACCESS_KEY` 仅作为 CI/Agent 的显式覆盖保留，且优先级高于网页登录凭证；配置错误时不会静默回退到个人登录。
+
+PPE 只影响登录完成后的 Pippit API 同源业务请求，不改变登录账号或凭证。CLI 不会把 Access Key、`x-tt-env`、`x-use-ppe` 或 `x-schedule-vdc` 转发给第三方绝对 URL；`--ppe-env` 的优先级高于 `PIPPIT_CLI_PPE_ENV`，二者都未提供时访问生产环境。同一个有效登录凭证可用于生产环境和 PPE。
 
 ### 一键导入 LibTV 画布
 
@@ -235,11 +237,11 @@ CLI 会在交互终端中显示彩色向导：使用 ↑/↓ 移动、Enter 确�
 
 给定链接后，CLI 会通过官方 LibTV CLI 完成网页授权与草稿/素材导出，再依次调用通用的 `upload`、`create`、内部 ID 分配、单 transaction `apply` 和 `get` 全量校验。
 
-生产环境使用时删除 `--ppe-env ppe_cli_canvas_ak`。当前登录能力仍沿用既有 Access Key 配置；CLI 自动保存 AK 的 `login` 流程会单独交付。
+生产环境使用时删除 `--ppe-env ppe_cli_canvas_ak`。交互式导入会在下载 LibTV 项目和素材之前依次校验小云雀与 LibTV 登录；小云雀未登录或凭证失效时会直接打开浏览器授权，成功后在同一进程继续，不再要求粘贴 Access Key。
 
 首次运行时，若本机没有 LibTV CLI，导入器只会从 LibTV 官方静态域下载固定版本 1.1.3 的对应平台 ZIP，并同时校验 ZIP 和可执行文件的内置 SHA-256；不会执行远程安装脚本。若官方 LibTV CLI 尚未登录，它会打开 `libtv login web --open` 的官方网页授权流程，导入器本身不读取浏览器 Cookie 或 LibTV credential 文件。
 
-`--accept-degradations` 表示接受计划中明确列出的不可移植节点。例如没有生成结果的图片/视频节点会保留为空占位，LibTV 私有 `video-clip` 会降级成空的 Pippit video-composite。交互式导入会就地询问是否接受；非交互调用未传该参数时，CLI 会在任何 Pippit 写入前停止。
+`--accept-degradations` 表示接受计划中明确列出的不可移植节点。例如没有生成结果的图片/视频节点会保留为空占位，LibTV 私有 `video-clip` 会降级成空的 Pippit video-composite。交互式导入会显示中文 warning 后自动继续；非交互调用未传该参数时，CLI 会在任何 Pippit 写入前停止。
 
 导入状态会写入权限为 `0600` 的本地 journal。素材上传、画布创建或 transaction 结果不明确时，CLI 会保留已获得的持久 ID 并拒绝盲目重复写入；重复执行同一条命令会优先 query-back 恢复。只有 root 和所有伴生资产逐一通过 canonical hash 校验后，命令才返回 `state=verified` 并执行 `--open`。
 
@@ -261,7 +263,7 @@ pippit-tool-cli libtv plan \
 
 ```bash
 npx @pippit-dev/cli@latest install
-export XYQ_ACCESS_KEY="<access-key>"
+pippit-tool-cli login
 pippit-tool-cli --version
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-tool-cli short-drama +upload-file --path ./reference.doc
@@ -389,4 +391,6 @@ pippit-tool-cli query-result \
 
 ## 鉴权
 
-`short-drama +submit-run`、`get-thread`、`list-thread-file`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
+原生 CLI 命令通过 `pippit-tool-cli login` 获取并安全保存的设备专属凭证鉴权。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机网页登录凭证；这些命令都不会输出 Access Key。CI/Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证。
+
+`skills/xyq-nest-skill/scripts` 下的独立 Python 脚本尚未接入原生 CLI 的安全凭证库，当前仍需要 `XYQ_ACCESS_KEY`；不要把这一限制误解为 `pippit-tool-cli` 原生命令仍需手工配置 AK。
