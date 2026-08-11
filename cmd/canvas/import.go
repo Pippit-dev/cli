@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -24,9 +26,9 @@ type importOptions struct {
 	SourceURL                  string
 	Open                       bool
 	AcceptDegradations         bool
+	AcceptDegradationsExplicit bool
 	JournalPath                string
 	OpenExplicit               bool
-	AcceptDegradationsExplicit bool
 	JournalExplicit            bool
 }
 
@@ -41,6 +43,7 @@ type importExporter interface {
 
 type importExecutor interface {
 	Execute(context.Context, canvasplan.Plan, canvasplan.ResolvedMediaSet, canvasplan.ExecuteOptions) (*canvasplan.ExecutionResult, error)
+	Reconcile(context.Context, string, canvasplan.Plan, canvasplan.ResolvedMediaSet) (*canvasplan.ExecutionResult, error)
 }
 
 type importDependencies struct {
@@ -53,6 +56,8 @@ type importDependencies struct {
 	target        func() string
 	authScope     func() string
 	isInteractive func(io.Reader) bool
+	mediaPoll     time.Duration
+	mediaTimeout  time.Duration
 }
 
 type runnerImportExecutor struct {
@@ -68,6 +73,15 @@ func (executor runnerImportExecutor) Execute(
 	return executor.executor.Execute(ctx, plan, resolved, opts)
 }
 
+func (executor runnerImportExecutor) Reconcile(
+	ctx context.Context,
+	journalPath string,
+	plan canvasplan.Plan,
+	resolved canvasplan.ResolvedMediaSet,
+) (*canvasplan.ExecutionResult, error) {
+	return executor.executor.ReconcileWithInputs(ctx, journalPath, plan, resolved)
+}
+
 func newImportDependencies(runner *common.Runner) importDependencies {
 	return importDependencies{
 		exporter:      nodeLibTVExporter{},
@@ -79,6 +93,8 @@ func newImportDependencies(runner *common.Runner) importDependencies {
 		target:        func() string { return canvasImportTarget(runner) },
 		authScope:     func() string { return canvasImportAuthScope(runner) },
 		isInteractive: importInputIsInteractive,
+		mediaPoll:     defaultImportMediaPollInterval,
+		mediaTimeout:  defaultImportMediaWaitTimeout,
 	}
 }
 
@@ -96,8 +112,8 @@ func newImportCommand(
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.OpenExplicit = cmd.Flags().Changed("open")
-			opts.AcceptDegradationsExplicit = cmd.Flags().Changed("accept-degradations")
 			opts.JournalExplicit = cmd.Flags().Changed("journal")
+			opts.AcceptDegradationsExplicit = cmd.Flags().Changed("accept-degradations")
 			prepared, prompts, err := prepareCanvasImportOptions(
 				cmd.InOrStdin(), opts, dependencies.isInteractive, stderr,
 			)
@@ -174,20 +190,18 @@ func runCanvasImport(
 		_ = removeOwnedBundle(outputDir, bundleRoot)
 		return nil, err
 	}
-	if len(plan.Degradations) > 0 && !opts.AcceptDegradations {
-		if prompts == nil || opts.AcceptDegradationsExplicit {
+	if len(plan.Degradations) > 0 {
+		if opts.AcceptDegradations {
+			// The caller explicitly accepted the adapter's auditable warnings.
+		} else if prompts != nil && !opts.AcceptDegradationsExplicit {
+			fmt.Fprintf(
+				stderr,
+				"Warning: LibTV export contains %d known nonfatal degradation(s), such as empty-media placeholders or semantic downgrades; continuing the interactive import. The final JSON records degradation_count.\n",
+				len(plan.Degradations),
+			)
+		} else {
 			return nil, fmt.Errorf(
 				"LibTV export reports %d explicit degradation(s); inspect %s (plan: %s), then rerun with --accept-degradations",
-				len(plan.Degradations), outputDir, exported.PlanPath,
-			)
-		}
-		accepted, promptErr := prompts.confirmDegradations(len(plan.Degradations))
-		if promptErr != nil {
-			return nil, promptErr
-		}
-		if !accepted {
-			return nil, fmt.Errorf(
-				"LibTV import was cancelled because the export contains %d degradation(s); inspect %s (plan: %s)",
 				len(plan.Degradations), outputDir, exported.PlanPath,
 			)
 		}
@@ -228,9 +242,22 @@ func runCanvasImport(
 		BundleRoot:        bundleRoot,
 		CanvasJournalPath: journalPath,
 		CheckpointPath:    checkpointPath,
+		PollInterval:      dependencies.mediaPoll,
+		WaitTimeout:       dependencies.mediaTimeout,
 	}, dependencies.media, stderr)
 	if err != nil {
 		return nil, err
+	}
+	plan, err = canonicalizeImportPlanMedia(plan, target, journalPath, checkpointPath)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize CanvasPlan media identities: %w", err)
+	}
+	result, handled, reconcileErr := reconcileExistingCanvasImport(
+		ctx, journalPath, plan, resolved, opts, dependencies, stderr,
+	)
+	if handled {
+		_ = removeOwnedBundle(outputDir, bundleRoot)
+		return result, reconcileErr
 	}
 	fmt.Fprintln(stderr, "Phase canvas: create/resume, materialize, apply, then verify remote Canvas assets.")
 	result, executeErr := dependencies.executor.Execute(ctx, plan, resolved, canvasplan.ExecuteOptions{
@@ -239,6 +266,58 @@ func runCanvasImport(
 	if executeErr != nil {
 		return result, fmt.Errorf("execute CanvasPlan: %w", executeErr)
 	}
+	return finishVerifiedCanvasImport(ctx, result, opts, dependencies, stderr)
+}
+
+func reconcileExistingCanvasImport(
+	ctx context.Context,
+	journalPath string,
+	plan canvasplan.Plan,
+	resolved canvasplan.ResolvedMediaSet,
+	opts importOptions,
+	dependencies importDependencies,
+	stderr io.Writer,
+) (*canvasplan.ExecutionResult, bool, error) {
+	info, err := os.Lstat(journalPath)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, true, fmt.Errorf("inspect Canvas import journal for reconciliation: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, true, fmt.Errorf("Canvas import journal must be a regular non-symbolic file")
+	}
+	result, reconcileErr := dependencies.executor.Reconcile(ctx, journalPath, plan, resolved)
+	if errors.Is(reconcileErr, canvasplan.ErrReconcileNotEligible) {
+		return nil, false, nil
+	}
+	if result != nil && !journalOnlyReconcileState(result.State) {
+		return nil, false, nil
+	}
+	if reconcileErr != nil {
+		return result, true, fmt.Errorf("reconcile Canvas import journal without replaying apply: %w", reconcileErr)
+	}
+	result, finishErr := finishVerifiedCanvasImport(ctx, result, opts, dependencies, stderr)
+	return result, true, finishErr
+}
+
+func journalOnlyReconcileState(state string) bool {
+	switch state {
+	case canvasplan.StateApplyAmbiguous, canvasplan.StateVerified, canvasplan.StateVerificationFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func finishVerifiedCanvasImport(
+	ctx context.Context,
+	result *canvasplan.ExecutionResult,
+	opts importOptions,
+	dependencies importDependencies,
+	stderr io.Writer,
+) (*canvasplan.ExecutionResult, error) {
 	if !verifiedExecution(result) {
 		return result, fmt.Errorf("CanvasPlan execution completed without query-back verification")
 	}
