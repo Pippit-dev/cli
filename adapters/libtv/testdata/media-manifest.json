@@ -14,6 +14,8 @@
     {
       "sourceNodeId": "audio-1",
       "fileName": "input.wav",
+      "relative_path": "media/input.wav",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "assetId": "must-not-leak",
       "pippitAssetId": "must-not-leak"
     }

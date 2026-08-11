@@ -2,20 +2,24 @@ import { createHash } from 'node:crypto';
 
 const PLAN_SCHEMA = 'pippit-canvas-plan/0.1';
 const SNAPSHOT_SCHEMA = 'xyq-libtv-snapshot/0.1';
-const SUPPORTED_NODE_TYPES = new Set(['group', 'video', 'audio', 'video-clip']);
+const SUPPORTED_NODE_TYPES = new Set(['group', 'image', 'video', 'audio', 'video-clip']);
 
-function canonicalize(value) {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (!value || typeof value !== 'object') return value;
+function canonicalize(value, replacer, key = '') {
+  const replaced = replacer ? replacer(value, key) : value;
+  if (Array.isArray(replaced)) {
+    return replaced.map((child) => canonicalize(child, replacer)).filter((child) => child !== undefined);
+  }
+  if (!replaced || typeof replaced !== 'object') return replaced;
   return Object.fromEntries(
-    Object.keys(value)
+    Object.keys(replaced)
       .sort()
-      .map((key) => [key, canonicalize(value[key])]),
+      .map((childKey) => [childKey, canonicalize(replaced[childKey], replacer, childKey)])
+      .filter(([, child]) => child !== undefined),
   );
 }
 
-function sha256Json(value) {
-  return createHash('sha256').update(JSON.stringify(canonicalize(value))).digest('hex');
+function sha256Json(value, replacer) {
+  return createHash('sha256').update(JSON.stringify(canonicalize(value, replacer))).digest('hex');
 }
 
 function nonEmptyString(value) {
@@ -55,11 +59,39 @@ function mediaManifestByNodeId(mediaManifest) {
     const sourceNodeId = nonEmptyString(item?.sourceNodeId ?? item?.source_node_id);
     if (!sourceNodeId || result.has(sourceNodeId)) continue;
     result.set(sourceNodeId, {
+      byteSize: normalizeByteSize(item?.byteSize ?? item?.byte_size),
       fileName: nonEmptyString(item?.fileName ?? item?.file_name ?? item?.path),
+      localPath: normalizeLocalMediaPath(item?.localPath ?? item?.local_path ?? item?.relativePath ?? item?.relative_path),
+      mediaType: nonEmptyString(item?.mediaType ?? item?.media_type),
+      sha256: normalizeSHA256(item?.sha256),
       url: normalizeHTTPSURL(item?.url),
     });
   }
   return result;
+}
+
+function normalizeByteSize(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || number <= 0) throw new Error('media byte_size must be a positive safe integer');
+  return number;
+}
+
+function normalizeSHA256(value) {
+  const text = nonEmptyString(value);
+  if (!text) return undefined;
+  const hex = text.startsWith('sha256:') ? text.slice(7) : text;
+  if (!/^[0-9a-f]{64}$/i.test(hex)) throw new Error('media sha256 must contain 64 hexadecimal characters');
+  return hex.toLowerCase();
+}
+
+function normalizeLocalMediaPath(value) {
+  const text = nonEmptyString(value);
+  if (!text) return undefined;
+  if (text.includes('\\') || text.startsWith('/') || text.split('/').some((part) => !part || part === '.' || part === '..')) {
+    throw new Error(`invalid local media path: ${text.slice(0, 120)}`);
+  }
+  return text;
 }
 
 function assetReferenceByNodeId(snapshot) {
@@ -119,7 +151,7 @@ function mediaMetadata(data) {
 }
 
 function fallbackFileName(node, metadata) {
-  const extension = metadata.extension ?? (node.type === 'audio' ? 'audio' : 'video');
+  const extension = metadata.extension ?? node.type;
   const stem = (nonEmptyString(node.name) ?? node.id)
     .replaceAll(/[\\/:*?"<>|]/g, '_')
     .slice(0, 120);
@@ -212,7 +244,23 @@ function sourceFingerprint(snapshot) {
     project: snapshot.project,
     nodeDetails: snapshot.nodeDetails ?? [],
     assetReferences: snapshot.assetReferences ?? [],
-  })}`;
+  }, fingerprintReplacer)}`;
+}
+
+function fingerprintReplacer(value, key) {
+  if (key && /token|cookie|authorization|credential|signature|secret|access.?key|expires?/i.test(key)) {
+    return undefined;
+  }
+  if (typeof value !== 'string') return value;
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return `${url.protocol}//${url.host}${url.pathname}`;
+    }
+  } catch {
+    // Non-URL strings are stable source data.
+  }
+  return value;
 }
 
 function canvasTitle(snapshot, projectId, override) {
@@ -289,22 +337,50 @@ function convertSnapshotToCanvasPlan(snapshot, options = {}) {
 
     const mediaType = sourceNode.type;
     const manifestItem = manifest.get(sourceNodeId) ?? {};
-    const url = manifestItem.url ?? assetReferences.get(sourceNodeId) ?? normalizeHTTPSURL(detail?.url);
+    if (manifestItem.mediaType && manifestItem.mediaType !== mediaType) {
+      throw new Error(`media manifest type ${manifestItem.mediaType} does not match ${mediaType} node ${sourceNodeId}`);
+    }
+    if (Boolean(manifestItem.localPath) !== Boolean(manifestItem.sha256)) {
+      throw new Error(`media manifest node ${sourceNodeId} must provide local_path and sha256 together`);
+    }
+    const url = manifestItem.localPath
+      ? undefined
+      : manifestItem.url ?? assetReferences.get(sourceNodeId) ?? normalizeHTTPSURL(detail?.url);
     const metadata = mediaMetadata(detail);
+    if (manifestItem.byteSize) metadata.byte_size = manifestItem.byteSize;
     const fileName = safeFileName(manifestItem.fileName) ?? safeFileName(fileNameFromURL(url)) ?? fallbackFileName(sourceNode, metadata);
     const mediaLogicalId = logicalMediaId(sourceNodeId);
+    if (!manifestItem.localPath && !url) {
+      if (mediaType !== 'audio') {
+        const placeholderKind = `${mediaType}-placeholder`;
+        nodes.push({
+          ...base,
+          kind: placeholderKind,
+          target_type: `biz/${mediaType}`,
+        });
+        degradations.push({
+          code: 'libtv.media.empty_placeholder',
+          source_node_id: sourceNodeId,
+          message: `LibTV ${mediaType} node has no downloadable result and will become an empty ${mediaType} placeholder.`,
+        });
+        return;
+      }
+      // Snapshot-only compatibility: legacy callers resolve audio out of band.
+    }
     requiredMedia.push(compact({
       logical_id: mediaLogicalId,
       source_node_id: sourceNodeId,
       file_name: fileName,
       media_type: mediaType,
+      local_path: manifestItem.localPath,
+      sha256: manifestItem.sha256,
       url,
       metadata,
     }));
     nodes.push({
       ...base,
       kind: mediaType,
-      target_type: mediaType === 'audio' ? 'biz/audio' : 'biz/video',
+      target_type: `biz/${mediaType}`,
       media_logical_id: mediaLogicalId,
     });
   });
