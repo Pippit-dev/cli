@@ -115,6 +115,17 @@ func TestRootHelpIncludesPPEFlag(t *testing.T) {
 	}
 }
 
+func TestRootRegistersTopLevelBrowserAuthCommands(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	for _, name := range []string{"login", "status", "logout"} {
+		command, _, err := root.Find([]string{name})
+		if err != nil || command == nil || command.Name() != name {
+			t.Fatalf("root.Find(%q) = %#v, %v", name, command, err)
+		}
+	}
+}
+
 func newPPEFlagTestRoot(t *testing.T) (*config.Config, *cobra.Command, *bool) {
 	t.Helper()
 	cfg := config.Load()

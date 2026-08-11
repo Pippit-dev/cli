@@ -1,18 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
 	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
 	"github.com/Pippit-dev/pippit-cli/cmd/video_tool"
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
@@ -32,14 +34,15 @@ func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 
 func newRootRunner(cfg *config.Config) *common.Runner {
 	runner := common.NewRunner(cfg, nil)
+	runner.Auth = internal_auth.NewManager(cfg)
 	runner.Client = common.NewHTTPClientWithPPEEnv(
 		cfg.BaseURL,
 		cfg.HTTPTimeout,
-		common.NewAccessKeyProviderAuthorizer(func() string {
-			if runner.Config == nil {
-				return ""
+		common.NewAccessKeyContextProviderAuthorizer(func(ctx context.Context) (string, error) {
+			if runner.Auth == nil {
+				return "", nil
 			}
-			return runner.Config.AccessKey
+			return runner.Auth.ResolveAccessKey(ctx)
 		}),
 		func() string { return cfg.PPEEnv },
 	)
@@ -60,7 +63,9 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	configurePPEFlag(root, runner.Config)
-	// root.AddCommand(authcmd.NewCommand(stdout, stderr, runner)) // temporarily disabled; auth is via access key injection
+	root.AddCommand(authcmd.NewLoginCommand(stdout, stderr, runner))
+	root.AddCommand(authcmd.NewStatusCommand(stdout, stderr, runner))
+	root.AddCommand(authcmd.NewLogoutCommand(stdout, stderr, runner))
 	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
@@ -81,7 +86,7 @@ func configurePPEFlag(root *cobra.Command, cfg *config.Config) {
 		&cfg.PPEEnv,
 		"ppe-env",
 		cfg.PPEEnv,
-		"route Pippit API requests to a PPE environment (for example, ppe_cli_canvas_ak)",
+		"将小云雀业务 API 路由到 PPE（例如 ppe_cli_canvas_ak；网页登录始终使用生产身份域）",
 	)
 	root.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
 		ppeEnv, err := config.NormalizePPEEnv(cfg.PPEEnv)
