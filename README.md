@@ -229,7 +229,7 @@ LibTV 迁移只是上述通用画布能力的 CLI 编排层，服务端不识别
 pippit-tool-cli --ppe-env ppe_cli_canvas_ak canvas import
 ```
 
-CLI 会逐步询问来源、LibTV 链接、journal 位置、降级接受与是否打开结果。journal 直接回车即使用权限受控的自动路径，不需要设置环境变量。源端节点处理、素材下载与 Pippit 素材上传会在 stderr 显示已处理/总数/剩余数，画布创建、写入和回读校验会显示当前阶段；最终 stdout 仍只输出一行 JSON。
+CLI 会用编号选项逐步询问来源、journal 策略与是否打开结果，只有每个项目唯一的 LibTV 链接需要粘贴。journal 选择 Automatic 即使用权限受控的自动路径，不需要设置环境变量。交互式导入遇到已知的非致命降级时会输出 warning 后自动继续，并在最终 JSON 中保留 `degradation_count`。源端节点处理、素材下载与 Pippit 素材上传会在 stderr 显示已处理/总数/剩余数，画布创建、写入和回读校验会显示当前阶段；最终 stdout 仍只输出一行 JSON。
 
 供 Agent、CI 或其它非交互场景使用时，仍可显式传入 `--from`、`--url`、`--accept-degradations` 和 `--open`；`--journal` 始终可选，省略时使用自动路径。
 

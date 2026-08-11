@@ -16,13 +16,17 @@ type importPromptSession struct {
 	eof    bool
 }
 
+type importPromptChoice struct {
+	label   string
+	aliases []string
+}
+
 func importInputIsInteractive(input io.Reader) bool {
 	file, ok := input.(*os.File)
 	if !ok {
 		return false
 	}
-	info, err := file.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return importFileIsTerminal(file)
 }
 
 func prepareCanvasImportOptions(
@@ -43,14 +47,15 @@ func prepareCanvasImportOptions(
 	}
 	prompts := &importPromptSession{reader: bufio.NewReader(input), stderr: stderr}
 	if strings.TrimSpace(opts.Provider) == "" {
-		value, _, err := prompts.readLine("Source provider [libtv]: ")
+		_, err := prompts.askChoice(
+			"Source provider:",
+			[]importPromptChoice{{label: "LibTV (default)", aliases: []string{"libtv"}}},
+			1,
+		)
 		if err != nil {
 			return opts, nil, err
 		}
-		if value == "" {
-			value = "libtv"
-		}
-		opts.Provider = value
+		opts.Provider = "libtv"
 	}
 	if strings.TrimSpace(opts.SourceURL) == "" {
 		for {
@@ -72,50 +77,91 @@ func prepareCanvasImportOptions(
 		}
 	}
 	if !opts.JournalExplicit {
-		value, _, err := prompts.readLine("Resume journal path [automatic]: ")
+		choice, err := prompts.askChoice(
+			"Resume journal:",
+			[]importPromptChoice{
+				{label: "Automatic (recommended, default)"},
+				{label: "Custom path"},
+			},
+			1,
+		)
 		if err != nil {
 			return opts, nil, err
 		}
-		if value != "" {
-			opts.JournalPath = value
-			opts.JournalExplicit = true
+		if choice == 2 {
+			for {
+				value, eof, readErr := prompts.readLine("Custom journal path: ")
+				if readErr != nil {
+					return opts, nil, readErr
+				}
+				if value != "" {
+					opts.JournalPath = value
+					opts.JournalExplicit = true
+					break
+				}
+				if eof {
+					return opts, nil, fmt.Errorf(
+						"interactive input ended before a custom journal path was provided; choose 1 for Automatic or pass --journal <path>",
+					)
+				}
+				fmt.Fprintln(stderr, "A custom journal path is required after selecting option 2.")
+			}
 		}
 	}
 	if !opts.OpenExplicit {
-		open, err := prompts.askYesNo("Open the imported Canvas when finished? [Y/n]: ", true)
+		choice, err := prompts.askChoice(
+			"After import:",
+			[]importPromptChoice{
+				{label: "Open Canvas (default)", aliases: []string{"y", "yes"}},
+				{label: "Do not open", aliases: []string{"n", "no"}},
+			},
+			1,
+		)
 		if err != nil {
 			return opts, nil, err
 		}
-		opts.Open = open
+		opts.Open = choice == 1
 	}
 	return opts, prompts, nil
 }
 
-func (prompts *importPromptSession) confirmDegradations(count int) (bool, error) {
-	fmt.Fprintf(prompts.stderr, "LibTV export reports %d explicit degradation(s).\n", count)
-	return prompts.askYesNo("Continue importing with these degradations? [y/N]: ", false)
+func (prompts *importPromptSession) askChoice(
+	title string,
+	choices []importPromptChoice,
+	defaultChoice int,
+) (int, error) {
+	for {
+		fmt.Fprintln(prompts.stderr, title)
+		for index, choice := range choices {
+			fmt.Fprintf(prompts.stderr, "  %d) %s\n", index+1, choice.label)
+		}
+		value, eof, err := prompts.readLine(fmt.Sprintf("Select [%d]: ", defaultChoice))
+		if err != nil {
+			return 0, err
+		}
+		if value == "" {
+			return defaultChoice, nil
+		}
+		normalized := strings.ToLower(value)
+		for index, choice := range choices {
+			if normalized == fmt.Sprint(index+1) || containsImportPromptAlias(choice.aliases, normalized) {
+				return index + 1, nil
+			}
+		}
+		if eof {
+			return defaultChoice, nil
+		}
+		fmt.Fprintf(prompts.stderr, "Please select a number from 1 to %d.\n", len(choices))
+	}
 }
 
-func (prompts *importPromptSession) askYesNo(label string, defaultValue bool) (bool, error) {
-	for {
-		value, eof, err := prompts.readLine(label)
-		if err != nil {
-			return false, err
-		}
-		switch strings.ToLower(value) {
-		case "":
-			return defaultValue, nil
-		case "y", "yes":
-			return true, nil
-		case "n", "no":
-			return false, nil
-		default:
-			if eof {
-				return defaultValue, nil
-			}
-			fmt.Fprintln(prompts.stderr, "Please answer y or n.")
+func containsImportPromptAlias(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
 		}
 	}
+	return false
 }
 
 func (prompts *importPromptSession) readLine(label string) (string, bool, error) {
