@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
+
+var errCanvasImportMediaStillProcessing = errors.New("小云雀素材仍在处理中")
 
 const (
 	mediaCheckpointSchema          = "pippit-canvas-import-media/0.1"
@@ -47,15 +50,15 @@ type runnerImportMediaAPI struct {
 func (api runnerImportMediaAPI) Upload(ctx context.Context, media validatedImportMedia) (*canvascore.UploadResult, error) {
 	file, identity, err := openInspectedImportMediaFile(media.LocalPath)
 	if err != nil {
-		return nil, fmt.Errorf("verify canvas import media immediately before upload: %w", err)
+		return nil, fmt.Errorf("上传前再次验证画布导入素材失败：%w", err)
 	}
 	defer file.Close()
 	if identity.RawSHA256 != media.SHA256 || identity.ContentFingerprint != media.ContentFingerprint ||
 		identity.ByteSize != media.ByteSize {
-		return nil, fmt.Errorf("canvas import media changed before upload dispatch")
+		return nil, fmt.Errorf("画布导入素材在发起上传前发生了变化")
 	}
 	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("rewind verified canvas import media before upload: %w", err)
+		return nil, fmt.Errorf("上传前重置已验证素材的读取位置失败：%w", err)
 	}
 	return canvascore.Upload(ctx, canvascore.UploadOptions{
 		FileName:     media.FileName,
@@ -81,10 +84,10 @@ func (api runnerImportMediaAPI) PreflightUpload(ctx context.Context) error {
 		return err
 	}
 	if api.runner == nil || api.runner.Config == nil {
-		return fmt.Errorf("canvas media uploader is not configured")
+		return fmt.Errorf("画布素材上传器尚未配置")
 	}
 	if strings.TrimSpace(api.runner.Config.AccessKey) == "" {
-		return fmt.Errorf("XYQ_ACCESS_KEY 缺失; authenticate the Pippit CLI before importing media")
+		return fmt.Errorf("缺少 XYQ_ACCESS_KEY；请先完成小云雀 CLI 授权，再导入素材")
 	}
 	return nil
 }
@@ -135,21 +138,21 @@ func readAndValidateExportMedia(bundleDir string, plan canvasplan.Plan) ([]valid
 	result := make([]validatedImportMedia, 0, len(plan.RequiredMedia))
 	for _, requirement := range plan.RequiredMedia {
 		if requirement.LocalPath == "" || requirement.URL != "" {
-			return nil, fmt.Errorf("LibTV CanvasPlan media %q must use a local bundle path", requirement.LogicalID)
+			return nil, fmt.Errorf("LibTV 画布计划中的素材 %q 必须使用本地导出包路径", requirement.LogicalID)
 		}
 		localPath := filepath.Join(bundleDir, filepath.FromSlash(requirement.LocalPath))
 		if err := requireFileWithinBundle(localPath, bundleDir); err != nil {
-			return nil, fmt.Errorf("invalid LibTV media %q: %w", requirement.LogicalID, err)
+			return nil, fmt.Errorf("LibTV 素材 %q 无效：%w", requirement.LogicalID, err)
 		}
 		identity, err := inspectImportMediaFile(localPath)
 		if err != nil {
-			return nil, fmt.Errorf("inspect LibTV media %q: %w", requirement.LogicalID, err)
+			return nil, fmt.Errorf("检查 LibTV 素材 %q 失败：%w", requirement.LogicalID, err)
 		}
 		if requirement.Metadata.ByteSize == nil || identity.ByteSize != *requirement.Metadata.ByteSize {
-			return nil, fmt.Errorf("LibTV media %q byte size does not match CanvasPlan", requirement.LogicalID)
+			return nil, fmt.Errorf("LibTV 素材 %q 的文件大小与画布计划不一致", requirement.LogicalID)
 		}
 		if identity.RawSHA256 != requirement.SHA256 {
-			return nil, fmt.Errorf("LibTV media %q SHA-256 does not match CanvasPlan", requirement.LogicalID)
+			return nil, fmt.Errorf("LibTV 素材 %q 的 SHA-256 与画布计划不一致", requirement.LogicalID)
 		}
 		result = append(result, validatedImportMedia{
 			LogicalID:          requirement.LogicalID,
@@ -176,7 +179,7 @@ func resolveImportMedia(
 	}
 	defer func() {
 		if err := lock.release(); err != nil {
-			fmt.Fprintf(stderr, "Could not release canvas import media checkpoint lock: %v\n", err)
+			fmt.Fprintf(stderr, "提示：无法释放画布导入素材断点锁：%v\n", err)
 		}
 	}()
 
@@ -196,11 +199,11 @@ func resolveImportMedia(
 	}
 	if migrated {
 		if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
-			return canvasplan.ResolvedMediaSet{}, fmt.Errorf("save migrated canvas import media checkpoint: %w", err)
+			return canvasplan.ResolvedMediaSet{}, fmt.Errorf("保存迁移后的画布导入素材断点记录失败：%w", err)
 		}
 	}
 	if len(opts.Media) == 0 {
-		reportImportMediaProgress(stderr, 0, 0, "complete", validatedImportMedia{FileName: "(none)"})
+		reportImportMediaProgress(stderr, 0, 0, "complete", validatedImportMedia{FileName: "（无）"})
 	}
 	queriedReadyAssetIDs := make(map[string]struct{})
 	for index, media := range opts.Media {
@@ -209,28 +212,28 @@ func resolveImportMedia(
 			switch existing.Status {
 			case mediaStatusBlocked:
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"media upload %q is blocked after an unknown outcome; inspect %s and do not retry the bytes blindly",
+					"素材 %q 的上传结果未知，当前处于 blocked 状态；请检查 %s，不要直接重复上传",
 					media.LogicalID, opts.CheckpointPath,
 				)
 			case mediaStatusUploadRequested:
 				existing.Status = mediaStatusBlockedInterruption
-				existing.LastError = "the previous process stopped after persisting upload-requested and before a durable response was checkpointed"
+				existing.LastError = "上次进程在记录 upload-requested 后、持久化上传结果前中断"
 				if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, *existing); err != nil {
 					return canvasplan.ResolvedMediaSet{}, err
 				}
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"media upload %q was interrupted with an unknown outcome; checkpointed as blocked-on-interruption in %s and will not be uploaded again automatically",
+					"素材 %q 的上传曾被中断且结果未知；已在 %s 中记录为 blocked-on-interruption，后续不会自动重复上传",
 					media.LogicalID, opts.CheckpointPath,
 				)
 			case mediaStatusBlockedInterruption:
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"media upload %q is blocked-on-interruption after an unknown outcome; inspect %s and do not retry the bytes blindly",
+					"素材 %q 的上传结果未知，当前处于 blocked-on-interruption 状态；请检查 %s，不要直接重复上传",
 					media.LogicalID, opts.CheckpointPath,
 				)
 			case mediaStatusProcessing:
 				if err := waitForImportMediaReady(ctx, opts, api, stderr, index, media, existing.PippitAssetID); err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-						"wait for previous media upload %q; durable IDs remain in %s: %w",
+						"等待之前上传的素材 %q 就绪失败；持久化素材 ID 仍保存在 %s：%w",
 						media.LogicalID, opts.CheckpointPath, err,
 					)
 				}
@@ -247,20 +250,20 @@ func resolveImportMedia(
 					ready, err := api.Query(ctx, existing.PippitAssetID)
 					if err != nil {
 						return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-							"previously uploaded media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
+							"当前小云雀账号无法读取之前上传的素材 %q，因此不会复用断点记录：%w",
 							media.LogicalID, err,
 						)
 					}
 					if !ready {
 						return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-							"previously uploaded media %q is not visible to the current Pippit account; refusing checkpoint reuse",
+							"当前小云雀账号不可见之前上传的素材 %q，因此不会复用断点记录",
 							media.LogicalID,
 						)
 					}
 					queriedReadyAssetIDs[existing.PippitAssetID] = struct{}{}
 				}
 			default:
-				return canvasplan.ResolvedMediaSet{}, fmt.Errorf("media checkpoint %q has invalid status %q", media.LogicalID, existing.Status)
+				return canvasplan.ResolvedMediaSet{}, fmt.Errorf("素材 %q 的断点记录状态 %q 无效", media.LogicalID, existing.Status)
 			}
 			reportImportMediaProgress(stderr, index+1, len(opts.Media), action, media)
 			continue
@@ -271,13 +274,13 @@ func resolveImportMedia(
 				ready, err := api.Query(ctx, duplicate.PippitAssetID)
 				if err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-						"deduplicated media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
+						"当前小云雀账号无法读取已去重素材 %q，因此不会复用断点记录：%w",
 						media.LogicalID, err,
 					)
 				}
 				if !ready {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-						"deduplicated media %q is not visible to the current Pippit account; refusing checkpoint reuse",
+						"当前小云雀账号不可见已去重素材 %q，因此不会复用断点记录",
 						media.LogicalID,
 					)
 				}
@@ -303,7 +306,7 @@ func resolveImportMedia(
 		if preflighter, ok := api.(importMediaPreflighter); ok {
 			if err := preflighter.PreflightUpload(ctx); err != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"Pippit authentication failed before media upload %q was requested: %w",
+					"请求上传素材 %q 前，小云雀授权检查失败：%w",
 					media.LogicalID, err,
 				)
 			}
@@ -315,28 +318,28 @@ func resolveImportMedia(
 			ContentFingerprint: media.ContentFingerprint,
 			CanonicalByteSize:  media.ByteSize,
 			Status:             mediaStatusUploadRequested,
-			LastError:          "upload request is about to be dispatched; interruption requires manual outcome confirmation",
+			LastError:          "即将发起上传请求；若此时中断，需要人工确认上传结果",
 		}
 		if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-				"persist upload-requested checkpoint for media %q: %w",
+				"保存素材 %q 的 upload-requested 断点记录失败：%w",
 				media.LogicalID, err,
 			)
 		}
 		entries[media.LogicalID] = &entry
 		reportImportMediaProgress(stderr, index, len(opts.Media), "uploading", media)
 		uploaded, uploadErr := api.Upload(ctx, media)
-		if uploadErr != nil && strings.Contains(uploadErr.Error(), "XYQ_ACCESS_KEY 缺失") {
+		if uploadErr != nil && isCanvasImportPippitAuthFailure(uploadErr) {
 			if checkpointErr := removeAndSaveMediaEntry(opts.CheckpointPath, checkpoint, media.LogicalID); checkpointErr != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"Pippit authentication failed before media upload %q was sent, but its upload-requested checkpoint could not be cleared; do not retry blindly: %w",
+					"发送素材 %q 的上传请求前，小云雀授权失败，且无法清理 upload-requested 断点记录；请勿直接重试：%w",
 					media.LogicalID, checkpointErr,
 				)
 			}
 			delete(entries, media.LogicalID)
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-				"Pippit authentication failed before media upload %q was sent: %w",
-				media.LogicalID, uploadErr,
+				"%w：发送素材 %q 的上传请求被小云雀明确拒绝，未产生远端写入",
+				errCanvasImportReauthenticationRequired, media.LogicalID,
 			)
 		}
 		entry.LastError = ""
@@ -346,29 +349,29 @@ func resolveImportMedia(
 		}
 		if uploadErr != nil || uploaded == nil {
 			entry.Status = mediaStatusBlocked
-			entry.LastError = errorText(uploadErr, "upload returned no result")
+			entry.LastError = errorText(uploadErr, "上传未返回结果")
 			if checkpointErr := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); checkpointErr != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"media upload %q has an unknown outcome and its blocked checkpoint could not be saved; do not retry the bytes blindly: %w",
+					"素材 %q 的上传结果未知，且无法保存 blocked 断点记录；请勿直接重复上传：%w",
 					media.LogicalID, checkpointErr,
 				)
 			}
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-				"media upload %q has an unknown outcome; checkpointed as blocked in %s: %s",
-				media.LogicalID, opts.CheckpointPath, errorText(uploadErr, "upload returned no result"),
+				"素材 %q 的上传结果未知；已在 %s 中记录为 blocked：%s",
+				media.LogicalID, opts.CheckpointPath, errorText(uploadErr, "上传未返回结果"),
 			)
 		}
 		if entry.AssetID == "" || entry.PippitAssetID == "" {
 			entry.Status = mediaStatusBlocked
-			entry.LastError = "upload response omitted durable asset IDs"
+			entry.LastError = "上传响应缺少可持久化的素材 ID"
 			if checkpointErr := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); checkpointErr != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"media upload %q omitted durable IDs and its blocked checkpoint could not be saved; do not upload again blindly: %w",
+					"素材 %q 的上传响应缺少可持久化 ID，且无法保存 blocked 断点记录；请勿直接重复上传：%w",
 					media.LogicalID, checkpointErr,
 				)
 			}
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-				"media upload %q omitted durable asset IDs; checkpointed as blocked in %s",
+				"素材 %q 的上传响应缺少可持久化 ID；已在 %s 中记录为 blocked",
 				media.LogicalID, opts.CheckpointPath,
 			)
 		}
@@ -380,7 +383,7 @@ func resolveImportMedia(
 			}
 			if err := waitForImportMediaReady(ctx, opts, api, stderr, index, media, entry.PippitAssetID); err != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-					"wait for media upload %q; durable IDs remain in %s: %w",
+					"等待素材 %q 上传就绪失败；持久化素材 ID 仍保存在 %s：%w",
 					media.LogicalID, opts.CheckpointPath, err,
 				)
 			}
@@ -443,7 +446,7 @@ func waitForImportMediaReady(
 				return importMediaWaitError(waitCtx.Err(), pippitAssetID, waitTimeout)
 			}
 			return fmt.Errorf(
-				"query processing Pippit asset %q failed; this is a read/authentication error, not a processing signal: %w",
+				"查询处理中小云雀素材 %q 失败；这是读取或授权错误，不代表素材仍在处理中：%w",
 				pippitAssetID,
 				err,
 			)
@@ -463,9 +466,9 @@ func waitForImportMediaReady(
 
 func importMediaWaitError(err error, pippitAssetID string, timeout time.Duration) error {
 	if err == context.DeadlineExceeded {
-		return fmt.Errorf("Pippit asset %q was not visible within %s; it will only be queried on the next run and will not be uploaded again", pippitAssetID, timeout)
+		return fmt.Errorf("%w：素材 %q 在 %s 内仍不可见；只会继续查询，不会重复上传", errCanvasImportMediaStillProcessing, pippitAssetID, timeout)
 	}
-	return fmt.Errorf("wait for Pippit asset %q canceled; it will not be uploaded again: %w", pippitAssetID, err)
+	return fmt.Errorf("等待小云雀素材 %q 就绪已取消；不会重复上传：%w", pippitAssetID, err)
 }
 
 func reportImportMediaProgress(
@@ -485,32 +488,55 @@ func reportImportMediaProgress(
 	}
 	fmt.Fprintf(
 		stderr,
-		"Media progress: processed=%d/%d remaining=%d action=%s file=%q\n",
+		"素材进度：已处理=%d/%d，剩余=%d，状态=%s，文件=%q\n",
 		processed,
 		total,
 		remaining,
-		action,
+		importMediaProgressAction(action),
 		fileName,
 	)
+}
+
+func importMediaProgressAction(action string) string {
+	switch action {
+	case "complete":
+		return "完成"
+	case "reused":
+		return "已复用"
+	case "queried":
+		return "已确认"
+	case "checking":
+		return "正在检查"
+	case "uploading":
+		return "正在上传"
+	case "uploaded":
+		return "已上传"
+	case "processing":
+		return "正在处理"
+	case "waiting":
+		return "等待处理中"
+	default:
+		return action
+	}
 }
 
 func loadMediaCheckpoint(opts mediaResolutionOptions) (*mediaCheckpoint, error) {
 	if info, lstatErr := os.Lstat(opts.CheckpointPath); lstatErr == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
-			return nil, fmt.Errorf("canvas import media checkpoint must not be a symbolic link")
+			return nil, fmt.Errorf("画布导入素材断点记录不能是符号链接")
 		}
 		if info.Size() > maxMediaCheckpointBytes {
-			return nil, fmt.Errorf("canvas import media checkpoint exceeds %d bytes", maxMediaCheckpointBytes)
+			return nil, fmt.Errorf("画布导入素材断点记录超过 %d 字节", maxMediaCheckpointBytes)
 		}
 	} else if !os.IsNotExist(lstatErr) {
-		return nil, fmt.Errorf("inspect canvas import media checkpoint: %w", lstatErr)
+		return nil, fmt.Errorf("检查画布导入素材断点记录失败：%w", lstatErr)
 	}
 	file, err := os.Open(opts.CheckpointPath)
 	if os.IsNotExist(err) {
 		if _, journalErr := os.Stat(opts.CanvasJournalPath); journalErr == nil {
-			return nil, fmt.Errorf("canvas journal exists but its media checkpoint is missing; refusing to upload again: %s", opts.CheckpointPath)
+			return nil, fmt.Errorf("画布断点记录已存在，但素材断点记录缺失；为避免重复上传，已停止处理：%s", opts.CheckpointPath)
 		} else if !os.IsNotExist(journalErr) {
-			return nil, fmt.Errorf("inspect canvas import journal before media upload: %w", journalErr)
+			return nil, fmt.Errorf("上传素材前检查画布导入断点记录失败：%w", journalErr)
 		}
 		checkpoint := &mediaCheckpoint{
 			Schema:  mediaCheckpointSchema,
@@ -524,23 +550,23 @@ func loadMediaCheckpoint(opts mediaResolutionOptions) (*mediaCheckpoint, error) 
 		return checkpoint, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("open canvas import media checkpoint: %w", err)
+		return nil, fmt.Errorf("打开画布导入素材断点记录失败：%w", err)
 	}
 	defer file.Close()
 	decoder := json.NewDecoder(io.LimitReader(file, maxMediaCheckpointBytes+1))
 	decoder.DisallowUnknownFields()
 	var checkpoint mediaCheckpoint
 	if err := decoder.Decode(&checkpoint); err != nil {
-		return nil, fmt.Errorf("decode canvas import media checkpoint: %w", err)
+		return nil, fmt.Errorf("解析画布导入素材断点记录失败：%w", err)
 	}
 	if err := ensureImportJSONEOF(decoder); err != nil {
-		return nil, fmt.Errorf("decode canvas import media checkpoint: %w", err)
+		return nil, fmt.Errorf("解析画布导入素材断点记录失败：%w", err)
 	}
 	if checkpoint.Schema != mediaCheckpointSchema || checkpoint.Source != opts.Plan.Source || checkpoint.Target != opts.Target {
-		return nil, fmt.Errorf("canvas import media checkpoint does not match this source and target")
+		return nil, fmt.Errorf("画布导入素材断点记录与当前来源或目标不匹配")
 	}
 	if err := os.Chmod(opts.CheckpointPath, 0o600); err != nil {
-		return nil, fmt.Errorf("secure canvas import media checkpoint: %w", err)
+		return nil, fmt.Errorf("设置画布导入素材断点记录权限失败：%w", err)
 	}
 	return &checkpoint, nil
 }
@@ -559,28 +585,28 @@ func validateCheckpointEntries(
 		entry := &checkpoint.Entries[index]
 		item, ok := expected[entry.LogicalID]
 		if !ok || item.MediaType != entry.MediaType {
-			return nil, false, fmt.Errorf("canvas import media changed after checkpoint creation")
+			return nil, false, fmt.Errorf("画布导入素材在断点记录创建后发生了变化")
 		}
 		if !validRawMediaSHA256(entry.SHA256) || !validImportMediaContentFingerprint(item.ContentFingerprint) {
-			return nil, false, fmt.Errorf("canvas import media checkpoint entry %q has an invalid fingerprint", entry.LogicalID)
+			return nil, false, fmt.Errorf("画布导入素材 %q 的断点指纹无效", entry.LogicalID)
 		}
 		if item.SHA256 != entry.SHA256 {
 			if item.MediaType != "image" {
-				return nil, false, fmt.Errorf("canvas import media changed after checkpoint creation")
+				return nil, false, fmt.Errorf("画布导入素材在断点记录创建后发生了变化")
 			}
 			if entry.ContentFingerprint == "" || entry.CanonicalByteSize == 0 {
 				previousIdentity, err := findLegacyCheckpointImageIdentity(checkpoint, opts, *entry)
 				if err != nil {
-					return nil, false, fmt.Errorf("verify changed checkpoint image %q: %w", entry.LogicalID, err)
+					return nil, false, fmt.Errorf("验证断点记录中已变化的图片 %q 失败：%w", entry.LogicalID, err)
 				}
 				if !validImportMediaContentFingerprint(previousIdentity.ContentFingerprint) {
-					return nil, false, fmt.Errorf("canvas import media checkpoint image %q has an invalid content fingerprint", entry.LogicalID)
+					return nil, false, fmt.Errorf("画布导入图片 %q 的断点内容指纹无效", entry.LogicalID)
 				}
 				if entry.ContentFingerprint != "" && entry.ContentFingerprint != previousIdentity.ContentFingerprint {
-					return nil, false, fmt.Errorf("canvas import media checkpoint image %q content fingerprint does not match its retained bundle", entry.LogicalID)
+					return nil, false, fmt.Errorf("画布导入图片 %q 的断点内容指纹与保留的导出包不一致", entry.LogicalID)
 				}
 				if entry.CanonicalByteSize != 0 && entry.CanonicalByteSize != previousIdentity.ByteSize {
-					return nil, false, fmt.Errorf("canvas import media checkpoint image %q byte size does not match its retained bundle", entry.LogicalID)
+					return nil, false, fmt.Errorf("画布导入图片 %q 的断点文件大小与保留的导出包不一致", entry.LogicalID)
 				}
 				if entry.ContentFingerprint == "" {
 					entry.ContentFingerprint = previousIdentity.ContentFingerprint
@@ -592,19 +618,19 @@ func validateCheckpointEntries(
 				}
 			}
 			if !validImportMediaContentFingerprint(entry.ContentFingerprint) || entry.ContentFingerprint != item.ContentFingerprint {
-				return nil, false, fmt.Errorf("canvas import image content changed after checkpoint creation")
+				return nil, false, fmt.Errorf("画布导入图片内容在断点记录创建后发生了变化")
 			}
 		} else {
 			if entry.ContentFingerprint != "" &&
 				(!validImportMediaContentFingerprint(entry.ContentFingerprint) || entry.ContentFingerprint != item.ContentFingerprint) {
-				return nil, false, fmt.Errorf("canvas import media content changed after checkpoint creation")
+				return nil, false, fmt.Errorf("画布导入素材内容在断点记录创建后发生了变化")
 			}
 			if entry.ContentFingerprint == "" {
 				entry.ContentFingerprint = item.ContentFingerprint
 				migrated = true
 			}
 			if entry.CanonicalByteSize != 0 && entry.CanonicalByteSize != item.ByteSize {
-				return nil, false, fmt.Errorf("canvas import media byte size changed after checkpoint creation")
+				return nil, false, fmt.Errorf("画布导入素材大小在断点记录创建后发生了变化")
 			}
 			if entry.CanonicalByteSize == 0 {
 				entry.CanonicalByteSize = item.ByteSize
@@ -612,11 +638,11 @@ func validateCheckpointEntries(
 			}
 		}
 		if _, duplicate := entries[entry.LogicalID]; duplicate {
-			return nil, false, fmt.Errorf("canvas import media checkpoint contains duplicate logical ID %q", entry.LogicalID)
+			return nil, false, fmt.Errorf("画布导入素材断点记录包含重复的逻辑 ID %q", entry.LogicalID)
 		}
 		if (entry.Status == mediaStatusReady || entry.Status == mediaStatusProcessing) &&
 			(strings.TrimSpace(entry.AssetID) == "" || strings.TrimSpace(entry.PippitAssetID) == "") {
-			return nil, false, fmt.Errorf("canvas import media checkpoint entry %q has no durable IDs", entry.LogicalID)
+			return nil, false, fmt.Errorf("画布导入素材 %q 的断点记录缺少可持久化 ID", entry.LogicalID)
 		}
 		entries[entry.LogicalID] = entry
 	}
@@ -649,12 +675,12 @@ func canonicalizeImportPlanMedia(
 		CheckpointPath:    checkpointPath,
 	})
 	if err != nil {
-		return canvasplan.Plan{}, fmt.Errorf("load canonical canvas import media identities: %w", err)
+		return canvasplan.Plan{}, fmt.Errorf("加载画布导入素材的规范标识失败：%w", err)
 	}
 	entries := make(map[string]mediaCheckpointEntry, len(checkpoint.Entries))
 	for _, entry := range checkpoint.Entries {
 		if _, exists := entries[entry.LogicalID]; exists {
-			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint contains duplicate logical ID %q", entry.LogicalID)
+			return canvasplan.Plan{}, fmt.Errorf("画布导入素材断点记录包含重复的逻辑 ID %q", entry.LogicalID)
 		}
 		entries[entry.LogicalID] = entry
 	}
@@ -664,10 +690,10 @@ func canonicalizeImportPlanMedia(
 		requirement := &canonical.RequiredMedia[index]
 		entry, ok := entries[requirement.LogicalID]
 		if !ok || entry.MediaType != requirement.MediaType || entry.Status != mediaStatusReady {
-			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint has no ready canonical identity for %q", requirement.LogicalID)
+			return canvasplan.Plan{}, fmt.Errorf("画布导入素材断点记录中没有 %q 的可用规范标识", requirement.LogicalID)
 		}
 		if !validRawMediaSHA256(entry.SHA256) || entry.CanonicalByteSize <= 0 {
-			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint has an invalid canonical identity for %q", requirement.LogicalID)
+			return canvasplan.Plan{}, fmt.Errorf("画布导入素材 %q 的规范标识无效", requirement.LogicalID)
 		}
 		requirement.SHA256 = entry.SHA256
 		byteSize := entry.CanonicalByteSize
@@ -717,16 +743,16 @@ func removeAndSaveMediaEntry(path string, checkpoint *mediaCheckpoint, logicalID
 func saveMediaCheckpoint(path string, checkpoint *mediaCheckpoint) error {
 	payload, err := json.MarshalIndent(checkpoint, "", "  ")
 	if err != nil {
-		return fmt.Errorf("encode canvas import media checkpoint: %w", err)
+		return fmt.Errorf("编码画布导入素材断点记录失败：%w", err)
 	}
 	payload = append(payload, '\n')
 	directory := filepath.Dir(path)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return fmt.Errorf("create canvas import media checkpoint directory: %w", err)
+		return fmt.Errorf("创建画布导入素材断点记录目录失败：%w", err)
 	}
 	temporary, err := os.CreateTemp(directory, ".canvas-import-media-*")
 	if err != nil {
-		return fmt.Errorf("create temporary canvas import media checkpoint: %w", err)
+		return fmt.Errorf("创建临时画布导入素材断点记录失败：%w", err)
 	}
 	temporaryPath := temporary.Name()
 	defer func() {
@@ -734,22 +760,22 @@ func saveMediaCheckpoint(path string, checkpoint *mediaCheckpoint) error {
 		_ = os.Remove(temporaryPath)
 	}()
 	if err := temporary.Chmod(0o600); err != nil {
-		return fmt.Errorf("secure temporary canvas import media checkpoint: %w", err)
+		return fmt.Errorf("设置临时画布导入素材断点记录权限失败：%w", err)
 	}
 	if _, err := temporary.Write(payload); err != nil {
-		return fmt.Errorf("write canvas import media checkpoint: %w", err)
+		return fmt.Errorf("写入画布导入素材断点记录失败：%w", err)
 	}
 	if err := temporary.Sync(); err != nil {
-		return fmt.Errorf("sync canvas import media checkpoint: %w", err)
+		return fmt.Errorf("同步画布导入素材断点记录失败：%w", err)
 	}
 	if err := temporary.Close(); err != nil {
-		return fmt.Errorf("close canvas import media checkpoint: %w", err)
+		return fmt.Errorf("关闭画布导入素材断点记录失败：%w", err)
 	}
 	if err := os.Rename(temporaryPath, path); err != nil {
-		return fmt.Errorf("replace canvas import media checkpoint: %w", err)
+		return fmt.Errorf("替换画布导入素材断点记录失败：%w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
-		return fmt.Errorf("secure canvas import media checkpoint: %w", err)
+		return fmt.Errorf("设置画布导入素材断点记录权限失败：%w", err)
 	}
 	return nil
 }
@@ -762,13 +788,13 @@ func cleanupCheckpointBundles(
 	remaining := make([]string, 0, len(checkpoint.BundleDirs))
 	for _, bundleDir := range checkpoint.BundleDirs {
 		if err := removeOwnedBundle(bundleDir, opts.BundleRoot); err != nil {
-			fmt.Fprintf(stderr, "Could not remove local LibTV export bundle %s: %v\n", bundleDir, err)
+			fmt.Fprintf(stderr, "提示：无法删除本地 LibTV 导出包 %s：%v\n", bundleDir, err)
 			remaining = append(remaining, bundleDir)
 		}
 	}
 	checkpoint.BundleDirs = remaining
 	if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
-		fmt.Fprintf(stderr, "Could not update media checkpoint cleanup state: %v\n", err)
+		fmt.Fprintf(stderr, "提示：无法更新素材断点记录的清理状态：%v\n", err)
 	}
 }
 
