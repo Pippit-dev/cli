@@ -4,14 +4,21 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"hash/crc32"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
@@ -88,9 +95,10 @@ type fakeImportMediaAPI struct {
 	uploadState string
 	uploadErr   error
 	queryErr    error
+	queryReady  []bool
 }
 
-func (api *fakeImportMediaAPI) Upload(_ context.Context, _ string) (*canvascore.UploadResult, error) {
+func (api *fakeImportMediaAPI) Upload(_ context.Context, _ validatedImportMedia) (*canvascore.UploadResult, error) {
 	api.uploads++
 	if api.uploadErr != nil {
 		return nil, api.uploadErr
@@ -104,22 +112,30 @@ func (api *fakeImportMediaAPI) Upload(_ context.Context, _ string) (*canvascore.
 	}, nil
 }
 
-func (api *fakeImportMediaAPI) Query(context.Context, string) error {
+func (api *fakeImportMediaAPI) Query(context.Context, string) (bool, error) {
 	api.queries++
-	return api.queryErr
+	if api.queryErr != nil {
+		return false, api.queryErr
+	}
+	if len(api.queryReady) == 0 {
+		return true, nil
+	}
+	ready := api.queryReady[0]
+	api.queryReady = api.queryReady[1:]
+	return ready, nil
 }
 
 type panickingImportMediaAPI struct {
 	uploads int
 }
 
-func (api *panickingImportMediaAPI) Upload(context.Context, string) (*canvascore.UploadResult, error) {
+func (api *panickingImportMediaAPI) Upload(context.Context, validatedImportMedia) (*canvascore.UploadResult, error) {
 	api.uploads++
 	panic("simulated process exit during upload")
 }
 
-func (*panickingImportMediaAPI) Query(context.Context, string) error {
-	return nil
+func (*panickingImportMediaAPI) Query(context.Context, string) (bool, error) {
+	return true, nil
 }
 
 type missingAKPreflightMediaAPI struct {
@@ -130,13 +146,13 @@ func (*missingAKPreflightMediaAPI) PreflightUpload(context.Context) error {
 	return errors.New("XYQ_ACCESS_KEY 缺失")
 }
 
-func (api *missingAKPreflightMediaAPI) Upload(context.Context, string) (*canvascore.UploadResult, error) {
+func (api *missingAKPreflightMediaAPI) Upload(context.Context, validatedImportMedia) (*canvascore.UploadResult, error) {
 	api.uploads++
 	return nil, errors.New("must not be called")
 }
 
-func (*missingAKPreflightMediaAPI) Query(context.Context, string) error {
-	return nil
+func (*missingAKPreflightMediaAPI) Query(context.Context, string) (bool, error) {
+	return true, nil
 }
 
 type blockingImportMediaAPI struct {
@@ -145,7 +161,7 @@ type blockingImportMediaAPI struct {
 	uploads int
 }
 
-func (api *blockingImportMediaAPI) Upload(context.Context, string) (*canvascore.UploadResult, error) {
+func (api *blockingImportMediaAPI) Upload(context.Context, validatedImportMedia) (*canvascore.UploadResult, error) {
 	api.uploads++
 	close(api.started)
 	<-api.release
@@ -154,15 +170,21 @@ func (api *blockingImportMediaAPI) Upload(context.Context, string) (*canvascore.
 	}, nil
 }
 
-func (*blockingImportMediaAPI) Query(context.Context, string) error {
-	return nil
+func (*blockingImportMediaAPI) Query(context.Context, string) (bool, error) {
+	return true, nil
 }
 
 type fakeImportExecutor struct {
-	calls    int
-	resolved canvasplan.ResolvedMediaSet
-	opts     canvasplan.ExecuteOptions
-	result   *canvasplan.ExecutionResult
+	calls             int
+	reconcileCalls    int
+	resolved          canvasplan.ResolvedMediaSet
+	opts              canvasplan.ExecuteOptions
+	result            *canvasplan.ExecutionResult
+	reconcileJournal  string
+	reconcilePlan     canvasplan.Plan
+	reconcileResolved canvasplan.ResolvedMediaSet
+	reconcileResult   *canvasplan.ExecutionResult
+	reconcileErr      error
 }
 
 func (executor *fakeImportExecutor) Execute(
@@ -175,6 +197,19 @@ func (executor *fakeImportExecutor) Execute(
 	executor.resolved = resolved
 	executor.opts = opts
 	return executor.result, nil
+}
+
+func (executor *fakeImportExecutor) Reconcile(
+	_ context.Context,
+	journalPath string,
+	plan canvasplan.Plan,
+	resolved canvasplan.ResolvedMediaSet,
+) (*canvasplan.ExecutionResult, error) {
+	executor.reconcileCalls++
+	executor.reconcileJournal = journalPath
+	executor.reconcilePlan = plan
+	executor.reconcileResolved = resolved
+	return executor.reconcileResult, executor.reconcileErr
 }
 
 func TestImportCommandExportsUploadsDeduplicatesVerifiesAndOpens(t *testing.T) {
@@ -221,6 +256,32 @@ func TestImportCommandExportsUploadsDeduplicatesVerifiesAndOpens(t *testing.T) {
 	}
 }
 
+func TestImportCommandFallsBackToExecuteForNormalVerificationFailure(t *testing.T) {
+	temp := t.TempDir()
+	_, exporter, journalPath := prepareSourceBoundResumeFixture(t, temp)
+	executor := &fakeImportExecutor{
+		result:          verifiedImportResult(),
+		reconcileResult: &canvasplan.ExecutionResult{State: canvasplan.StateVerificationFailed},
+		reconcileErr:    canvasplan.ErrReconcileNotEligible,
+	}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, executor)
+	cmd := newImportCommand(io.Discard, io.Discard, deps)
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{
+		"--from", "libtv", "--url", testLibTVURL, "--journal", journalPath,
+		"--accept-degradations",
+	})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, want normal executor fallback", err)
+	}
+	if executor.reconcileCalls != 1 || executor.calls != 1 {
+		t.Fatalf(
+			"input-reconcile/execute calls = %d/%d, want 1/1",
+			executor.reconcileCalls, executor.calls,
+		)
+	}
+}
+
 func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
 	temp := t.TempDir()
 	plan, mediaBytes := testImportPlan(t, false)
@@ -246,8 +307,9 @@ func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
 		t.Fatalf("opened = %q, want wizard default Yes", opened)
 	}
 	for _, message := range []string{
-		"Source provider [libtv]", "LibTV canvas URL", "Resume journal path [automatic]",
-		"Open the imported Canvas when finished? [Y/n]",
+		"Source provider:", "1) LibTV (default)", "LibTV canvas URL", "Resume journal:",
+		"1) Automatic (recommended, default)", "2) Custom path", "After import:",
+		"1) Open Canvas (default)", "2) Do not open",
 		"Resume journal: " + executor.opts.JournalPath,
 		`Media progress: processed=1/2 remaining=1 action=uploaded file="one.png"`,
 		`Media progress: processed=2/2 remaining=0 action=reused file="two.png"`,
@@ -264,7 +326,44 @@ func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
 	}
 }
 
-func TestImportCommandInteractiveWizardCanAcceptDegradations(t *testing.T) {
+func TestImportCommandInteractiveWizardRetriesAndUsesNumberedCustomChoices(t *testing.T) {
+	temp := t.TempDir()
+	journalDirectory := filepath.Join(temp, "custom-state")
+	if err := os.MkdirAll(journalDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	journalPath := filepath.Join(journalDirectory, "import.journal.json")
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	executor := &fakeImportExecutor{result: verifiedImportResult()}
+	opened := false
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, executor)
+	deps.isInteractive = func(io.Reader) bool { return true }
+	deps.openURL = func(context.Context, string) error { opened = true; return nil }
+	var stdout, stderr bytes.Buffer
+	cmd := newImportCommand(&stdout, &stderr, deps)
+	cmd.SetIn(strings.NewReader(strings.Join([]string{
+		"9", "1", testLibTVURL, "9", "2", journalPath, "maybe", "2", "",
+	}, "\n")))
+	cmd.SilenceUsage = true
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if executor.opts.JournalPath != journalPath {
+		t.Fatalf("journal = %q, want custom path %q", executor.opts.JournalPath, journalPath)
+	}
+	if opened {
+		t.Fatal("wizard option 2 unexpectedly opened the Canvas")
+	}
+	if got := strings.Count(stderr.String(), "Please select a number from 1 to"); got != 3 {
+		t.Fatalf("invalid choice messages = %d, want 3:\n%s", got, stderr.String())
+	}
+	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("stdout = %q, want final JSON", stdout.String())
+	}
+}
+
+func TestImportCommandInteractiveWizardWarnsAndContinuesDegradations(t *testing.T) {
 	temp := t.TempDir()
 	plan, mediaBytes := testImportPlan(t, true)
 	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
@@ -273,16 +372,61 @@ func TestImportCommandInteractiveWizardCanAcceptDegradations(t *testing.T) {
 	deps.isInteractive = func(io.Reader) bool { return true }
 	var stdout, stderr bytes.Buffer
 	cmd := newImportCommand(&stdout, &stderr, deps)
-	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n\nn\ny\n"))
+	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n\nn\n"))
 	cmd.SilenceUsage = true
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "Continue importing with these degradations? [y/N]") {
-		t.Fatalf("stderr = %q, want in-session degradation confirmation", stderr.String())
+	if !strings.Contains(stderr.String(), "known nonfatal degradation(s)") ||
+		!strings.Contains(stderr.String(), "empty-media placeholders or semantic downgrades") ||
+		!strings.Contains(stderr.String(), "degradation_count") {
+		t.Fatalf("stderr = %q, want auditable automatic degradation warning", stderr.String())
 	}
 	if executor.calls != 1 || !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
 		t.Fatalf("executor/stdout = %d/%q, want completed interactive import", executor.calls, stdout.String())
+	}
+}
+
+func TestImportCommandInteractiveWizardHonorsExplicitDegradationRejection(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, true)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	executor := &fakeImportExecutor{result: verifiedImportResult()}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, executor)
+	deps.isInteractive = func(io.Reader) bool { return true }
+	var stderr bytes.Buffer
+	cmd := newImportCommand(io.Discard, &stderr, deps)
+	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n\n\n"))
+	cmd.SetArgs([]string{"--accept-degradations=false"})
+	cmd.SilenceUsage = true
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--accept-degradations") {
+		t.Fatalf("Execute() error = %v, want explicit degradation rejection", err)
+	}
+	if executor.calls != 0 {
+		t.Fatalf("executor calls = %d, want no Canvas write after explicit rejection", executor.calls)
+	}
+	if strings.Contains(stderr.String(), "continuing the interactive import") {
+		t.Fatalf("stderr = %q, explicit false must not be ignored by the wizard", stderr.String())
+	}
+}
+
+func TestImportCommandInteractiveCustomJournalEOFIsActionable(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, &fakeImportExecutor{})
+	deps.isInteractive = func(io.Reader) bool { return true }
+	cmd := newImportCommand(io.Discard, io.Discard, deps)
+	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n2\n"))
+	cmd.SilenceUsage = true
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "custom journal path") ||
+		!strings.Contains(err.Error(), "choose 1 for Automatic") {
+		t.Fatalf("Execute() error = %v, want actionable custom path EOF", err)
+	}
+	if len(exporter.urls) != 0 {
+		t.Fatalf("exporter called before custom journal input completed: %#v", exporter.urls)
 	}
 }
 
@@ -301,6 +445,17 @@ func TestImportCommandMissingFlagsFailsActionablyWithoutInteractiveInput(t *test
 	}
 	if len(exporter.urls) != 0 {
 		t.Fatalf("exporter called before required input validation: %#v", exporter.urls)
+	}
+}
+
+func TestImportInputDoesNotTreatNullDeviceAsInteractive(t *testing.T) {
+	input, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	if importInputIsInteractive(input) {
+		t.Fatal("null device was incorrectly treated as an interactive terminal")
 	}
 }
 
@@ -386,36 +541,248 @@ func TestImportCommandRequiresExplicitDegradationAcceptanceAndKeepsBundle(t *tes
 	}
 }
 
-func TestImportCommandCheckpointsProcessingUploadAndDoesNotUploadAgain(t *testing.T) {
+func TestImportCommandWaitsForProcessingUploadAndContinuesSameInvocation(t *testing.T) {
 	temp := t.TempDir()
 	plan, mediaBytes := testSingleMediaPlan(t)
 	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
-	media := &fakeImportMediaAPI{uploadState: canvascore.StateProcessing}
+	media := &fakeImportMediaAPI{
+		uploadState: canvascore.StateProcessing,
+		queryReady:  []bool{false, false, true},
+	}
 	executor := &fakeImportExecutor{result: verifiedImportResult()}
 	deps := testImportDependencies(temp, exporter, media, executor)
 	var stdout, stderr bytes.Buffer
-	first := newImportCommand(&stdout, &stderr, deps)
-	first.SilenceUsage = true
-	first.SetArgs([]string{"--from", "libtv", "--url", testLibTVURL})
-	if err := first.Execute(); err == nil || !strings.Contains(err.Error(), "still processing") {
-		t.Fatalf("first Execute() error = %v, want processing checkpoint", err)
+	cmd := newImportCommand(&stdout, &stderr, deps)
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{"--from", "libtv", "--url", testLibTVURL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	media.uploadState = canvascore.StateReady
-	stdout.Reset()
-	stderr.Reset()
-	second := newImportCommand(&stdout, &stderr, deps)
-	second.SetArgs([]string{"--from", "libtv", "--url", testLibTVURL})
-	if err := second.Execute(); err != nil {
-		t.Fatalf("second Execute() error = %v, stderr = %s", err, stderr.String())
+	if media.uploads != 1 || media.queries != 3 || executor.calls != 1 {
+		t.Fatalf("upload/query/execute = %d/%d/%d, want 1/3/1 in one invocation", media.uploads, media.queries, executor.calls)
 	}
-	if media.uploads != 1 || media.queries != 1 || executor.calls != 1 {
-		t.Fatalf("upload/query/execute = %d/%d/%d, want 1/1/1", media.uploads, media.queries, executor.calls)
+	for _, progress := range []string{
+		`Media progress: processed=0/1 remaining=1 action=processing file="one.png"`,
+		`Media progress: processed=0/1 remaining=1 action=waiting file="one.png"`,
+		`Media progress: processed=1/1 remaining=0 action=uploaded file="one.png"`,
+	} {
+		if !strings.Contains(stderr.String(), progress) {
+			t.Fatalf("stderr = %q, want progress %q", stderr.String(), progress)
+		}
 	}
-	if !strings.Contains(stderr.String(), `Media progress: processed=1/1 remaining=0 action=queried file="one.png"`) {
-		t.Fatalf("stderr = %q, want stable query progress", stderr.String())
+	if !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("stdout = %q, want completed import JSON", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), `Media progress: processed=0/1 remaining=1 action=checking file="one.png"`) {
-		t.Fatalf("stderr = %q, want pre-query progress before a potentially slow request", stderr.String())
+}
+
+func TestImportMediaResumesProcessingCheckpointWithoutUploading(t *testing.T) {
+	opts := testMediaResolutionOptions(t)
+	item := opts.Media[0]
+	checkpoint := &mediaCheckpoint{
+		Schema:     mediaCheckpointSchema,
+		Source:     opts.Plan.Source,
+		Target:     opts.Target,
+		BundleDirs: []string{opts.BundleDir},
+		Entries: []mediaCheckpointEntry{{
+			LogicalID: item.LogicalID, MediaType: item.MediaType, SHA256: item.SHA256,
+			Status: mediaStatusProcessing, AssetID: "asset-processing", PippitAssetID: "pippit-processing",
+		}},
+	}
+	if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeImportMediaAPI{queryReady: []bool{false, true}}
+	var stderr bytes.Buffer
+	resolved, err := resolveImportMedia(context.Background(), opts, api, &stderr)
+	if err != nil {
+		t.Fatalf("resolveImportMedia() error = %v, stderr = %s", err, stderr.String())
+	}
+	if api.uploads != 0 || api.queries != 2 || len(resolved.Media) != 1 {
+		t.Fatalf("uploads/queries/resolved = %d/%d/%#v, want 0/2/one", api.uploads, api.queries, resolved.Media)
+	}
+	saved := readTestMediaCheckpoint(t, opts.CheckpointPath)
+	if len(saved.Entries) != 1 || saved.Entries[0].Status != mediaStatusReady {
+		t.Fatalf("checkpoint = %#v, want processing entry promoted to ready", saved)
+	}
+}
+
+func TestImportMediaProcessingQueryAuthErrorStopsAndPreservesIDs(t *testing.T) {
+	opts := testMediaResolutionOptions(t)
+	item := opts.Media[0]
+	checkpoint := &mediaCheckpoint{
+		Schema:     mediaCheckpointSchema,
+		Source:     opts.Plan.Source,
+		Target:     opts.Target,
+		BundleDirs: []string{opts.BundleDir},
+		Entries: []mediaCheckpointEntry{{
+			LogicalID: item.LogicalID, MediaType: item.MediaType, SHA256: item.SHA256,
+			Status: mediaStatusProcessing, AssetID: "asset-durable", PippitAssetID: "pippit-durable",
+		}},
+	}
+	if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	api := &fakeImportMediaAPI{queryErr: errors.New("HTTP 401 Unauthorized")}
+	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "read/authentication error") ||
+		!strings.Contains(err.Error(), "401 Unauthorized") || !strings.Contains(err.Error(), "durable IDs remain") {
+		t.Fatalf("resolveImportMedia() error = %v, want immediate explicit auth/query error", err)
+	}
+	if api.uploads != 0 || api.queries != 1 {
+		t.Fatalf("uploads/queries = %d/%d, want 0/1 without polling or re-upload", api.uploads, api.queries)
+	}
+	saved := readTestMediaCheckpoint(t, opts.CheckpointPath)
+	if len(saved.Entries) != 1 || saved.Entries[0].Status != mediaStatusProcessing ||
+		saved.Entries[0].AssetID != "asset-durable" || saved.Entries[0].PippitAssetID != "pippit-durable" {
+		t.Fatalf("checkpoint = %#v, want processing status and durable IDs preserved", saved)
+	}
+}
+
+func TestLibTVPNGAIGCFingerprintNormalizesOnlyVolatileIDs(t *testing.T) {
+	pixel := color.NRGBA{R: 20, G: 40, B: 60, A: 255}
+	first := testPNGWithITXt(t, pixel, testLibTVAIGCMetadata("libtv"+strings.Repeat("a", 32)))
+	second := testPNGWithITXt(t, pixel, testLibTVAIGCMetadata("libtv"+strings.Repeat("b", 32)))
+	firstRaw := sha256.Sum256(first)
+	secondRaw := sha256.Sum256(second)
+	if firstRaw == secondRaw {
+		t.Fatal("AIGC ID fixtures unexpectedly have the same raw SHA-256")
+	}
+	firstFingerprint, err := canonicalLibTVPNGFingerprint(first)
+	if err != nil {
+		t.Fatalf("canonicalLibTVPNGFingerprint(first) error = %v", err)
+	}
+	secondFingerprint, err := canonicalLibTVPNGFingerprint(second)
+	if err != nil {
+		t.Fatalf("canonicalLibTVPNGFingerprint(second) error = %v", err)
+	}
+	if firstFingerprint != secondFingerprint || !strings.HasPrefix(firstFingerprint, libTVPNGAIGCFingerprintPrefix) {
+		t.Fatalf("fingerprints = %q/%q, want identical versioned AIGC fingerprints", firstFingerprint, secondFingerprint)
+	}
+}
+
+func TestLibTVPNGAIGCFingerprintPreservesAllOtherPNGContent(t *testing.T) {
+	pixel := color.NRGBA{R: 20, G: 40, B: 60, A: 255}
+	metadata := testLibTVAIGCMetadata("libtv" + strings.Repeat("a", 32))
+	baseline := testPNGWithITXt(t, pixel, metadata)
+	baselineFingerprint, err := canonicalLibTVPNGFingerprint(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idatChanged := testRewriteFirstPNGChunk(t, baseline, "IDAT", func(data []byte) {
+		data[0] ^= 0x01
+	})
+	apngOne := testInsertPNGChunkBeforeIEND(t, baseline, "acTL", []byte{0, 0, 0, 1, 0, 0, 0, 0})
+	apngTwo := testInsertPNGChunkBeforeIEND(t, baseline, "acTL", []byte{0, 0, 0, 1, 0, 0, 0, 1})
+	cases := map[string][]byte{
+		"stable AIGC field": testPNGWithITXt(
+			t, pixel, strings.Replace(metadata, `"Label":"1"`, `"Label":"2"`, 1),
+		),
+		"IDAT data":  idatChanged,
+		"APNG chunk": apngOne,
+		"pixel data": testPNGWithITXt(
+			t, color.NRGBA{R: 21, G: 40, B: 60, A: 255},
+			metadata,
+		),
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			fingerprint, err := canonicalLibTVPNGFingerprint(payload)
+			if err != nil {
+				t.Fatalf("canonicalLibTVPNGFingerprint() error = %v", err)
+			}
+			if fingerprint == baselineFingerprint {
+				t.Fatalf("fingerprint = %q, want change to affect canonical identity", fingerprint)
+			}
+		})
+	}
+	apngOneFingerprint, err := canonicalLibTVPNGFingerprint(apngOne)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apngTwoFingerprint, err := canonicalLibTVPNGFingerprint(apngTwo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apngOneFingerprint == apngTwoFingerprint {
+		t.Fatal("changing APNG chunk data must change the canonical fingerprint")
+	}
+}
+
+func TestLibTVPNGAIGCFingerprintRejectsInvalidStructure(t *testing.T) {
+	payload := testPNGWithITXt(
+		t,
+		color.NRGBA{R: 20, G: 40, B: 60, A: 255},
+		testLibTVAIGCMetadata("libtv"+strings.Repeat("a", 32)),
+	)
+	badCRC := append([]byte(nil), payload...)
+	badCRC[len(badCRC)-1] ^= 0x01
+	for name, invalid := range map[string][]byte{
+		"bad CRC":  badCRC,
+		"trailing": append(append([]byte(nil), payload...), 0),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := canonicalLibTVPNGFingerprint(invalid); err == nil {
+				t.Fatal("canonicalLibTVPNGFingerprint() error = nil, want structural rejection")
+			}
+		})
+	}
+}
+
+func TestImportMediaMigratesLegacyPNGCheckpointWhenOnlyITXtChanges(t *testing.T) {
+	oldPNG := testPNGWithITXt(t, color.NRGBA{R: 20, G: 40, B: 60, A: 255}, testLibTVAIGCMetadata("libtv"+strings.Repeat("a", 32)))
+	currentPNG := testPNGWithITXt(t, color.NRGBA{R: 20, G: 40, B: 60, A: 255}, testLibTVAIGCMetadata("libtv"+strings.Repeat("b", 32)))
+	if len(oldPNG) != len(currentPNG) {
+		t.Fatalf("PNG sizes = %d/%d, want metadata-only fixtures with equal size", len(oldPNG), len(currentPNG))
+	}
+	opts, oldSHA := testPNGCheckpointMigrationOptions(t, oldPNG, currentPNG)
+	if oldSHA == opts.Media[0].SHA256 {
+		t.Fatal("metadata-only PNG fixtures unexpectedly have the same raw SHA-256")
+	}
+	oldPath := filepath.Join(opts.BundleRoot, "export-old", "media", "one.png")
+	oldFingerprint, err := importMediaContentFingerprint(oldPath, oldSHA)
+	if err != nil || oldFingerprint == "" || oldFingerprint != opts.Media[0].ContentFingerprint {
+		t.Fatalf("old/current fingerprints = %q/%q, error=%v, want equal normalized AIGC content", oldFingerprint, opts.Media[0].ContentFingerprint, err)
+	}
+	api := &fakeImportMediaAPI{}
+	resolved, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
+	if err != nil {
+		t.Fatalf("resolveImportMedia() error = %v", err)
+	}
+	if api.uploads != 0 || api.queries != 1 || len(resolved.Media) != 1 ||
+		resolved.Media[0].PippitAssetID != "pippit-legacy" {
+		t.Fatalf("uploads/queries/resolved = %d/%d/%#v, want durable legacy reuse", api.uploads, api.queries, resolved.Media)
+	}
+	saved := readTestMediaCheckpoint(t, opts.CheckpointPath)
+	if len(saved.Entries) != 1 || saved.Entries[0].SHA256 != oldSHA ||
+		saved.Entries[0].ContentFingerprint != opts.Media[0].ContentFingerprint ||
+		saved.Entries[0].CanonicalByteSize != int64(len(oldPNG)) {
+		t.Fatalf("checkpoint = %#v, want original uploaded identity plus normalized AIGC fingerprint", saved)
+	}
+	canonicalPlan, err := canonicalizeImportPlanMedia(opts.Plan, opts.Target, opts.CanvasJournalPath, opts.CheckpointPath)
+	if err != nil {
+		t.Fatalf("canonicalizeImportPlanMedia() error = %v", err)
+	}
+	if canonicalPlan.RequiredMedia[0].SHA256 != oldSHA || canonicalPlan.RequiredMedia[0].Metadata.ByteSize == nil ||
+		*canonicalPlan.RequiredMedia[0].Metadata.ByteSize != int64(len(oldPNG)) {
+		t.Fatalf("canonical media = %#v, want original uploaded SHA/size", canonicalPlan.RequiredMedia[0])
+	}
+}
+
+func TestImportMediaRejectsLegacyPNGCheckpointWhenPixelsChange(t *testing.T) {
+	oldPNG := testPNGWithITXt(t, color.NRGBA{R: 20, G: 40, B: 60, A: 255}, testLibTVAIGCMetadata("libtv"+strings.Repeat("a", 32)))
+	currentPNG := testPNGWithITXt(t, color.NRGBA{R: 21, G: 40, B: 60, A: 255}, testLibTVAIGCMetadata("libtv"+strings.Repeat("b", 32)))
+	opts, oldSHA := testPNGCheckpointMigrationOptions(t, oldPNG, currentPNG)
+	api := &fakeImportMediaAPI{}
+	_, err := resolveImportMedia(context.Background(), opts, api, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "image content changed") {
+		t.Fatalf("resolveImportMedia() error = %v, want normalized-content mismatch rejection", err)
+	}
+	if api.uploads != 0 || api.queries != 0 {
+		t.Fatalf("uploads/queries = %d/%d, want no remote calls after pixel mismatch", api.uploads, api.queries)
+	}
+	saved := readTestMediaCheckpoint(t, opts.CheckpointPath)
+	if len(saved.Entries) != 1 || saved.Entries[0].SHA256 != oldSHA || saved.Entries[0].ContentFingerprint != "" {
+		t.Fatalf("checkpoint = %#v, want legacy entry left unchanged", saved)
 	}
 }
 
@@ -435,6 +802,8 @@ func TestImportMediaProgressReportsEmptySet(t *testing.T) {
 		BundleRoot:        bundleRoot,
 		CanvasJournalPath: filepath.Join(root, "state", "canvas.journal.json"),
 		CheckpointPath:    filepath.Join(root, "state", "canvas.journal.json.media.json"),
+		PollInterval:      time.Millisecond,
+		WaitTimeout:       time.Second,
 	}
 	if err := os.MkdirAll(opts.BundleDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -692,7 +1061,39 @@ func testImportDependencies(
 		userConfigDir: func() (string, error) { return filepath.Join(root, "config"), nil },
 		target:        func() string { return "https://xyq.jianying.com|ppe_cli_canvas_ak" },
 		authScope:     func() string { return strings.Repeat("a", 64) },
+		mediaPoll:     time.Millisecond,
+		mediaTimeout:  time.Second,
 	}
+}
+
+func prepareSourceBoundResumeFixture(
+	t *testing.T,
+	root string,
+) (canvasplan.Plan, *fakeImportExporter, string) {
+	t.Helper()
+	plan, _ := testImportPlan(t, false)
+	plan.RequiredMedia = nil
+	plan.Nodes = []canvasplan.Node{{
+		LogicalID: "node:placeholder", SourceNodeID: "placeholder", Title: "Pending image",
+		Position: canvasplan.Position{X: 0, Y: 0}, Size: canvasplan.Size{Width: 100, Height: 100},
+		Kind: "image-placeholder", TargetType: "biz/image",
+	}}
+	plan.Degradations = []json.RawMessage{json.RawMessage(`{"code":"test.placeholder"}`)}
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: map[string][]byte{}}
+	journalPath := filepath.Join(root, "existing.journal.json")
+	if err := os.WriteFile(journalPath, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint := &mediaCheckpoint{
+		Schema:  mediaCheckpointSchema,
+		Source:  plan.Source,
+		Target:  "https://xyq.jianying.com|ppe_cli_canvas_ak",
+		Entries: []mediaCheckpointEntry{},
+	}
+	if err := saveMediaCheckpoint(journalPath+".media.json", checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	return plan, exporter, journalPath
 }
 
 func testImportPlan(t *testing.T, degraded bool) (canvasplan.Plan, map[string][]byte) {
@@ -752,7 +1153,140 @@ func testMediaResolutionOptions(t *testing.T) mediaResolutionOptions {
 		BundleRoot:        bundleRoot,
 		CanvasJournalPath: filepath.Join(root, "state", "canvas.journal.json"),
 		CheckpointPath:    filepath.Join(root, "state", "canvas.journal.json.media.json"),
+		PollInterval:      time.Millisecond,
+		WaitTimeout:       time.Second,
 	}
+}
+
+func testPNGCheckpointMigrationOptions(t *testing.T, oldPNG, currentPNG []byte) (mediaResolutionOptions, string) {
+	t.Helper()
+	root := t.TempDir()
+	bundleRoot := filepath.Join(root, "cache", "exports")
+	oldBundle := filepath.Join(bundleRoot, "export-old")
+	currentBundle := filepath.Join(bundleRoot, "export-current")
+	oldPlan, oldMedia := testSingleMediaPlan(t)
+	currentPlan := oldPlan
+	currentPlan.RequiredMedia = append([]canvasplan.MediaRequirement(nil), oldPlan.RequiredMedia...)
+	oldSize := int64(len(oldPNG))
+	oldDigest := sha256.Sum256(oldPNG)
+	oldSHA := hex.EncodeToString(oldDigest[:])
+	oldPlan.RequiredMedia[0].SHA256 = oldSHA
+	oldPlan.RequiredMedia[0].Metadata.ByteSize = &oldSize
+	oldMedia["media/one.png"] = oldPNG
+	currentSize := int64(len(currentPNG))
+	currentDigest := sha256.Sum256(currentPNG)
+	currentPlan.RequiredMedia[0].SHA256 = hex.EncodeToString(currentDigest[:])
+	currentPlan.RequiredMedia[0].Metadata.ByteSize = &currentSize
+	currentMedia := map[string][]byte{"media/one.png": currentPNG}
+	oldExporter := &fakeImportExporter{plan: oldPlan, mediaBytes: oldMedia}
+	if _, err := oldExporter.Export(context.Background(), testLibTVURL, oldBundle, io.Discard); err != nil {
+		t.Fatalf("prepare old PNG export: %v", err)
+	}
+	currentExporter := &fakeImportExporter{plan: currentPlan, mediaBytes: currentMedia}
+	if _, err := currentExporter.Export(context.Background(), testLibTVURL, currentBundle, io.Discard); err != nil {
+		t.Fatalf("prepare current PNG export: %v", err)
+	}
+	media, err := readAndValidateExportMedia(currentBundle, currentPlan)
+	if err != nil {
+		t.Fatalf("validate current PNG export: %v", err)
+	}
+	opts := mediaResolutionOptions{
+		Plan:              currentPlan,
+		Media:             media,
+		Target:            "https://xyq.jianying.com|ppe_cli_canvas_ak",
+		BundleDir:         currentBundle,
+		BundleRoot:        bundleRoot,
+		CanvasJournalPath: filepath.Join(root, "state", "canvas.journal.json"),
+		CheckpointPath:    filepath.Join(root, "state", "canvas.journal.json.media.json"),
+		PollInterval:      time.Millisecond,
+		WaitTimeout:       time.Second,
+	}
+	checkpoint := &mediaCheckpoint{
+		Schema:     mediaCheckpointSchema,
+		Source:     currentPlan.Source,
+		Target:     opts.Target,
+		BundleDirs: []string{oldBundle},
+		Entries: []mediaCheckpointEntry{{
+			LogicalID: "media:image-1", MediaType: "image", SHA256: oldSHA,
+			Status: mediaStatusReady, AssetID: "asset-legacy", PippitAssetID: "pippit-legacy",
+		}},
+	}
+	if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
+		t.Fatalf("save legacy PNG checkpoint: %v", err)
+	}
+	return opts, oldSHA
+}
+
+func testPNGWithITXt(t *testing.T, pixel color.NRGBA, metadata string) []byte {
+	t.Helper()
+	imageValue := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 2; x++ {
+			imageValue.SetNRGBA(x, y, pixel)
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, imageValue); err != nil {
+		t.Fatalf("encode PNG fixture: %v", err)
+	}
+	data := append([]byte("AIGC\x00\x00\x00\x00\x00"), []byte(metadata)...)
+	return testInsertPNGChunkBeforeIEND(t, encoded.Bytes(), "iTXt", data)
+}
+
+func testLibTVAIGCMetadata(id string) string {
+	return fmt.Sprintf(
+		`{"Label":"1","ContentProducer":%q,"ProduceID":%q,"ReservedCode1":"","ContentPropagator":%q,"PropagateID":%q,"ReservedCode2":""}`,
+		libTVAIGCProducer,
+		id,
+		libTVAIGCProducer,
+		id,
+	)
+}
+
+func testInsertPNGChunkBeforeIEND(t *testing.T, payload []byte, chunkType string, data []byte) []byte {
+	t.Helper()
+	if len(chunkType) != 4 {
+		t.Fatalf("PNG chunk type %q must have four bytes", chunkType)
+	}
+	if len(payload) < 12 || string(payload[len(payload)-8:len(payload)-4]) != "IEND" {
+		t.Fatal("PNG fixture has no terminal IEND chunk")
+	}
+	chunk := make([]byte, 12+len(data))
+	binary.BigEndian.PutUint32(chunk[:4], uint32(len(data)))
+	copy(chunk[4:8], chunkType)
+	copy(chunk[8:8+len(data)], data)
+	checksumInput := append([]byte(chunkType), data...)
+	binary.BigEndian.PutUint32(chunk[8+len(data):], crc32.ChecksumIEEE(checksumInput))
+	result := make([]byte, 0, len(payload)+len(chunk))
+	result = append(result, payload[:len(payload)-12]...)
+	result = append(result, chunk...)
+	result = append(result, payload[len(payload)-12:]...)
+	return result
+}
+
+func testRewriteFirstPNGChunk(t *testing.T, payload []byte, expectedType string, rewrite func([]byte)) []byte {
+	t.Helper()
+	result := append([]byte(nil), payload...)
+	for offset := len(pngFileSignature); offset+12 <= len(result); {
+		length := int(binary.BigEndian.Uint32(result[offset : offset+4]))
+		end := offset + 12 + length
+		if end > len(result) {
+			t.Fatal("PNG fixture has a truncated chunk")
+		}
+		if string(result[offset+4:offset+8]) == expectedType {
+			data := result[offset+8 : offset+8+length]
+			if len(data) == 0 {
+				t.Fatalf("PNG %s fixture chunk has no data", expectedType)
+			}
+			rewrite(data)
+			checksumInput := append([]byte(expectedType), data...)
+			binary.BigEndian.PutUint32(result[offset+8+length:end], crc32.ChecksumIEEE(checksumInput))
+			return result
+		}
+		offset = end
+	}
+	t.Fatalf("PNG fixture has no %s chunk", expectedType)
+	return nil
 }
 
 func readTestMediaCheckpoint(t *testing.T, path string) mediaCheckpoint {
