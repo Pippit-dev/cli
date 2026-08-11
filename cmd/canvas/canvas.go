@@ -33,6 +33,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.AddCommand(newCreateCommand(stdout, stderr, runner))
 	cmd.AddCommand(newGetCommand(stdout, stderr, runner))
 	cmd.AddCommand(newApplyCommand(stdout, stderr, runner))
+	cmd.AddCommand(newImportCommand(stdout, stderr, newImportDependencies(runner)))
 	cmd.AddCommand(newUploadCommand(stdout, stderr, runner))
 	return cmd
 }

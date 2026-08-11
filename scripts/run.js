@@ -73,7 +73,15 @@ if (args[0] === "install") {
   }
 
   try {
-    execFileSync(bin, args, { stdio: "inherit" });
+    execFileSync(bin, args, {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        // Lets the native command find package-owned adapters after npm has
+        // installed the binary into a user cache outside this directory.
+        PIPPIT_CLI_PACKAGE_ROOT: path.join(__dirname, ".."),
+      },
+    });
   } catch (e) {
     process.exit(e.status || 1);
   }

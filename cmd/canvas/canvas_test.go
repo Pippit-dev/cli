@@ -33,16 +33,16 @@ func (f *commandFakeClient) SendMultipartRequest(context.Context, string, map[st
 	return nil
 }
 
-func TestCommandExposesOnlyProviderNeutralPublicVerbs(t *testing.T) {
+func TestCommandExposesCanvasPrimitivesAndImportOrchestration(t *testing.T) {
 	cmd := NewCommand(&bytes.Buffer{}, &bytes.Buffer{}, &common.Runner{Client: &commandFakeClient{}})
 	got := make([]string, 0, len(cmd.Commands()))
 	for _, child := range cmd.Commands() {
 		got = append(got, child.Name())
 	}
-	if strings.Join(got, ",") != "apply,create,get,upload" {
-		t.Fatalf("commands = %v, want apply/create/get/upload", got)
+	if strings.Join(got, ",") != "apply,create,get,import,upload" {
+		t.Fatalf("commands = %v, want apply/create/get/import/upload", got)
 	}
-	for _, forbidden := range []string{"import", "bind", "team", "libtv", "allocate"} {
+	for _, forbidden := range []string{"bind", "team", "libtv", "allocate"} {
 		if strings.Contains(strings.ToLower(cmd.CommandPath()+" "+cmd.Short+" "+strings.Join(got, " ")), forbidden) {
 			t.Fatalf("public command surface contains forbidden verb %q", forbidden)
 		}
