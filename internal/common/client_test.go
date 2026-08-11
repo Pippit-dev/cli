@@ -1,7 +1,9 @@
 package common
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -260,6 +262,39 @@ func TestHTTPClientMultipartRequestInjectsPPEHeaders(t *testing.T) {
 	got := <-headers
 	if got.authorization != "Bearer upload-ak" || got.usePPE != "1" || got.ppeEnv != "ppe_upload" || got.scheduleVDC != defaultPPEVDC {
 		t.Fatalf("multipart headers = %#v", got)
+	}
+}
+
+func TestHTTPClientMultipartRequestStreamsProvidedReader(t *testing.T) {
+	contents := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		payload, err := io.ReadAll(file)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		contents <- string(payload)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.URL, time.Second, NewAccessKeyAuthorizer("reader-ak"))
+	err := client.SendMultipartRequest(context.Background(), "/api/upload", nil, MultipartFile{
+		FieldName: "file",
+		FileName:  "verified.bin",
+		Reader:    bytes.NewBufferString("verified bytes"),
+	}, nil)
+	if err != nil {
+		t.Fatalf("SendMultipartRequest() error = %v", err)
+	}
+	if got := <-contents; got != "verified bytes" {
+		t.Fatalf("multipart contents = %q", got)
 	}
 }
 

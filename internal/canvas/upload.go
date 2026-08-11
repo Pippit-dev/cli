@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path/filepath"
@@ -29,6 +30,8 @@ var uploadContentTypeFallbacks = map[string]string{
 
 type UploadOptions struct {
 	Path         string
+	FileName     string
+	Reader       io.Reader
 	PollInterval time.Duration
 	WaitTimeout  time.Duration
 }
@@ -66,17 +69,25 @@ func Upload(ctx context.Context, opts UploadOptions, runner *common.Runner) (*Up
 		return nil, fmt.Errorf("canvas upload polling durations must not be negative")
 	}
 	path := strings.TrimSpace(opts.Path)
-	if path == "" {
+	if path == "" && opts.Reader == nil {
 		return nil, fmt.Errorf("canvas upload path is required")
 	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("inspect canvas upload file: %w", err)
+	if opts.Reader == nil {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("inspect canvas upload file: %w", err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("canvas upload path %q is not a regular file", path)
+		}
 	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("canvas upload path %q is not a regular file", path)
+	fileName := strings.TrimSpace(opts.FileName)
+	if fileName == "" {
+		fileName = filepath.Base(path)
 	}
-	fileName := filepath.Base(path)
+	if fileName == "" || fileName == "." {
+		return nil, fmt.Errorf("canvas upload file name is required")
+	}
 	extension := strings.ToLower(filepath.Ext(fileName))
 	contentType := mime.TypeByExtension(extension)
 	if contentType == "" {
@@ -92,6 +103,7 @@ func Upload(ctx context.Context, opts UploadOptions, runner *common.Runner) (*Up
 		Path:        path,
 		FileName:    fileName,
 		ContentType: contentType,
+		Reader:      opts.Reader,
 	}, &envelope); err != nil {
 		return nil, fmt.Errorf("canvas upload request failed; outcome may be ambiguous, check assets before retrying: %w", err)
 	}

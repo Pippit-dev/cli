@@ -41,6 +41,7 @@ type MultipartFile struct {
 	Path        string
 	FileName    string
 	ContentType string
+	Reader      io.Reader
 }
 
 type httpClient struct {
@@ -146,6 +147,9 @@ func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fiel
 	if file.FileName == "" {
 		file.FileName = filepath.Base(file.Path)
 	}
+	if strings.TrimSpace(file.FileName) == "" || file.FileName == "." {
+		return fmt.Errorf("multipart 文件名不能为空")
+	}
 	if file.ContentType == "" {
 		file.ContentType = "application/octet-stream"
 	}
@@ -187,11 +191,17 @@ func writeMultipartBody(writer *multipart.Writer, fields map[string]string, file
 		}
 	}
 
-	f, err := os.Open(file.Path)
-	if err != nil {
-		return fmt.Errorf("打开上传文件失败: %w", err)
+	reader := file.Reader
+	var opened *os.File
+	if reader == nil {
+		var err error
+		opened, err = os.Open(file.Path)
+		if err != nil {
+			return fmt.Errorf("打开上传文件失败: %w", err)
+		}
+		defer opened.Close()
+		reader = opened
 	}
-	defer f.Close()
 
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeQuotes(file.FieldName), escapeQuotes(file.FileName)))
@@ -200,7 +210,7 @@ func writeMultipartBody(writer *multipart.Writer, fields map[string]string, file
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(part, f); err != nil {
+	if _, err := io.Copy(part, reader); err != nil {
 		return fmt.Errorf("写入上传文件失败: %w", err)
 	}
 	return nil

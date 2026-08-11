@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -405,6 +406,31 @@ func TestUploadWaitsForQueryableAssetWithoutRequiringCover(t *testing.T) {
 	}
 	if result.Locator.DownloadURL == "" || result.Locator.CoverURL != "" {
 		t.Fatalf("Locator = %#v, want playable locator without cover requirement", result.Locator)
+	}
+}
+
+func TestUploadStreamsCallerVerifiedReader(t *testing.T) {
+	client := &fakeClient{
+		multipart: func(_ context.Context, _ string, _ map[string]string, file common.MultipartFile, out any) error {
+			if file.Path != "" || file.FileName != "verified.png" || file.Reader == nil {
+				t.Fatalf("multipart file = %#v, want caller-provided reader", file)
+			}
+			payload, err := io.ReadAll(file.Reader)
+			if err != nil || string(payload) != "verified image" {
+				t.Fatalf("multipart reader payload=%q error=%v", payload, err)
+			}
+			return decodeInto(out, `{"ret":"0","data":{"asset_id":"workspace-1","pippit_asset_id":"asset-1"}}`)
+		},
+		send: func(_ context.Context, _ string, _ any, out any) error {
+			return decodeInto(out, `{"ret":"0","data":{"Assets":[{"PippitAssetID":"asset-1"}]}}`)
+		},
+	}
+	result, err := Upload(context.Background(), UploadOptions{
+		FileName: "verified.png",
+		Reader:   strings.NewReader("verified image"),
+	}, runnerWithClient(client))
+	if err != nil || result.State != StateReady {
+		t.Fatalf("Upload() result=%#v error=%v", result, err)
 	}
 }
 
