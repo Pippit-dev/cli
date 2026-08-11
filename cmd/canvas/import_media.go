@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
@@ -25,6 +26,9 @@ const (
 	mediaStatusBlocked             = "blocked"
 	mediaStatusBlockedInterruption = "blocked-on-interruption"
 	maxMediaCheckpointBytes        = 8 << 20
+	defaultImportMediaPollInterval = 2 * time.Second
+	defaultImportMediaWaitTimeout  = 10 * time.Minute
+	initialImportUploadWaitTimeout = 5 * time.Second
 )
 
 type importMediaPreflighter interface {
@@ -32,21 +36,41 @@ type importMediaPreflighter interface {
 }
 
 type importMediaAPI interface {
-	Upload(context.Context, string) (*canvascore.UploadResult, error)
-	Query(context.Context, string) error
+	Upload(context.Context, validatedImportMedia) (*canvascore.UploadResult, error)
+	Query(context.Context, string) (bool, error)
 }
 
 type runnerImportMediaAPI struct {
 	runner *common.Runner
 }
 
-func (api runnerImportMediaAPI) Upload(ctx context.Context, path string) (*canvascore.UploadResult, error) {
-	return canvascore.Upload(ctx, canvascore.UploadOptions{Path: path}, api.runner)
+func (api runnerImportMediaAPI) Upload(ctx context.Context, media validatedImportMedia) (*canvascore.UploadResult, error) {
+	file, identity, err := openInspectedImportMediaFile(media.LocalPath)
+	if err != nil {
+		return nil, fmt.Errorf("verify canvas import media immediately before upload: %w", err)
+	}
+	defer file.Close()
+	if identity.RawSHA256 != media.SHA256 || identity.ContentFingerprint != media.ContentFingerprint ||
+		identity.ByteSize != media.ByteSize {
+		return nil, fmt.Errorf("canvas import media changed before upload dispatch")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("rewind verified canvas import media before upload: %w", err)
+	}
+	return canvascore.Upload(ctx, canvascore.UploadOptions{
+		FileName:     media.FileName,
+		Reader:       file,
+		PollInterval: time.Second,
+		WaitTimeout:  initialImportUploadWaitTimeout,
+	}, api.runner)
 }
 
-func (api runnerImportMediaAPI) Query(ctx context.Context, pippitAssetID string) error {
-	_, err := canvascore.Get(ctx, canvascore.GetOptions{AssetIDs: []string{pippitAssetID}}, api.runner)
-	return err
+func (api runnerImportMediaAPI) Query(ctx context.Context, pippitAssetID string) (bool, error) {
+	result, err := canvascore.GetExisting(ctx, []string{pippitAssetID}, api.runner)
+	if err != nil {
+		return false, err
+	}
+	return result != nil && len(result.Assets) == 1, nil
 }
 
 // PreflightUpload mirrors the current Access Key authorizer's local guard. It
@@ -66,12 +90,13 @@ func (api runnerImportMediaAPI) PreflightUpload(ctx context.Context) error {
 }
 
 type validatedImportMedia struct {
-	LogicalID string
-	MediaType string
-	FileName  string
-	LocalPath string
-	SHA256    string
-	ByteSize  int64
+	LogicalID          string
+	MediaType          string
+	FileName           string
+	LocalPath          string
+	SHA256             string
+	ContentFingerprint string
+	ByteSize           int64
 }
 
 type mediaResolutionOptions struct {
@@ -82,6 +107,8 @@ type mediaResolutionOptions struct {
 	BundleRoot        string
 	CanvasJournalPath string
 	CheckpointPath    string
+	PollInterval      time.Duration
+	WaitTimeout       time.Duration
 }
 
 type mediaCheckpoint struct {
@@ -93,13 +120,15 @@ type mediaCheckpoint struct {
 }
 
 type mediaCheckpointEntry struct {
-	LogicalID     string `json:"logical_id"`
-	MediaType     string `json:"media_type"`
-	SHA256        string `json:"sha256"`
-	Status        string `json:"status"`
-	AssetID       string `json:"asset_id,omitempty"`
-	PippitAssetID string `json:"pippit_asset_id,omitempty"`
-	LastError     string `json:"last_error,omitempty"`
+	LogicalID          string `json:"logical_id"`
+	MediaType          string `json:"media_type"`
+	SHA256             string `json:"sha256"`
+	ContentFingerprint string `json:"content_fingerprint,omitempty"`
+	CanonicalByteSize  int64  `json:"canonical_byte_size,omitempty"`
+	Status             string `json:"status"`
+	AssetID            string `json:"asset_id,omitempty"`
+	PippitAssetID      string `json:"pippit_asset_id,omitempty"`
+	LastError          string `json:"last_error,omitempty"`
 }
 
 func readAndValidateExportMedia(bundleDir string, plan canvasplan.Plan) ([]validatedImportMedia, error) {
@@ -112,43 +141,27 @@ func readAndValidateExportMedia(bundleDir string, plan canvasplan.Plan) ([]valid
 		if err := requireFileWithinBundle(localPath, bundleDir); err != nil {
 			return nil, fmt.Errorf("invalid LibTV media %q: %w", requirement.LogicalID, err)
 		}
-		info, err := os.Stat(localPath)
+		identity, err := inspectImportMediaFile(localPath)
 		if err != nil {
 			return nil, fmt.Errorf("inspect LibTV media %q: %w", requirement.LogicalID, err)
 		}
-		if requirement.Metadata.ByteSize == nil || info.Size() != *requirement.Metadata.ByteSize {
+		if requirement.Metadata.ByteSize == nil || identity.ByteSize != *requirement.Metadata.ByteSize {
 			return nil, fmt.Errorf("LibTV media %q byte size does not match CanvasPlan", requirement.LogicalID)
 		}
-		digest, err := fileSHA256(localPath)
-		if err != nil {
-			return nil, fmt.Errorf("hash LibTV media %q: %w", requirement.LogicalID, err)
-		}
-		if digest != requirement.SHA256 {
+		if identity.RawSHA256 != requirement.SHA256 {
 			return nil, fmt.Errorf("LibTV media %q SHA-256 does not match CanvasPlan", requirement.LogicalID)
 		}
 		result = append(result, validatedImportMedia{
-			LogicalID: requirement.LogicalID,
-			MediaType: requirement.MediaType,
-			FileName:  requirement.FileName,
-			LocalPath: localPath,
-			SHA256:    digest,
-			ByteSize:  info.Size(),
+			LogicalID:          requirement.LogicalID,
+			MediaType:          requirement.MediaType,
+			FileName:           requirement.FileName,
+			LocalPath:          localPath,
+			SHA256:             identity.RawSHA256,
+			ContentFingerprint: identity.ContentFingerprint,
+			ByteSize:           identity.ByteSize,
 		})
 	}
 	return result, nil
-}
-
-func fileSHA256(path string) (string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func resolveImportMedia(
@@ -177,9 +190,14 @@ func resolveImportMedia(
 			return canvasplan.ResolvedMediaSet{}, err
 		}
 	}
-	entries, err := validateCheckpointEntries(checkpoint, opts.Media)
+	entries, migrated, err := validateCheckpointEntries(checkpoint, opts)
 	if err != nil {
 		return canvasplan.ResolvedMediaSet{}, err
+	}
+	if migrated {
+		if err := saveMediaCheckpoint(opts.CheckpointPath, checkpoint); err != nil {
+			return canvasplan.ResolvedMediaSet{}, fmt.Errorf("save migrated canvas import media checkpoint: %w", err)
+		}
 	}
 	if len(opts.Media) == 0 {
 		reportImportMediaProgress(stderr, 0, 0, "complete", validatedImportMedia{FileName: "(none)"})
@@ -210,10 +228,9 @@ func resolveImportMedia(
 					media.LogicalID, opts.CheckpointPath,
 				)
 			case mediaStatusProcessing:
-				reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
-				if err := api.Query(ctx, existing.PippitAssetID); err != nil {
+				if err := waitForImportMediaReady(ctx, opts, api, stderr, index, media, existing.PippitAssetID); err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-						"previous media upload %q is not queryable yet; durable IDs remain in %s: %w",
+						"wait for previous media upload %q; durable IDs remain in %s: %w",
 						media.LogicalID, opts.CheckpointPath, err,
 					)
 				}
@@ -227,10 +244,17 @@ func resolveImportMedia(
 			case mediaStatusReady:
 				if _, queried := queriedReadyAssetIDs[existing.PippitAssetID]; !queried {
 					reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
-					if err := api.Query(ctx, existing.PippitAssetID); err != nil {
+					ready, err := api.Query(ctx, existing.PippitAssetID)
+					if err != nil {
 						return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 							"previously uploaded media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
 							media.LogicalID, err,
+						)
+					}
+					if !ready {
+						return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
+							"previously uploaded media %q is not visible to the current Pippit account; refusing checkpoint reuse",
+							media.LogicalID,
 						)
 					}
 					queriedReadyAssetIDs[existing.PippitAssetID] = struct{}{}
@@ -244,21 +268,30 @@ func resolveImportMedia(
 		if duplicate := readyEntryByDigest(entries, media); duplicate != nil {
 			if _, queried := queriedReadyAssetIDs[duplicate.PippitAssetID]; !queried {
 				reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
-				if err := api.Query(ctx, duplicate.PippitAssetID); err != nil {
+				ready, err := api.Query(ctx, duplicate.PippitAssetID)
+				if err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 						"deduplicated media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
 						media.LogicalID, err,
 					)
 				}
+				if !ready {
+					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
+						"deduplicated media %q is not visible to the current Pippit account; refusing checkpoint reuse",
+						media.LogicalID,
+					)
+				}
 				queriedReadyAssetIDs[duplicate.PippitAssetID] = struct{}{}
 			}
 			entry := mediaCheckpointEntry{
-				LogicalID:     media.LogicalID,
-				MediaType:     media.MediaType,
-				SHA256:        media.SHA256,
-				Status:        mediaStatusReady,
-				AssetID:       duplicate.AssetID,
-				PippitAssetID: duplicate.PippitAssetID,
+				LogicalID:          media.LogicalID,
+				MediaType:          media.MediaType,
+				SHA256:             media.SHA256,
+				ContentFingerprint: media.ContentFingerprint,
+				CanonicalByteSize:  media.ByteSize,
+				Status:             mediaStatusReady,
+				AssetID:            duplicate.AssetID,
+				PippitAssetID:      duplicate.PippitAssetID,
 			}
 			entries[media.LogicalID] = &entry
 			if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
@@ -276,11 +309,13 @@ func resolveImportMedia(
 			}
 		}
 		entry := mediaCheckpointEntry{
-			LogicalID: media.LogicalID,
-			MediaType: media.MediaType,
-			SHA256:    media.SHA256,
-			Status:    mediaStatusUploadRequested,
-			LastError: "upload request is about to be dispatched; interruption requires manual outcome confirmation",
+			LogicalID:          media.LogicalID,
+			MediaType:          media.MediaType,
+			SHA256:             media.SHA256,
+			ContentFingerprint: media.ContentFingerprint,
+			CanonicalByteSize:  media.ByteSize,
+			Status:             mediaStatusUploadRequested,
+			LastError:          "upload request is about to be dispatched; interruption requires manual outcome confirmation",
 		}
 		if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
@@ -290,7 +325,7 @@ func resolveImportMedia(
 		}
 		entries[media.LogicalID] = &entry
 		reportImportMediaProgress(stderr, index, len(opts.Media), "uploading", media)
-		uploaded, uploadErr := api.Upload(ctx, media.LocalPath)
+		uploaded, uploadErr := api.Upload(ctx, media)
 		if uploadErr != nil && strings.Contains(uploadErr.Error(), "XYQ_ACCESS_KEY 缺失") {
 			if checkpointErr := removeAndSaveMediaEntry(opts.CheckpointPath, checkpoint, media.LogicalID); checkpointErr != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
@@ -343,13 +378,15 @@ func resolveImportMedia(
 			if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 				return canvasplan.ResolvedMediaSet{}, err
 			}
-			reportImportMediaProgress(stderr, index+1, len(opts.Media), "uploaded", media)
-			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
-				"media upload %q is still processing; durable IDs are checkpointed in %s, rerun to query without re-uploading",
-				media.LogicalID, opts.CheckpointPath,
-			)
+			if err := waitForImportMediaReady(ctx, opts, api, stderr, index, media, entry.PippitAssetID); err != nil {
+				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
+					"wait for media upload %q; durable IDs remain in %s: %w",
+					media.LogicalID, opts.CheckpointPath, err,
+				)
+			}
 		}
 		entry.Status = mediaStatusReady
+		entry.LastError = ""
 		queriedReadyAssetIDs[entry.PippitAssetID] = struct{}{}
 		entries[media.LogicalID] = &entry
 		if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
@@ -373,6 +410,62 @@ func resolveImportMedia(
 	}
 	cleanupCheckpointBundles(checkpoint, opts, stderr)
 	return resolved, nil
+}
+
+func waitForImportMediaReady(
+	ctx context.Context,
+	opts mediaResolutionOptions,
+	api importMediaAPI,
+	stderr io.Writer,
+	processed int,
+	media validatedImportMedia,
+	pippitAssetID string,
+) error {
+	pollInterval := opts.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = defaultImportMediaPollInterval
+	}
+	waitTimeout := opts.WaitTimeout
+	if waitTimeout <= 0 {
+		waitTimeout = defaultImportMediaWaitTimeout
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
+	for attempt := 1; ; attempt++ {
+		action := "waiting"
+		if attempt == 1 {
+			action = "processing"
+		}
+		reportImportMediaProgress(stderr, processed, len(opts.Media), action, media)
+		ready, err := api.Query(waitCtx, pippitAssetID)
+		if err != nil {
+			if waitCtx.Err() != nil {
+				return importMediaWaitError(waitCtx.Err(), pippitAssetID, waitTimeout)
+			}
+			return fmt.Errorf(
+				"query processing Pippit asset %q failed; this is a read/authentication error, not a processing signal: %w",
+				pippitAssetID,
+				err,
+			)
+		}
+		if ready {
+			return nil
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-waitCtx.Done():
+			timer.Stop()
+			return importMediaWaitError(waitCtx.Err(), pippitAssetID, waitTimeout)
+		case <-timer.C:
+		}
+	}
+}
+
+func importMediaWaitError(err error, pippitAssetID string, timeout time.Duration) error {
+	if err == context.DeadlineExceeded {
+		return fmt.Errorf("Pippit asset %q was not visible within %s; it will only be queried on the next run and will not be uploaded again", pippitAssetID, timeout)
+	}
+	return fmt.Errorf("wait for Pippit asset %q canceled; it will not be uploaded again: %w", pippitAssetID, err)
 }
 
 func reportImportMediaProgress(
@@ -454,29 +547,133 @@ func loadMediaCheckpoint(opts mediaResolutionOptions) (*mediaCheckpoint, error) 
 
 func validateCheckpointEntries(
 	checkpoint *mediaCheckpoint,
-	media []validatedImportMedia,
-) (map[string]*mediaCheckpointEntry, error) {
-	expected := make(map[string]validatedImportMedia, len(media))
-	for _, item := range media {
+	opts mediaResolutionOptions,
+) (map[string]*mediaCheckpointEntry, bool, error) {
+	expected := make(map[string]validatedImportMedia, len(opts.Media))
+	for _, item := range opts.Media {
 		expected[item.LogicalID] = item
 	}
 	entries := make(map[string]*mediaCheckpointEntry, len(checkpoint.Entries))
+	migrated := false
 	for index := range checkpoint.Entries {
 		entry := &checkpoint.Entries[index]
 		item, ok := expected[entry.LogicalID]
-		if !ok || item.MediaType != entry.MediaType || item.SHA256 != entry.SHA256 {
-			return nil, fmt.Errorf("canvas import media changed after checkpoint creation")
+		if !ok || item.MediaType != entry.MediaType {
+			return nil, false, fmt.Errorf("canvas import media changed after checkpoint creation")
+		}
+		if !validRawMediaSHA256(entry.SHA256) || !validImportMediaContentFingerprint(item.ContentFingerprint) {
+			return nil, false, fmt.Errorf("canvas import media checkpoint entry %q has an invalid fingerprint", entry.LogicalID)
+		}
+		if item.SHA256 != entry.SHA256 {
+			if item.MediaType != "image" {
+				return nil, false, fmt.Errorf("canvas import media changed after checkpoint creation")
+			}
+			if entry.ContentFingerprint == "" || entry.CanonicalByteSize == 0 {
+				previousIdentity, err := findLegacyCheckpointImageIdentity(checkpoint, opts, *entry)
+				if err != nil {
+					return nil, false, fmt.Errorf("verify changed checkpoint image %q: %w", entry.LogicalID, err)
+				}
+				if !validImportMediaContentFingerprint(previousIdentity.ContentFingerprint) {
+					return nil, false, fmt.Errorf("canvas import media checkpoint image %q has an invalid content fingerprint", entry.LogicalID)
+				}
+				if entry.ContentFingerprint != "" && entry.ContentFingerprint != previousIdentity.ContentFingerprint {
+					return nil, false, fmt.Errorf("canvas import media checkpoint image %q content fingerprint does not match its retained bundle", entry.LogicalID)
+				}
+				if entry.CanonicalByteSize != 0 && entry.CanonicalByteSize != previousIdentity.ByteSize {
+					return nil, false, fmt.Errorf("canvas import media checkpoint image %q byte size does not match its retained bundle", entry.LogicalID)
+				}
+				if entry.ContentFingerprint == "" {
+					entry.ContentFingerprint = previousIdentity.ContentFingerprint
+					migrated = true
+				}
+				if entry.CanonicalByteSize == 0 {
+					entry.CanonicalByteSize = previousIdentity.ByteSize
+					migrated = true
+				}
+			}
+			if !validImportMediaContentFingerprint(entry.ContentFingerprint) || entry.ContentFingerprint != item.ContentFingerprint {
+				return nil, false, fmt.Errorf("canvas import image content changed after checkpoint creation")
+			}
+		} else {
+			if entry.ContentFingerprint != "" &&
+				(!validImportMediaContentFingerprint(entry.ContentFingerprint) || entry.ContentFingerprint != item.ContentFingerprint) {
+				return nil, false, fmt.Errorf("canvas import media content changed after checkpoint creation")
+			}
+			if entry.ContentFingerprint == "" {
+				entry.ContentFingerprint = item.ContentFingerprint
+				migrated = true
+			}
+			if entry.CanonicalByteSize != 0 && entry.CanonicalByteSize != item.ByteSize {
+				return nil, false, fmt.Errorf("canvas import media byte size changed after checkpoint creation")
+			}
+			if entry.CanonicalByteSize == 0 {
+				entry.CanonicalByteSize = item.ByteSize
+				migrated = true
+			}
 		}
 		if _, duplicate := entries[entry.LogicalID]; duplicate {
-			return nil, fmt.Errorf("canvas import media checkpoint contains duplicate logical ID %q", entry.LogicalID)
+			return nil, false, fmt.Errorf("canvas import media checkpoint contains duplicate logical ID %q", entry.LogicalID)
 		}
 		if (entry.Status == mediaStatusReady || entry.Status == mediaStatusProcessing) &&
 			(strings.TrimSpace(entry.AssetID) == "" || strings.TrimSpace(entry.PippitAssetID) == "") {
-			return nil, fmt.Errorf("canvas import media checkpoint entry %q has no durable IDs", entry.LogicalID)
+			return nil, false, fmt.Errorf("canvas import media checkpoint entry %q has no durable IDs", entry.LogicalID)
 		}
 		entries[entry.LogicalID] = entry
 	}
-	return entries, nil
+	return entries, migrated, nil
+}
+
+func validRawMediaSHA256(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func canonicalizeImportPlanMedia(
+	plan canvasplan.Plan,
+	target string,
+	journalPath string,
+	checkpointPath string,
+) (canvasplan.Plan, error) {
+	lock, err := acquireImportMediaCheckpointLock(checkpointPath + ".lock")
+	if err != nil {
+		return canvasplan.Plan{}, err
+	}
+	defer func() { _ = lock.release() }()
+	checkpoint, err := loadMediaCheckpoint(mediaResolutionOptions{
+		Plan:              plan,
+		Target:            target,
+		CanvasJournalPath: journalPath,
+		CheckpointPath:    checkpointPath,
+	})
+	if err != nil {
+		return canvasplan.Plan{}, fmt.Errorf("load canonical canvas import media identities: %w", err)
+	}
+	entries := make(map[string]mediaCheckpointEntry, len(checkpoint.Entries))
+	for _, entry := range checkpoint.Entries {
+		if _, exists := entries[entry.LogicalID]; exists {
+			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint contains duplicate logical ID %q", entry.LogicalID)
+		}
+		entries[entry.LogicalID] = entry
+	}
+	canonical := plan
+	canonical.RequiredMedia = append([]canvasplan.MediaRequirement(nil), plan.RequiredMedia...)
+	for index := range canonical.RequiredMedia {
+		requirement := &canonical.RequiredMedia[index]
+		entry, ok := entries[requirement.LogicalID]
+		if !ok || entry.MediaType != requirement.MediaType || entry.Status != mediaStatusReady {
+			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint has no ready canonical identity for %q", requirement.LogicalID)
+		}
+		if !validRawMediaSHA256(entry.SHA256) || entry.CanonicalByteSize <= 0 {
+			return canvasplan.Plan{}, fmt.Errorf("canvas import media checkpoint has an invalid canonical identity for %q", requirement.LogicalID)
+		}
+		requirement.SHA256 = entry.SHA256
+		byteSize := entry.CanonicalByteSize
+		requirement.Metadata.ByteSize = &byteSize
+	}
+	return canonical, nil
 }
 
 func readyEntryByDigest(entries map[string]*mediaCheckpointEntry, media validatedImportMedia) *mediaCheckpointEntry {
