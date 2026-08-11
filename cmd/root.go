@@ -26,14 +26,24 @@ func Execute() error {
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
-	client := common.NewHTTPClientWithPPEEnv(
+	runner := newRootRunner(cfg)
+	return newRootCommand(stdout, stderr, runner)
+}
+
+func newRootRunner(cfg *config.Config) *common.Runner {
+	runner := common.NewRunner(cfg, nil)
+	runner.Client = common.NewHTTPClientWithPPEEnv(
 		cfg.BaseURL,
 		cfg.HTTPTimeout,
-		common.NewAccessKeyAuthorizer(cfg.AccessKey),
+		common.NewAccessKeyProviderAuthorizer(func() string {
+			if runner.Config == nil {
+				return ""
+			}
+			return runner.Config.AccessKey
+		}),
 		func() string { return cfg.PPEEnv },
 	)
-	runner := common.NewRunner(cfg, client)
-	return newRootCommand(stdout, stderr, runner)
+	return runner
 }
 
 func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
