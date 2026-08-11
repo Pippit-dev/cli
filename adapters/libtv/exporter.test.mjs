@@ -191,7 +191,29 @@ async function testLoginDoesNotPolluteJSONStdout() {
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).schema, EXPORT_RESULT_SCHEMA);
     assert.equal(result.stdout.trim().split('\n').length, 1);
+    assert.equal(result.stdout.includes('[libtv]'), false);
     assert.match(result.stderr, /fake browser login prompt/);
+    assert.deepEqual(
+      result.stderr.trim().split('\n').filter((line) => line.startsWith('[libtv]')),
+      [
+        '[libtv] phase: preparing verified LibTV CLI',
+        '[libtv] phase: checking LibTV authentication',
+        '[libtv] phase: fetching LibTV project summary',
+        '[libtv] project summary: nodes=5, edges=1',
+        '[libtv] node details: processed=1/5, remaining=4',
+        '[libtv] node details: processed=2/5, remaining=3',
+        '[libtv] node details: processed=3/5, remaining=2',
+        '[libtv] node details: processed=4/5, remaining=1',
+        '[libtv] node details: processed=5/5, remaining=0',
+        '[libtv] media download start: current=1/3, processed=0, remaining=2',
+        '[libtv] media downloads: processed=1/3, remaining=2',
+        '[libtv] media download start: current=2/3, processed=1, remaining=1',
+        '[libtv] media downloads: processed=2/3, remaining=1',
+        '[libtv] media download start: current=3/3, processed=2, remaining=0',
+        '[libtv] media downloads: processed=3/3, remaining=0',
+        '[libtv] export complete: nodes=4, groups=1, edges=1, media=3, degradations=1',
+      ],
+    );
   } finally {
     await rm(context.root, { recursive: true, force: true });
   }

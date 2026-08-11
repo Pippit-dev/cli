@@ -68,6 +68,7 @@ func (api runnerImportMediaAPI) PreflightUpload(ctx context.Context) error {
 type validatedImportMedia struct {
 	LogicalID string
 	MediaType string
+	FileName  string
 	LocalPath string
 	SHA256    string
 	ByteSize  int64
@@ -128,6 +129,7 @@ func readAndValidateExportMedia(bundleDir string, plan canvasplan.Plan) ([]valid
 		result = append(result, validatedImportMedia{
 			LogicalID: requirement.LogicalID,
 			MediaType: requirement.MediaType,
+			FileName:  requirement.FileName,
 			LocalPath: localPath,
 			SHA256:    digest,
 			ByteSize:  info.Size(),
@@ -179,9 +181,13 @@ func resolveImportMedia(
 	if err != nil {
 		return canvasplan.ResolvedMediaSet{}, err
 	}
+	if len(opts.Media) == 0 {
+		reportImportMediaProgress(stderr, 0, 0, "complete", validatedImportMedia{FileName: "(none)"})
+	}
 	queriedReadyAssetIDs := make(map[string]struct{})
-	for _, media := range opts.Media {
+	for index, media := range opts.Media {
 		if existing := entries[media.LogicalID]; existing != nil {
+			action := "reused"
 			switch existing.Status {
 			case mediaStatusBlocked:
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
@@ -204,7 +210,7 @@ func resolveImportMedia(
 					media.LogicalID, opts.CheckpointPath,
 				)
 			case mediaStatusProcessing:
-				fmt.Fprintf(stderr, "Checking previously uploaded media %q...\n", media.LogicalID)
+				reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
 				if err := api.Query(ctx, existing.PippitAssetID); err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 						"previous media upload %q is not queryable yet; durable IDs remain in %s: %w",
@@ -217,9 +223,10 @@ func resolveImportMedia(
 				if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, *existing); err != nil {
 					return canvasplan.ResolvedMediaSet{}, err
 				}
+				action = "queried"
 			case mediaStatusReady:
 				if _, queried := queriedReadyAssetIDs[existing.PippitAssetID]; !queried {
-					fmt.Fprintf(stderr, "Verifying previously uploaded media %q for the current Pippit account...\n", media.LogicalID)
+					reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
 					if err := api.Query(ctx, existing.PippitAssetID); err != nil {
 						return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 							"previously uploaded media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
@@ -231,11 +238,12 @@ func resolveImportMedia(
 			default:
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf("media checkpoint %q has invalid status %q", media.LogicalID, existing.Status)
 			}
+			reportImportMediaProgress(stderr, index+1, len(opts.Media), action, media)
 			continue
 		}
 		if duplicate := readyEntryByDigest(entries, media); duplicate != nil {
 			if _, queried := queriedReadyAssetIDs[duplicate.PippitAssetID]; !queried {
-				fmt.Fprintf(stderr, "Verifying deduplicated media %q for the current Pippit account...\n", media.LogicalID)
+				reportImportMediaProgress(stderr, index, len(opts.Media), "checking", media)
 				if err := api.Query(ctx, duplicate.PippitAssetID); err != nil {
 					return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 						"deduplicated media %q is unavailable to the current Pippit account; refusing checkpoint reuse: %w",
@@ -256,6 +264,7 @@ func resolveImportMedia(
 			if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 				return canvasplan.ResolvedMediaSet{}, err
 			}
+			reportImportMediaProgress(stderr, index+1, len(opts.Media), "reused", media)
 			continue
 		}
 		if preflighter, ok := api.(importMediaPreflighter); ok {
@@ -266,7 +275,6 @@ func resolveImportMedia(
 				)
 			}
 		}
-		fmt.Fprintf(stderr, "Uploading LibTV media %d/%d...\n", len(entries)+1, len(opts.Media))
 		entry := mediaCheckpointEntry{
 			LogicalID: media.LogicalID,
 			MediaType: media.MediaType,
@@ -281,6 +289,7 @@ func resolveImportMedia(
 			)
 		}
 		entries[media.LogicalID] = &entry
+		reportImportMediaProgress(stderr, index, len(opts.Media), "uploading", media)
 		uploaded, uploadErr := api.Upload(ctx, media.LocalPath)
 		if uploadErr != nil && strings.Contains(uploadErr.Error(), "XYQ_ACCESS_KEY 缺失") {
 			if checkpointErr := removeAndSaveMediaEntry(opts.CheckpointPath, checkpoint, media.LogicalID); checkpointErr != nil {
@@ -334,6 +343,7 @@ func resolveImportMedia(
 			if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 				return canvasplan.ResolvedMediaSet{}, err
 			}
+			reportImportMediaProgress(stderr, index+1, len(opts.Media), "uploaded", media)
 			return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 				"media upload %q is still processing; durable IDs are checkpointed in %s, rerun to query without re-uploading",
 				media.LogicalID, opts.CheckpointPath,
@@ -345,6 +355,7 @@ func resolveImportMedia(
 		if err := replaceAndSaveMediaEntry(opts.CheckpointPath, checkpoint, entry); err != nil {
 			return canvasplan.ResolvedMediaSet{}, err
 		}
+		reportImportMediaProgress(stderr, index+1, len(opts.Media), "uploaded", media)
 	}
 	resolved := canvasplan.ResolvedMediaSet{Schema: canvasplan.ResolvedMediaSchema}
 	for _, media := range opts.Media {
@@ -362,6 +373,32 @@ func resolveImportMedia(
 	}
 	cleanupCheckpointBundles(checkpoint, opts, stderr)
 	return resolved, nil
+}
+
+func reportImportMediaProgress(
+	stderr io.Writer,
+	processed int,
+	total int,
+	action string,
+	media validatedImportMedia,
+) {
+	remaining := total - processed
+	if remaining < 0 {
+		remaining = 0
+	}
+	fileName := strings.TrimSpace(media.FileName)
+	if fileName == "" {
+		fileName = filepath.Base(media.LocalPath)
+	}
+	fmt.Fprintf(
+		stderr,
+		"Media progress: processed=%d/%d remaining=%d action=%s file=%q\n",
+		processed,
+		total,
+		remaining,
+		action,
+		fileName,
+	)
 }
 
 func loadMediaCheckpoint(opts mediaResolutionOptions) (*mediaCheckpoint, error) {

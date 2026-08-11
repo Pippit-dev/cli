@@ -36,6 +36,7 @@ async function runExport(args) {
     nonInteractive: Boolean(args['non-interactive']),
     title: args.title,
     env: process.env,
+    onProgress: (message) => process.stderr.write(`${message}\n`),
   });
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }

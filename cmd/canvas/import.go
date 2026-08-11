@@ -20,11 +20,14 @@ import (
 )
 
 type importOptions struct {
-	Provider           string
-	SourceURL          string
-	Open               bool
-	AcceptDegradations bool
-	JournalPath        string
+	Provider                   string
+	SourceURL                  string
+	Open                       bool
+	AcceptDegradations         bool
+	JournalPath                string
+	OpenExplicit               bool
+	AcceptDegradationsExplicit bool
+	JournalExplicit            bool
 }
 
 var (
@@ -49,6 +52,7 @@ type importDependencies struct {
 	userConfigDir func() (string, error)
 	target        func() string
 	authScope     func() string
+	isInteractive func(io.Reader) bool
 }
 
 type runnerImportExecutor struct {
@@ -74,6 +78,7 @@ func newImportDependencies(runner *common.Runner) importDependencies {
 		userConfigDir: os.UserConfigDir,
 		target:        func() string { return canvasImportTarget(runner) },
 		authScope:     func() string { return canvasImportAuthScope(runner) },
+		isInteractive: importInputIsInteractive,
 	}
 }
 
@@ -85,9 +90,21 @@ func newImportCommand(
 	cmd := &cobra.Command{
 		Use:   "import",
 		Short: "Import an external project into a personal novel Canvas",
-		Args:  cobra.NoArgs,
+		Long: "Import an external project into a personal novel Canvas. " +
+			"Run without source flags for a guided import; flags remain available for Agent and CI automation.",
+		Example: "  pippit-tool-cli --ppe-env ppe_cli_canvas_ak canvas import",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			result, err := runCanvasImport(cmd.Context(), opts, dependencies, stderr)
+			opts.OpenExplicit = cmd.Flags().Changed("open")
+			opts.AcceptDegradationsExplicit = cmd.Flags().Changed("accept-degradations")
+			opts.JournalExplicit = cmd.Flags().Changed("journal")
+			prepared, prompts, err := prepareCanvasImportOptions(
+				cmd.InOrStdin(), opts, dependencies.isInteractive, stderr,
+			)
+			if err != nil {
+				return err
+			}
+			result, err := runCanvasImport(cmd.Context(), prepared, dependencies, stderr, prompts)
 			if result != nil {
 				if writeErr := common.WriteJSON(stdout, result); writeErr != nil {
 					return writeErr
@@ -95,8 +112,8 @@ func newImportCommand(
 			}
 			if err != nil {
 				logCanvasError("canvas import", err, map[string]string{
-					"provider": strings.TrimSpace(opts.Provider),
-					"journal":  filepath.Base(strings.TrimSpace(opts.JournalPath)),
+					"provider": strings.TrimSpace(prepared.Provider),
+					"journal":  filepath.Base(strings.TrimSpace(prepared.JournalPath)),
 				})
 				return err
 			}
@@ -119,6 +136,7 @@ func runCanvasImport(
 	opts importOptions,
 	dependencies importDependencies,
 	stderr io.Writer,
+	prompts *importPromptSession,
 ) (*canvasplan.ExecutionResult, error) {
 	if strings.ToLower(strings.TrimSpace(opts.Provider)) != "libtv" {
 		return nil, fmt.Errorf("canvas import --from must be libtv")
@@ -127,11 +145,18 @@ func runCanvasImport(
 	if err != nil {
 		return nil, err
 	}
+	explicitJournal, err := preflightExplicitImportJournal(opts.JournalPath, opts.JournalExplicit)
+	if err != nil {
+		return nil, err
+	}
+	if explicitJournal != "" {
+		opts.JournalPath = explicitJournal
+	}
 	bundleRoot, outputDir, err := newImportBundlePath(dependencies.userCacheDir)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintln(stderr, "Exporting the LibTV canvas and its media...")
+	fmt.Fprintln(stderr, "Phase export: exporting the LibTV canvas and its media...")
 	exported, err := dependencies.exporter.Export(ctx, sourceURL, outputDir, stderr)
 	if err != nil {
 		return nil, fmt.Errorf("export LibTV canvas: %w", err)
@@ -150,10 +175,22 @@ func runCanvasImport(
 		return nil, err
 	}
 	if len(plan.Degradations) > 0 && !opts.AcceptDegradations {
-		return nil, fmt.Errorf(
-			"LibTV export reports %d explicit degradation(s); inspect %s (plan: %s), then rerun with --accept-degradations",
-			len(plan.Degradations), outputDir, exported.PlanPath,
-		)
+		if prompts == nil || opts.AcceptDegradationsExplicit {
+			return nil, fmt.Errorf(
+				"LibTV export reports %d explicit degradation(s); inspect %s (plan: %s), then rerun with --accept-degradations",
+				len(plan.Degradations), outputDir, exported.PlanPath,
+			)
+		}
+		accepted, promptErr := prompts.confirmDegradations(len(plan.Degradations))
+		if promptErr != nil {
+			return nil, promptErr
+		}
+		if !accepted {
+			return nil, fmt.Errorf(
+				"LibTV import was cancelled because the export contains %d degradation(s); inspect %s (plan: %s)",
+				len(plan.Degradations), outputDir, exported.PlanPath,
+			)
+		}
 	}
 	media, err := readAndValidateExportMedia(exported.BundleDir, plan)
 	if err != nil {
@@ -176,7 +213,13 @@ func runCanvasImport(
 		_ = removeOwnedBundle(outputDir, bundleRoot)
 		return nil, err
 	}
+	if err := canvasplan.PreflightJournalPath(journalPath); err != nil {
+		_ = removeOwnedBundle(outputDir, bundleRoot)
+		return nil, fmt.Errorf("preflight resolved Canvas import journal before media upload: %w", err)
+	}
+	fmt.Fprintf(stderr, "Resume journal: %s\n", journalPath)
 	checkpointPath := journalPath + ".media.json"
+	fmt.Fprintf(stderr, "Phase media: resolving %d exported media file(s)...\n", len(media))
 	resolved, err := resolveImportMedia(ctx, mediaResolutionOptions{
 		Plan:              plan,
 		Media:             media,
@@ -189,7 +232,7 @@ func runCanvasImport(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintln(stderr, "Creating or resuming the personal novel Canvas transaction...")
+	fmt.Fprintln(stderr, "Phase canvas: create/resume, materialize, apply, then verify remote Canvas assets.")
 	result, executeErr := dependencies.executor.Execute(ctx, plan, resolved, canvasplan.ExecuteOptions{
 		JournalPath: journalPath,
 	})
@@ -207,7 +250,7 @@ func runCanvasImport(
 			fmt.Fprintf(stderr, "Canvas verified, but could not open the browser: %v\n", err)
 		}
 	}
-	fmt.Fprintln(stderr, "Canvas import verified.")
+	fmt.Fprintln(stderr, "Phase canvas: Canvas import verified by query-back.")
 	return result, nil
 }
 

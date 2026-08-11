@@ -29,7 +29,10 @@ After locating a verified CLI, the exporter probes existing official CLI
 credentials with `libtv account info`. If none are available, interactive use
 runs `libtv login web --open`; `--non-interactive` instead fails with an
 actionable login message. Login child output is redirected to stderr so stdout
-remains one machine-readable JSON object. The adapter never reads browser
+remains one machine-readable JSON object. Project, node-detail, media-download,
+and final count progress also goes to stderr. Phase lines precede CLI setup,
+authentication, and project fetch; every media download emits a start line
+before the potentially long transfer. The adapter never reads browser
 cookies or the LibTV credential file. The LibTV child receives only a small
 runtime/login environment allowlist. Unknown variables, SSH agent sockets, and
 all unlisted key/token/password values are omitted. HTTP/HTTPS/SOCKS proxy URLs

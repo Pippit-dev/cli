@@ -221,6 +221,148 @@ func TestImportCommandExportsUploadsDeduplicatesVerifiesAndOpens(t *testing.T) {
 	}
 }
 
+func TestImportCommandInteractiveWizardUsesSafeDefaults(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	media := &fakeImportMediaAPI{}
+	executor := &fakeImportExecutor{result: verifiedImportResult()}
+	opened := ""
+	deps := testImportDependencies(temp, exporter, media, executor)
+	deps.isInteractive = func(io.Reader) bool { return true }
+	deps.openURL = func(_ context.Context, value string) error { opened = value; return nil }
+	var stdout, stderr bytes.Buffer
+	cmd := newImportCommand(&stdout, &stderr, deps)
+	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n\n\n"))
+	cmd.SilenceUsage = true
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	wantURL := "https://www.liblib.tv/canvas?projectId=037a5c49e1b344e5adbc899ad93fdca9&spaceId=3872811"
+	if len(exporter.urls) != 1 || exporter.urls[0] != wantURL {
+		t.Fatalf("export URLs = %#v, want prompted LibTV URL", exporter.urls)
+	}
+	if opened != executor.result.WebURL {
+		t.Fatalf("opened = %q, want wizard default Yes", opened)
+	}
+	for _, message := range []string{
+		"Source provider [libtv]", "LibTV canvas URL", "Resume journal path [automatic]",
+		"Open the imported Canvas when finished? [Y/n]",
+		"Resume journal: " + executor.opts.JournalPath,
+		`Media progress: processed=1/2 remaining=1 action=uploaded file="one.png"`,
+		`Media progress: processed=2/2 remaining=0 action=reused file="two.png"`,
+		`Media progress: processed=0/2 remaining=2 action=uploading file="one.png"`,
+		"Phase canvas: create/resume, materialize, apply, then verify remote Canvas assets.",
+		"Phase canvas: Canvas import verified by query-back.",
+	} {
+		if !strings.Contains(stderr.String(), message) {
+			t.Fatalf("stderr missing %q:\n%s", message, stderr.String())
+		}
+	}
+	if strings.Count(stdout.String(), "\n") != 1 || !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("stdout = %q, want one final JSON line", stdout.String())
+	}
+}
+
+func TestImportCommandInteractiveWizardCanAcceptDegradations(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, true)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	executor := &fakeImportExecutor{result: verifiedImportResult()}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, executor)
+	deps.isInteractive = func(io.Reader) bool { return true }
+	var stdout, stderr bytes.Buffer
+	cmd := newImportCommand(&stdout, &stderr, deps)
+	cmd.SetIn(strings.NewReader("\n" + testLibTVURL + "\n\nn\ny\n"))
+	cmd.SilenceUsage = true
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "Continue importing with these degradations? [y/N]") {
+		t.Fatalf("stderr = %q, want in-session degradation confirmation", stderr.String())
+	}
+	if executor.calls != 1 || !json.Valid(bytes.TrimSpace(stdout.Bytes())) {
+		t.Fatalf("executor/stdout = %d/%q, want completed interactive import", executor.calls, stdout.String())
+	}
+}
+
+func TestImportCommandMissingFlagsFailsActionablyWithoutInteractiveInput(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, &fakeImportExecutor{})
+	cmd := newImportCommand(io.Discard, io.Discard, deps)
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SilenceUsage = true
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "stdin is not interactive") ||
+		!strings.Contains(err.Error(), "--from libtv --url") {
+		t.Fatalf("Execute() error = %v, want actionable non-interactive flags", err)
+	}
+	if len(exporter.urls) != 0 {
+		t.Fatalf("exporter called before required input validation: %#v", exporter.urls)
+	}
+}
+
+func TestImportCommandInteractiveEOFMissingURLFailsBeforeExport(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, &fakeImportExecutor{})
+	deps.isInteractive = func(io.Reader) bool { return true }
+	cmd := newImportCommand(io.Discard, io.Discard, deps)
+	cmd.SetIn(strings.NewReader("\n"))
+	cmd.SilenceUsage = true
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "ended before a LibTV URL") ||
+		!strings.Contains(err.Error(), "--from libtv --url") {
+		t.Fatalf("Execute() error = %v, want actionable EOF guidance", err)
+	}
+	if len(exporter.urls) != 0 {
+		t.Fatalf("exporter called after prompt EOF: %#v", exporter.urls)
+	}
+}
+
+func TestImportCommandRejectsUnsafeExplicitJournalBeforeExport(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		journal     string
+		wantMessage string
+	}{
+		{name: "explicit empty", journal: "", wantMessage: "explicitly set but is empty"},
+		{
+			name:        "filesystem root child",
+			journal:     filepath.Join(string(filepath.Separator), "import.journal.json"),
+			wantMessage: "shell directory variable was empty",
+		},
+		{
+			name:        "missing parent",
+			journal:     filepath.Join(t.TempDir(), "not-created", "import.journal.json"),
+			wantMessage: "mkdir -p",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			temp := t.TempDir()
+			plan, mediaBytes := testImportPlan(t, false)
+			exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+			deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, &fakeImportExecutor{})
+			cmd := newImportCommand(io.Discard, io.Discard, deps)
+			cmd.SetArgs([]string{
+				"--from", "libtv", "--url", testLibTVURL, "--journal", test.journal,
+			})
+			cmd.SilenceUsage = true
+			err := cmd.Execute()
+			if err == nil || !strings.Contains(err.Error(), test.wantMessage) ||
+				!strings.Contains(err.Error(), "unset/omit --journal") {
+				t.Fatalf("Execute() error = %v, want early journal guidance containing %q", err, test.wantMessage)
+			}
+			if len(exporter.urls) != 0 {
+				t.Fatalf("exporter called before explicit journal validation: %#v", exporter.urls)
+			}
+		})
+	}
+}
+
 func TestImportCommandRequiresExplicitDegradationAcceptanceAndKeepsBundle(t *testing.T) {
 	temp := t.TempDir()
 	plan, mediaBytes := testImportPlan(t, true)
@@ -268,6 +410,45 @@ func TestImportCommandCheckpointsProcessingUploadAndDoesNotUploadAgain(t *testin
 	}
 	if media.uploads != 1 || media.queries != 1 || executor.calls != 1 {
 		t.Fatalf("upload/query/execute = %d/%d/%d, want 1/1/1", media.uploads, media.queries, executor.calls)
+	}
+	if !strings.Contains(stderr.String(), `Media progress: processed=1/1 remaining=0 action=queried file="one.png"`) {
+		t.Fatalf("stderr = %q, want stable query progress", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `Media progress: processed=0/1 remaining=1 action=checking file="one.png"`) {
+		t.Fatalf("stderr = %q, want pre-query progress before a potentially slow request", stderr.String())
+	}
+}
+
+func TestImportMediaProgressReportsEmptySet(t *testing.T) {
+	root := t.TempDir()
+	bundleRoot := filepath.Join(root, "exports")
+	opts := mediaResolutionOptions{
+		Plan: canvasplan.Plan{
+			Schema: canvasplan.PlanSchema,
+			Source: canvasplan.Source{
+				Provider: "libtv", ProjectID: "037a5c49e1b344e5adbc899ad93fdca9",
+				Fingerprint: "sha256:" + strings.Repeat("1", 64),
+			},
+		},
+		Target:            "https://xyq.jianying.com|prod",
+		BundleDir:         filepath.Join(bundleRoot, "export-empty"),
+		BundleRoot:        bundleRoot,
+		CanvasJournalPath: filepath.Join(root, "state", "canvas.journal.json"),
+		CheckpointPath:    filepath.Join(root, "state", "canvas.journal.json.media.json"),
+	}
+	if err := os.MkdirAll(opts.BundleDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	resolved, err := resolveImportMedia(context.Background(), opts, &fakeImportMediaAPI{}, &stderr)
+	if err != nil {
+		t.Fatalf("resolveImportMedia() error = %v", err)
+	}
+	if len(resolved.Media) != 0 || !strings.Contains(
+		stderr.String(),
+		`Media progress: processed=0/0 remaining=0 action=complete file="(none)"`,
+	) {
+		t.Fatalf("resolved/stderr = %#v/%q, want explicit 0/0 progress", resolved, stderr.String())
 	}
 }
 

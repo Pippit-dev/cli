@@ -223,23 +223,23 @@ PPE 只影响 Pippit API 同源请求。CLI 不会把 Access Key、`x-tt-env`、
 
 ### 一键导入 LibTV 画布
 
-LibTV 迁移只是上述通用画布能力的 CLI 编排层，服务端不识别 LibTV。给定一个 LibTV 画布链接后，CLI 会通过官方 LibTV CLI 完成网页授权与草稿/素材导出，再依次调用通用的 `upload`、`create`、内部 ID 分配、单 transaction `apply` 和 `get` 全量校验：
+LibTV 迁移只是上述通用画布能力的 CLI 编排层，服务端不识别 LibTV。普通用户只需启动交互式导入：
 
 ```bash
-pippit-tool-cli \
-  --ppe-env ppe_cli_canvas_ak \
-  canvas import \
-  --from libtv \
-  --url 'https://www.liblib.tv/canvas?projectId=<project-id>' \
-  --accept-degradations \
-  --open
+pippit-tool-cli --ppe-env ppe_cli_canvas_ak canvas import
 ```
+
+CLI 会逐步询问来源、LibTV 链接、journal 位置、降级接受与是否打开结果。journal 直接回车即使用权限受控的自动路径，不需要设置环境变量。源端节点处理、素材下载与 Pippit 素材上传会在 stderr 显示已处理/总数/剩余数，画布创建、写入和回读校验会显示当前阶段；最终 stdout 仍只输出一行 JSON。
+
+供 Agent、CI 或其它非交互场景使用时，仍可显式传入 `--from`、`--url`、`--accept-degradations` 和 `--open`；`--journal` 始终可选，省略时使用自动路径。
+
+给定链接后，CLI 会通过官方 LibTV CLI 完成网页授权与草稿/素材导出，再依次调用通用的 `upload`、`create`、内部 ID 分配、单 transaction `apply` 和 `get` 全量校验。
 
 生产环境使用时删除 `--ppe-env ppe_cli_canvas_ak`。当前登录能力仍沿用既有 Access Key 配置；CLI 自动保存 AK 的 `login` 流程会单独交付。
 
 首次运行时，若本机没有 LibTV CLI，导入器只会从 LibTV 官方静态域下载固定版本 1.1.3 的对应平台 ZIP，并同时校验 ZIP 和可执行文件的内置 SHA-256；不会执行远程安装脚本。若官方 LibTV CLI 尚未登录，它会打开 `libtv login web --open` 的官方网页授权流程，导入器本身不读取浏览器 Cookie 或 LibTV credential 文件。
 
-`--accept-degradations` 表示接受计划中明确列出的不可移植节点。例如没有生成结果的图片/视频节点会保留为空占位，LibTV 私有 `video-clip` 会降级成空的 Pippit video-composite。未显式接受时，CLI 会在任何 Pippit 写入前停止。
+`--accept-degradations` 表示接受计划中明确列出的不可移植节点。例如没有生成结果的图片/视频节点会保留为空占位，LibTV 私有 `video-clip` 会降级成空的 Pippit video-composite。交互式导入会就地询问是否接受；非交互调用未传该参数时，CLI 会在任何 Pippit 写入前停止。
 
 导入状态会写入权限为 `0600` 的本地 journal。素材上传、画布创建或 transaction 结果不明确时，CLI 会保留已获得的持久 ID 并拒绝盲目重复写入；重复执行同一条命令会优先 query-back 恢复。只有 root 和所有伴生资产逐一通过 canonical hash 校验后，命令才返回 `state=verified` 并执行 `--open`。
 

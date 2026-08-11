@@ -88,6 +88,15 @@ function isSafeProxyURL(value) {
   }
 }
 
+function reportProgress(reporter, message) {
+  if (typeof reporter !== 'function') return;
+  try {
+    reporter(`[libtv] ${message}`);
+  } catch {
+    // Progress reporting must not change export semantics.
+  }
+}
+
 function createCommandRunner(binary, environment) {
   return {
     binary,
@@ -289,14 +298,22 @@ async function pathExists(path) {
   }
 }
 
-async function exportMedia(runner, tasks, projectId, stagingPath) {
+async function exportMedia(runner, tasks, projectId, stagingPath, onProgress) {
   const mediaDirectory = join(stagingPath, 'media');
   const downloadsDirectory = join(stagingPath, '.downloads');
   await mkdir(mediaDirectory, { mode: 0o700 });
   await mkdir(downloadsDirectory, { mode: 0o700 });
   const manifest = [];
   const deduplicated = new Map();
+  if (tasks.length === 0) {
+    reportProgress(onProgress, 'media downloads: processed=0/0, remaining=0');
+  }
   for (const [index, task] of tasks.entries()) {
+    reportProgress(
+      onProgress,
+      `media download start: current=${index + 1}/${tasks.length}, processed=${index}, ` +
+        `remaining=${tasks.length - index - 1}`,
+    );
     let downloaded;
     let lastFailure = 'command failed';
     for (let attempt = 0; attempt < MEDIA_DOWNLOAD_ATTEMPTS; attempt += 1) {
@@ -351,6 +368,10 @@ async function exportMedia(runner, tasks, projectId, stagingPath) {
       sha256: digest,
       byte_size: stored.byteSize,
     });
+    reportProgress(
+      onProgress,
+      `media downloads: processed=${index + 1}/${tasks.length}, remaining=${tasks.length - index - 1}`,
+    );
   }
   await rm(downloadsDirectory, { recursive: true, force: true });
   return manifest;
@@ -362,24 +383,31 @@ async function exportLibTVURL(options) {
   if (await pathExists(outputPath)) {
     throw new LibTVExportError('OUTPUT_EXISTS', `output directory already exists: ${outputPath}`);
   }
+  reportProgress(options.onProgress, 'phase: preparing verified LibTV CLI');
   const { runner, version } = await locateLibTVCLI({
     binary: options.binary,
     env: options.env ?? process.env,
     bootstrap: options.bootstrap,
     cacheRoot: options.cacheRoot,
   });
+  reportProgress(options.onProgress, 'phase: checking LibTV authentication');
   await ensureAuthenticated(runner, Boolean(options.nonInteractive));
+  reportProgress(options.onProgress, 'phase: fetching LibTV project summary');
   const projectResult = await runner.capture(['project', projectId]);
   if (projectResult.exitCode !== 0) {
     throw new LibTVExportError('PROJECT_FORBIDDEN', 'LibTV project is unavailable or permission was denied');
   }
   const project = parseCommandJSON(projectResult, 'libtv project');
   validateProject(project, projectId);
+  reportProgress(
+    options.onProgress,
+    `project summary: nodes=${project.nodes.length}, edges=${project.edges.length}`,
+  );
 
   const nodeDetails = [];
   const mediaTasks = [];
   const emptyMedia = [];
-  for (const node of project.nodes) {
+  for (const [index, node] of project.nodes.entries()) {
     const detailCommand = node.type === 'group' ? 'group' : 'node';
     const detail = parseCommandJSON(
       await runner.capture([detailCommand, node.id, '-p', projectId]),
@@ -397,6 +425,10 @@ async function exportLibTVURL(options) {
       detail: sanitizedExternalValue(detail) ?? {},
       summary: { type: node.type, hasDownloadableMedia: downloadable },
     });
+    reportProgress(
+      options.onProgress,
+      `node details: processed=${index + 1}/${project.nodes.length}, remaining=${project.nodes.length - index - 1}`,
+    );
   }
 
   await mkdir(dirname(outputPath), { recursive: true, mode: 0o700 });
@@ -404,7 +436,7 @@ async function exportLibTVURL(options) {
   await chmod(stagingPath, 0o700);
   let completed = false;
   try {
-    const media = await exportMedia(runner, mediaTasks, projectId, stagingPath);
+    const media = await exportMedia(runner, mediaTasks, projectId, stagingPath, options.onProgress);
     const source = { platform: 'libtv', cliVersion: version, projectId };
     const snapshot = {
       protocolVersion: 'xyq-libtv-snapshot/0.1',
@@ -432,6 +464,11 @@ async function exportLibTVURL(options) {
     await writePrivateJSON(join(stagingPath, 'plan.json'), plan);
     await rename(stagingPath, outputPath);
     completed = true;
+    reportProgress(
+      options.onProgress,
+      `export complete: nodes=${plan.nodes.length}, groups=${plan.groups.length}, edges=${plan.edges.length}, ` +
+        `media=${media.length}, degradations=${plan.degradations.length}`,
+    );
     return {
       schema: EXPORT_RESULT_SCHEMA,
       plan_schema: plan.schema,
