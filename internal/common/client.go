@@ -15,7 +15,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
+)
+
+const (
+	ppeUseHeader         = "x-use-ppe"
+	ppeEnvHeader         = "x-tt-env"
+	ppeScheduleVDCHeader = "x-schedule-vdc"
+	defaultPPEVDC        = "sinfonlinea"
 )
 
 type Client interface {
@@ -40,17 +48,32 @@ type httpClient struct {
 	httpClient *http.Client
 	headers    http.Header
 	authorizer RequestAuthorizer
+	ppeEnv     func() string
 }
 
 func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
-	return &httpClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+	return newHTTPClient(baseURL, timeout, authorizer, nil)
+}
+
+// NewHTTPClientWithPPEEnv creates a client whose PPE lane is resolved for each
+// request. The provider allows Cobra's global --ppe-env flag to override the
+// environment after command construction but before the request is sent.
+func NewHTTPClientWithPPEEnv(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, ppeEnv func() string) Client {
+	return newHTTPClient(baseURL, timeout, authorizer, ppeEnv)
+}
+
+func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, ppeEnv func() string) Client {
+	client := &httpClient{
+		baseURL:    strings.TrimRight(baseURL, "/"),
 		headers:    make(http.Header),
 		authorizer: authorizer,
+		ppeEnv:     ppeEnv,
 	}
+	client.httpClient = &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: client.checkRedirect,
+	}
+	return client
 }
 
 func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out any) error {
@@ -85,14 +108,9 @@ func (c *httpClient) SendRequestWithHeaders(ctx context.Context, path string, bo
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	if c.authorizer == nil {
-		return fmt.Errorf("授权请求缺少认证器")
+	if err := c.prepareRequest(ctx, req, headers); err != nil {
+		return err
 	}
-	if err := c.authorizer.Inject(ctx, req); err != nil {
-		return fmt.Errorf("写入认证请求头失败: %w", err)
-	}
-
-	c.injectHeaders(req, headers)
 
 	// If out is **http.Response, return the raw response for streaming (e.g. file download).
 	if out != nil {
@@ -143,17 +161,11 @@ func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fiel
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 
-	if c.authorizer == nil {
+	if err := c.prepareRequest(ctx, req, nil); err != nil {
 		_ = pr.Close()
 		_ = pw.Close()
-		return fmt.Errorf("授权请求缺少认证器")
+		return err
 	}
-	if err := c.authorizer.Inject(ctx, req); err != nil {
-		_ = pr.Close()
-		_ = pw.Close()
-		return fmt.Errorf("写入认证请求头失败: %w", err)
-	}
-	c.injectHeaders(req, nil)
 
 	go func() {
 		err := writeMultipartBody(writer, fields, file)
@@ -212,6 +224,123 @@ func (c *httpClient) injectHeaders(req *http.Request, headers map[string]string)
 	}
 }
 
+func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, headers map[string]string) error {
+	trusted, err := c.isBaseURLOrigin(req.URL)
+	if err != nil {
+		return err
+	}
+
+	var ppeEnv string
+	if trusted {
+		if c.ppeEnv != nil {
+			ppeEnv, err = config.NormalizePPEEnv(c.ppeEnv())
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	c.injectHeaders(req, headers)
+	// Authentication and PPE routing are protected headers. Neither the
+	// client's generic headers nor a caller-provided map may set or override
+	// them; rebuild them below only for the configured API origin.
+	req.Header.Del("Authorization")
+	req.Header.Del(ppeUseHeader)
+	req.Header.Del(ppeEnvHeader)
+	req.Header.Del(ppeScheduleVDCHeader)
+	if !trusted {
+		// Absolute third-party URLs are used for result downloads. The protected
+		// headers remain empty outside the API origin.
+		return nil
+	}
+	if c.authorizer == nil {
+		return fmt.Errorf("授权请求缺少认证器")
+	}
+	if err := c.authorizer.Inject(ctx, req); err != nil {
+		return fmt.Errorf("写入认证请求头失败: %w", err)
+	}
+	if ppeEnv != "" {
+		req.Header.Set(ppeUseHeader, "1")
+		req.Header.Set(ppeEnvHeader, ppeEnv)
+		req.Header.Set(ppeScheduleVDCHeader, defaultPPEVDC)
+	}
+	return nil
+}
+
+func (c *httpClient) isBaseURLOrigin(target *url.URL) (bool, error) {
+	if c.baseURL == "" {
+		return false, nil
+	}
+	base, err := url.Parse(c.baseURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return false, fmt.Errorf("解析 base URL %q 失败", c.baseURL)
+	}
+	return sameOrigin(base, target), nil
+}
+
+func (c *httpClient) checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("停止重定向：已达到 10 次上限")
+	}
+	trusted, err := c.isBaseURLOrigin(req.URL)
+	if err != nil {
+		return err
+	}
+	initialTrusted, err := c.isBaseURLOrigin(via[0].URL)
+	if err != nil {
+		return err
+	}
+	if initialTrusted && !trusted {
+		// API requests may contain unreleased canvas data or upload metadata.
+		// Stripping credentials is insufficient because Go can preserve the
+		// method and body for 307/308 redirects. API calls have no valid reason
+		// to leave the configured origin, so reject the redirect entirely.
+		return fmt.Errorf("拒绝 Pippit API 跨域重定向到 %s", req.URL.Redacted())
+	}
+	if trusted {
+		// net/http may rebuild redirect headers from the original request. Once a
+		// chain has crossed an untrusted origin, never restore protected headers
+		// even if a later hop points back at the API origin.
+		for _, previous := range via {
+			previousTrusted, err := c.isBaseURLOrigin(previous.URL)
+			if err != nil {
+				return err
+			}
+			if !previousTrusted {
+				trusted = false
+				break
+			}
+		}
+	}
+	if !trusted {
+		req.Header.Del("Authorization")
+		req.Header.Del(ppeUseHeader)
+		req.Header.Del(ppeEnvHeader)
+		req.Header.Del(ppeScheduleVDCHeader)
+	}
+	return nil
+}
+
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectivePort(a) == effectivePort(b)
+}
+
+func effectivePort(u *url.URL) string {
+	if port := u.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
 func (c *httpClient) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -240,7 +369,14 @@ func (c *httpClient) do(req *http.Request, out any) error {
 }
 
 func (c *httpClient) resolveURL(path string, query map[string]string) (string, error) {
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return "", fmt.Errorf("解析 URL 失败: %w", err)
+	}
+	if parsed.IsAbs() {
+		if parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return "", fmt.Errorf("仅支持 http 或 https URL: %q", path)
+		}
 		return appendQuery(path, query)
 	}
 	if c.baseURL == "" {
