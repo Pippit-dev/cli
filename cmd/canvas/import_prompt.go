@@ -7,11 +7,14 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	charmterm "github.com/charmbracelet/x/term"
 )
 
 const importFlagsHint = `--from libtv --url "https://www.liblib.tv/canvas?projectId=<project-id>"`
 
 type importPromptSession struct {
+	input  io.Reader
 	reader *bufio.Reader
 	stderr io.Writer
 	eof    bool
@@ -45,6 +48,7 @@ func newImportPromptSessionWithTUI(
 	enableTUI bool,
 ) *importPromptSession {
 	session := &importPromptSession{
+		input:  input,
 		reader: bufio.NewReader(input),
 		stderr: stderr,
 	}
@@ -71,19 +75,22 @@ func prepareCanvasImportOptions(
 ) (importOptions, *importPromptSession, error) {
 	needsWizard := strings.TrimSpace(opts.Provider) == "" || strings.TrimSpace(opts.SourceURL) == ""
 	if !needsWizard {
+		if isInteractive != nil && isInteractive(input) {
+			return opts, newImportPromptSession(ctx, input, stderr), nil
+		}
 		return opts, nil, nil
 	}
 	if isInteractive == nil || !isInteractive(input) {
 		return opts, nil, fmt.Errorf(
-			"canvas import is missing --from or --url and stdin is not interactive; pass %s",
+			"canvas import 缺少 --from 或 --url，且当前输入不是交互式终端；请传入 %s",
 			importFlagsHint,
 		)
 	}
 	prompts := newImportPromptSession(ctx, input, stderr)
 	if strings.TrimSpace(opts.Provider) == "" {
 		_, err := prompts.askChoice(
-			"Source provider:",
-			[]importPromptChoice{{label: "LibTV (default)", aliases: []string{"libtv"}}},
+			"导入来源：",
+			[]importPromptChoice{{label: "LibTV（默认）", aliases: []string{"libtv"}}},
 			1,
 		)
 		if err != nil {
@@ -93,7 +100,7 @@ func prepareCanvasImportOptions(
 	}
 	if strings.TrimSpace(opts.SourceURL) == "" {
 		for {
-			value, eof, err := prompts.readLine("LibTV canvas URL: ")
+			value, eof, err := prompts.readLine("LibTV 画布链接：")
 			if err != nil {
 				return opts, nil, err
 			}
@@ -103,19 +110,19 @@ func prepareCanvasImportOptions(
 			}
 			if eof {
 				return opts, nil, fmt.Errorf(
-					"interactive input ended before a LibTV URL was provided; rerun with %s",
+					"尚未提供 LibTV 画布链接，交互输入就已结束；请重新运行并传入 %s",
 					importFlagsHint,
 				)
 			}
-			fmt.Fprintln(stderr, "A LibTV canvas URL is required.")
+			fmt.Fprintln(stderr, "请输入 LibTV 画布链接。")
 		}
 	}
 	if !opts.JournalExplicit {
 		choice, err := prompts.askChoice(
-			"Resume journal:",
+			"断点续跑记录：",
 			[]importPromptChoice{
-				{label: "Automatic (recommended, default)"},
-				{label: "Custom path"},
+				{label: "自动生成（推荐，默认）"},
+				{label: "自定义路径"},
 			},
 			1,
 		)
@@ -124,7 +131,7 @@ func prepareCanvasImportOptions(
 		}
 		if choice == 2 {
 			for {
-				value, eof, readErr := prompts.readLine("Custom journal path: ")
+				value, eof, readErr := prompts.readLine("自定义断点记录路径：")
 				if readErr != nil {
 					return opts, nil, readErr
 				}
@@ -135,19 +142,19 @@ func prepareCanvasImportOptions(
 				}
 				if eof {
 					return opts, nil, fmt.Errorf(
-						"interactive input ended before a custom journal path was provided; choose 1 for Automatic or pass --journal <path>",
+						"尚未提供自定义断点记录路径，交互输入就已结束；请选择 1 自动生成，或传入 --journal <路径>",
 					)
 				}
-				fmt.Fprintln(stderr, "A custom journal path is required after selecting option 2.")
+				fmt.Fprintln(stderr, "选择自定义路径后，请输入断点记录路径。")
 			}
 		}
 	}
 	if !opts.OpenExplicit {
 		choice, err := prompts.askChoice(
-			"After import:",
+			"导入完成后：",
 			[]importPromptChoice{
-				{label: "Open Canvas (default)", aliases: []string{"y", "yes"}},
-				{label: "Do not open", aliases: []string{"n", "no"}},
+				{label: "打开画布（默认）", aliases: []string{"y", "yes"}},
+				{label: "暂不打开", aliases: []string{"n", "no"}},
 			},
 			1,
 		)
@@ -157,6 +164,23 @@ func prepareCanvasImportOptions(
 		opts.Open = choice == 1
 	}
 	return opts, prompts, nil
+}
+
+func (prompts *importPromptSession) readSecret(label string) (string, bool, error) {
+	if prompts.tui != nil {
+		value, err := prompts.tui.readSecret(label)
+		return value, false, err
+	}
+	if file, ok := prompts.input.(*os.File); ok && importFileIsTerminal(file) {
+		fmt.Fprint(prompts.stderr, label)
+		value, err := charmterm.ReadPassword(file.Fd())
+		fmt.Fprintln(prompts.stderr)
+		if err != nil {
+			return "", false, fmt.Errorf("安全读取 Access Key 失败：%w", err)
+		}
+		return strings.TrimSpace(string(value)), false, nil
+	}
+	return prompts.readLine(label)
 }
 
 func (prompts *importPromptSession) askChoice(
@@ -172,7 +196,7 @@ func (prompts *importPromptSession) askChoice(
 		for index, choice := range choices {
 			fmt.Fprintf(prompts.stderr, "  %d) %s\n", index+1, choice.label)
 		}
-		value, eof, err := prompts.readLine(fmt.Sprintf("Select [%d]: ", defaultChoice))
+		value, eof, err := prompts.readLine(fmt.Sprintf("请选择 [%d]：", defaultChoice))
 		if err != nil {
 			return 0, err
 		}
@@ -188,7 +212,7 @@ func (prompts *importPromptSession) askChoice(
 		if eof {
 			return defaultChoice, nil
 		}
-		fmt.Fprintf(prompts.stderr, "Please select a number from 1 to %d.\n", len(choices))
+		fmt.Fprintf(prompts.stderr, "请输入 1 到 %d 之间的数字。\n", len(choices))
 	}
 }
 
@@ -212,7 +236,7 @@ func (prompts *importPromptSession) readLine(label string) (string, bool, error)
 	}
 	line, err := prompts.reader.ReadString('\n')
 	if err != nil && err != io.EOF {
-		return "", false, fmt.Errorf("read canvas import prompt: %w", err)
+		return "", false, fmt.Errorf("读取画布导入提示失败：%w", err)
 	}
 	if err == io.EOF {
 		prompts.eof = true

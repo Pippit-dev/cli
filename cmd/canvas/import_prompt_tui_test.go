@@ -33,10 +33,10 @@ func TestImportPromptTUISelectUsesArrowKeys(t *testing.T) {
 		true,
 	)
 	selected, err := session.askChoice(
-		"Resume journal:",
+		"断点续跑记录：",
 		[]importPromptChoice{
-			{label: "Automatic (recommended)"},
-			{label: "Custom path"},
+			{label: "自动生成（推荐）"},
+			{label: "自定义路径"},
 		},
 		1,
 	)
@@ -46,7 +46,7 @@ func TestImportPromptTUISelectUsesArrowKeys(t *testing.T) {
 	if selected != 2 {
 		t.Fatalf("askChoice() = %d, want arrow-down selection 2", selected)
 	}
-	for _, expected := range []string{"Resume journal", "Automatic", "Custom path"} {
+	for _, expected := range []string{"断点续跑记录", "自动生成", "自定义路径", "使用 ↑/↓ 切换，按 Enter 确认"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("TUI output missing %q: %q", expected, output.String())
 		}
@@ -64,7 +64,7 @@ func TestImportPromptTUIReadsPastedURL(t *testing.T) {
 		&output,
 		true,
 	)
-	value, eof, err := session.readLine("LibTV canvas URL: ")
+	value, eof, err := session.readLine("LibTV 画布链接：")
 	if err != nil {
 		t.Fatalf("readLine() error = %v; output = %q", err, output.String())
 	}
@@ -74,8 +74,34 @@ func TestImportPromptTUIReadsPastedURL(t *testing.T) {
 	if value != testLibTVURL {
 		t.Fatalf("readLine() = %q, want pasted URL", value)
 	}
-	if !strings.Contains(output.String(), "LibTV canvas URL") {
-		t.Fatalf("TUI output = %q, want input title", output.String())
+	for _, expected := range []string{"LibTV 画布链接", "粘贴内容后按 Enter 确认"} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("TUI output missing %q: %q", expected, output.String())
+		}
+	}
+}
+
+func TestImportPromptTUIKeepsAccessKeyMasked(t *testing.T) {
+	t.Setenv("TERM", "xterm-256color")
+	const accessKey = "tui-secret-access-key"
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var output bytes.Buffer
+	session := newImportPromptSessionWithTUI(
+		ctx,
+		&delayedImportPromptReader{Reader: bytes.NewBufferString(accessKey + "\r")},
+		&output,
+		true,
+	)
+	value, eof, err := session.readSecret("粘贴小云雀 Access Key：")
+	if err != nil {
+		t.Fatalf("readSecret() error = %v; output = %q", err, output.String())
+	}
+	if eof || value != accessKey {
+		t.Fatalf("readSecret() = %q/%v, want masked value", value, eof)
+	}
+	if strings.Contains(output.String(), accessKey) {
+		t.Fatalf("TUI output leaked Access Key: %q", output.String())
 	}
 }
 
@@ -86,8 +112,8 @@ func TestImportPromptTUIHonorsContextCancellation(t *testing.T) {
 	var output bytes.Buffer
 	session := newImportPromptSessionWithTUI(ctx, bytes.NewBuffer(nil), &output, true)
 	_, err := session.askChoice(
-		"After import:",
-		[]importPromptChoice{{label: "Open Canvas"}, {label: "Do not open"}},
+		"导入完成后：",
+		[]importPromptChoice{{label: "打开画布"}, {label: "暂不打开"}},
 		1,
 	)
 	if err == nil || !errors.Is(err, errCanvasImportSetupCanceled) {

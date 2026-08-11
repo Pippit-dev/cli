@@ -12,7 +12,7 @@ import (
 
 const importPromptWidth = 72
 
-var errCanvasImportSetupCanceled = errors.New("Canvas import setup canceled")
+var errCanvasImportSetupCanceled = errors.New("已取消画布导入设置")
 
 type importPromptTUI struct {
 	ctx    context.Context
@@ -26,7 +26,7 @@ func (prompt *importPromptTUI) askChoice(
 	defaultChoice int,
 ) (int, error) {
 	if defaultChoice < 1 || defaultChoice > len(choices) {
-		return 0, fmt.Errorf("invalid default Canvas import choice %d", defaultChoice)
+		return 0, fmt.Errorf("画布导入的默认选项 %d 无效", defaultChoice)
 	}
 	selected := defaultChoice
 	options := make([]huh.Option[int], 0, len(choices))
@@ -35,7 +35,7 @@ func (prompt *importPromptTUI) askChoice(
 	}
 	field := huh.NewSelect[int]().
 		Title(strings.TrimSpace(title)).
-		Description("Use ↑/↓ to move, Enter to select").
+		Description("使用 ↑/↓ 切换，按 Enter 确认").
 		Options(options...).
 		Value(&selected)
 	if err := prompt.run(field); err != nil {
@@ -49,25 +49,45 @@ func (prompt *importPromptTUI) readLine(label string) (string, error) {
 	title := strings.TrimSpace(strings.TrimSuffix(label, ": "))
 	field := huh.NewInput().
 		Title(title).
-		Description("Paste a value, then press Enter").
+		Description("粘贴内容后按 Enter 确认").
 		Prompt("› ").
 		Value(&value)
 	switch title {
-	case "LibTV canvas URL":
+	case "LibTV 画布链接":
 		field.Validate(func(value string) error {
 			if _, err := normalizeLibTVURL(value); err != nil {
 				return err
 			}
 			return nil
 		})
-	case "Custom journal path":
+	case "自定义断点记录路径":
 		field.Validate(func(value string) error {
 			if strings.TrimSpace(value) == "" {
-				return fmt.Errorf("a custom journal path is required")
+				return fmt.Errorf("请输入自定义断点记录路径")
 			}
 			return nil
 		})
 	}
+	if err := prompt.run(field); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func (prompt *importPromptTUI) readSecret(label string) (string, error) {
+	value := ""
+	field := huh.NewInput().
+		Title(strings.TrimSpace(strings.TrimRight(label, ":： "))).
+		Description("粘贴后按 Enter 确认；内容仅用于当前进程，不会保存").
+		Prompt("› ").
+		EchoMode(huh.EchoModePassword).
+		Validate(func(value string) error {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("Access Key 不能为空")
+			}
+			return nil
+		}).
+		Value(&value)
 	if err := prompt.run(field); err != nil {
 		return "", err
 	}
@@ -91,7 +111,7 @@ func (prompt *importPromptTUI) run(field huh.Field) error {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return errCanvasImportSetupCanceled
 		}
-		return fmt.Errorf("run Canvas import terminal prompt: %w", err)
+		return fmt.Errorf("运行画布导入终端交互失败：%w", err)
 	}
 	return nil
 }
