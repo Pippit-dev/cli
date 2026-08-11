@@ -4,7 +4,7 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { exportLibTVURL } from './exporter.mjs';
+import { exportLibTVURL, preflightLibTVAuth } from './exporter.mjs';
 import { convertSnapshotToCanvasPlan } from './plan.mjs';
 
 const BOOLEAN_FLAGS = new Set(['non-interactive']);
@@ -20,7 +20,7 @@ function parseArgs(argv) {
     }
     const value = rest[index + 1];
     if (!key?.startsWith('--') || !value || value.startsWith('--')) {
-      throw new Error(`invalid argument near ${key ?? '<end>'}`);
+      throw new Error(`参数格式无效，位置：${key ?? '参数末尾'}`);
     }
     args[key.slice(2)] = value;
     index += 1;
@@ -41,9 +41,19 @@ async function runExport(args) {
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
+async function runAuth(args) {
+  const result = await preflightLibTVAuth({
+    binary: args['libtv-cli'],
+    nonInteractive: Boolean(args['non-interactive']),
+    env: process.env,
+    onProgress: (message) => process.stderr.write(`${message}\n`),
+  });
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
 function required(args, key) {
   const value = args[key]?.trim();
-  if (!value) throw new Error(`--${key} is required`);
+  if (!value) throw new Error(`缺少必填参数 --${key}`);
   return value;
 }
 
@@ -52,7 +62,7 @@ async function readJson(path) {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`${path} 不是有效的 JSON：${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -91,12 +101,17 @@ async function main(argv = process.argv.slice(2)) {
     await runExport(args);
     return;
   }
+  if (args.command === 'auth') {
+    await runAuth(args);
+    return;
+  }
   throw new Error(
-    'usage:\n' +
-      '  node adapters/libtv/cli.mjs export --url <LibTV canvas URL> --output-dir <new directory> ' +
-      '[--libtv-cli <path>] [--non-interactive] [--title <title>]\n' +
+    '用法：\n' +
+      '  node adapters/libtv/cli.mjs auth [--libtv-cli <路径>] [--non-interactive]\n' +
+      '  node adapters/libtv/cli.mjs export --url <LibTV 画布链接> --output-dir <新目录> ' +
+      '[--libtv-cli <路径>] [--non-interactive] [--title <标题>]\n' +
       '  node adapters/libtv/cli.mjs plan --snapshot <snapshot.json> ' +
-      '[--media-manifest <manifest.json>] [--title <title>] --output <plan.json|->',
+      '[--media-manifest <manifest.json>] [--title <标题>] --output <plan.json|->',
   );
 }
 

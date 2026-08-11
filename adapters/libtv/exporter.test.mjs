@@ -6,11 +6,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  AUTH_RESULT_SCHEMA,
   EXPORT_RESULT_SCHEMA,
   MEDIA_MANIFEST_SCHEMA,
   exportLibTVURL,
   locateLibTVCLI,
   parseLibTVCanvasURL,
+  preflightLibTVAuth,
   sanitizedChildEnvironment,
 } from './exporter.mjs';
 
@@ -165,6 +167,97 @@ async function testBrowserLogin() {
   }
 }
 
+async function testAuthPreflightOnlyChecksAccount() {
+  const context = await fixture('login-required');
+  try {
+    await context.configure({ loginPrompt: true });
+    const result = spawnSync(process.execPath, [
+      adapterCLI,
+      'auth',
+      '--libtv-cli', fakeCLI,
+    ], { encoding: 'utf8', env: context.options.env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim().split('\n').length, 1);
+    assert.deepEqual(JSON.parse(result.stdout), {
+      schema: AUTH_RESULT_SCHEMA,
+      provider: 'libtv',
+      authenticated: true,
+      cli_version: '1.1.3',
+      login_performed: true,
+    });
+    assert.match(result.stderr, /fake browser login prompt/);
+    assert.deepEqual(
+      result.stderr.trim().split('\n').filter((line) => line.startsWith('[libtv]')),
+      [
+        '[libtv] 阶段：准备经过校验的 LibTV 命令行工具',
+        '[libtv] 阶段：检查 LibTV 登录状态',
+        '[libtv] 未检测到有效的 LibTV 登录状态，正在打开浏览器完成 OAuth 授权…',
+        '[libtv] 浏览器授权已完成，正在确认 LibTV 登录状态…',
+        '[libtv] LibTV 授权成功',
+      ],
+    );
+    const commands = (await readFile(context.logPath, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(commands, [
+      ['--version'],
+      ['account', 'info'],
+      ['login', 'web', '--open'],
+      ['account', 'info'],
+    ]);
+    assert.equal(
+      commands.some((args) => ['project', 'node', 'group', 'download'].includes(args[0])),
+      false,
+    );
+    assert.equal(await exists(context.outputDir), false);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+}
+
+async function testAuthenticatedPreflightSkipsLogin() {
+  const context = await fixture('authenticated');
+  try {
+    const progress = [];
+    const result = await preflightLibTVAuth({
+      ...context.options,
+      onProgress: (message) => progress.push(message),
+    });
+    assert.equal(result.authenticated, true);
+    assert.equal(result.login_performed, false);
+    assert.deepEqual(progress, [
+      '[libtv] 阶段：准备经过校验的 LibTV 命令行工具',
+      '[libtv] 阶段：检查 LibTV 登录状态',
+      '[libtv] LibTV 登录状态有效',
+    ]);
+    const commands = (await readFile(context.logPath, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(commands, [['--version'], ['account', 'info']]);
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+}
+
+async function testNonInteractivePreflightStopsBeforeProject() {
+  const context = await fixture('non-interactive');
+  try {
+    const result = spawnSync(process.execPath, [
+      adapterCLI,
+      'auth',
+      '--libtv-cli', fakeCLI,
+      '--non-interactive',
+    ], { encoding: 'utf8', env: context.options.env });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /需要完成 LibTV 授权/);
+    const commands = (await readFile(context.logPath, 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.deepEqual(commands, [['--version'], ['account', 'info']]);
+    assert.equal(
+      commands.some((args) => ['login', 'project', 'node', 'group', 'download'].includes(args[0])),
+      false,
+    );
+  } finally {
+    await rm(context.root, { recursive: true, force: true });
+  }
+}
+
 async function testTransientMediaRetry() {
   const context = await fixture('transient-media');
   try {
@@ -196,22 +289,25 @@ async function testLoginDoesNotPolluteJSONStdout() {
     assert.deepEqual(
       result.stderr.trim().split('\n').filter((line) => line.startsWith('[libtv]')),
       [
-        '[libtv] phase: preparing verified LibTV CLI',
-        '[libtv] phase: checking LibTV authentication',
-        '[libtv] phase: fetching LibTV project summary',
-        '[libtv] project summary: nodes=5, edges=1',
-        '[libtv] node details: processed=1/5, remaining=4',
-        '[libtv] node details: processed=2/5, remaining=3',
-        '[libtv] node details: processed=3/5, remaining=2',
-        '[libtv] node details: processed=4/5, remaining=1',
-        '[libtv] node details: processed=5/5, remaining=0',
-        '[libtv] media download start: current=1/3, processed=0, remaining=2',
-        '[libtv] media downloads: processed=1/3, remaining=2',
-        '[libtv] media download start: current=2/3, processed=1, remaining=1',
-        '[libtv] media downloads: processed=2/3, remaining=1',
-        '[libtv] media download start: current=3/3, processed=2, remaining=0',
-        '[libtv] media downloads: processed=3/3, remaining=0',
-        '[libtv] export complete: nodes=4, groups=1, edges=1, media=3, degradations=1',
+        '[libtv] 阶段：准备经过校验的 LibTV 命令行工具',
+        '[libtv] 阶段：检查 LibTV 登录状态',
+        '[libtv] 未检测到有效的 LibTV 登录状态，正在打开浏览器完成 OAuth 授权…',
+        '[libtv] 浏览器授权已完成，正在确认 LibTV 登录状态…',
+        '[libtv] LibTV 授权成功',
+        '[libtv] 阶段：正在获取 LibTV 项目信息',
+        '[libtv] 项目信息：节点 5 个，连线 1 条',
+        '[libtv] 节点详情进度：已完成 1/5，剩余 4',
+        '[libtv] 节点详情进度：已完成 2/5，剩余 3',
+        '[libtv] 节点详情进度：已完成 3/5，剩余 2',
+        '[libtv] 节点详情进度：已完成 4/5，剩余 1',
+        '[libtv] 节点详情进度：已完成 5/5，剩余 0',
+        '[libtv] 开始下载素材：当前 1/3，已完成 0，剩余 2',
+        '[libtv] 素材下载进度：已完成 1/3，剩余 2',
+        '[libtv] 开始下载素材：当前 2/3，已完成 1，剩余 1',
+        '[libtv] 素材下载进度：已完成 2/3，剩余 1',
+        '[libtv] 开始下载素材：当前 3/3，已完成 2，剩余 0',
+        '[libtv] 素材下载进度：已完成 3/3，剩余 0',
+        '[libtv] LibTV 导出完成：节点 4 个，分组 1 个，连线 1 条，素材 3 个，兼容性降级 1 项',
       ],
     );
   } finally {
@@ -281,11 +377,11 @@ async function testClosedFailure(scenario, expected, extra = {}) {
 }
 
 async function testFailureModes() {
-  await testClosedFailure('non-interactive', /authentication is required/, { nonInteractive: true });
-  await testClosedFailure('login-cancel', /login was cancelled/);
-  await testClosedFailure('permission-denied', /permission was denied/);
-  await testClosedFailure('partial-media', /download failed/);
-  assert.throws(() => parseLibTVCanvasURL('https://evil.example/canvas?projectId=0123456789abcdef0123456789abcdef'), /expected an HTTPS LibTV canvas URL/);
+  await testClosedFailure('non-interactive', /需要完成 LibTV 授权/, { nonInteractive: true });
+  await testClosedFailure('login-cancel', /授权已取消/);
+  await testClosedFailure('permission-denied', /当前账号拥有权限/);
+  await testClosedFailure('partial-media', /连续下载 3 次仍失败/);
+  assert.throws(() => parseLibTVCanvasURL('https://evil.example/canvas?projectId=0123456789abcdef0123456789abcdef'), /请输入 HTTPS 格式/);
   assert.throws(() => parseLibTVCanvasURL('https://www.liblib.tv/canvas?projectId=bad'), /projectId/);
 }
 
@@ -293,6 +389,9 @@ await chmod(fakeCLI, 0o755);
 testChildEnvironmentAllowlist();
 await testAuthenticatedExport();
 await testBrowserLogin();
+await testAuthPreflightOnlyChecksAccount();
+await testAuthenticatedPreflightSkipsLogin();
+await testNonInteractivePreflightStopsBeforeProject();
 await testTransientMediaRetry();
 await testLoginDoesNotPolluteJSONStdout();
 await testLocateUsesVerifiedBootstrap();

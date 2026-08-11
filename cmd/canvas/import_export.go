@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
@@ -19,8 +20,19 @@ import (
 
 const (
 	maxLibTVExporterOutputBytes = 4 << 20
+	libTVAuthResultSchema       = "pippit-libtv-auth-result/0.1"
 	libTVExportResultSchema     = "pippit-libtv-export-result/0.1"
 )
+
+var libTVCLIVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$`)
+
+type libTVAuthResult struct {
+	Schema         string `json:"schema"`
+	Provider       string `json:"provider"`
+	Authenticated  bool   `json:"authenticated"`
+	CLIVersion     string `json:"cli_version"`
+	LoginPerformed bool   `json:"login_performed"`
+}
 
 type libTVExportResult struct {
 	BundleDir         string             `json:"bundle_dir"`
@@ -46,47 +58,111 @@ type libTVExportMedia struct {
 
 type nodeLibTVExporter struct{}
 
+func (nodeLibTVExporter) Authenticate(
+	ctx context.Context,
+	interactive bool,
+	stderr io.Writer,
+) error {
+	args := []string{"auth"}
+	var stdin io.Reader
+	if interactive {
+		stdin = os.Stdin
+	} else {
+		args = append(args, "--non-interactive")
+	}
+	stdout, err := runNodeLibTVAdapter(ctx, args, stdin, stderr)
+	if err != nil {
+		return fmt.Errorf("检查 LibTV 授权失败：%w", err)
+	}
+	if _, err := decodeLibTVAuthResult(stdout); err != nil {
+		return fmt.Errorf("解析 LibTV 授权结果失败：%w", err)
+	}
+	return nil
+}
+
 func (nodeLibTVExporter) Export(
 	ctx context.Context,
 	sourceURL string,
 	outputDir string,
 	stderr io.Writer,
 ) (*libTVExportResult, error) {
+	stdout, err := runNodeLibTVAdapter(
+		ctx,
+		[]string{"export", "--url", sourceURL, "--output-dir", outputDir, "--non-interactive"},
+		nil,
+		stderr,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("运行 LibTV 导出器失败：%w", err)
+	}
+	var result libTVExportResult
+	decoder := json.NewDecoder(bytes.NewReader(stdout))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return nil, fmt.Errorf("解析 LibTV 导出结果失败：%w", err)
+	}
+	if err := ensureImportJSONEOF(decoder); err != nil {
+		return nil, fmt.Errorf("解析 LibTV 导出结果失败：%w", err)
+	}
+	return &result, nil
+}
+
+func runNodeLibTVAdapter(
+	ctx context.Context,
+	args []string,
+	stdin io.Reader,
+	stderr io.Writer,
+) ([]byte, error) {
 	root, err := findCLIPackageRoot()
 	if err != nil {
 		return nil, err
 	}
 	node, err := exec.LookPath("node")
 	if err != nil {
-		return nil, fmt.Errorf("find Node.js for LibTV exporter: %w", err)
+		return nil, fmt.Errorf("未找到 LibTV 适配器所需的 Node.js：%w", err)
 	}
 	adapterPath := filepath.Join(root, "adapters", "libtv", "cli.mjs")
-	command := exec.CommandContext(ctx, node, adapterPath,
-		"export", "--url", sourceURL, "--output-dir", outputDir,
-	)
+	commandArgs := append([]string{adapterPath}, args...)
+	command := exec.CommandContext(ctx, node, commandArgs...)
 	command.Env = sanitizedExporterEnv(os.Environ())
-	command.Stdin = os.Stdin
+	command.Stdin = stdin
 	command.Stderr = stderr
 	var stdout boundedBuffer
 	stdout.maximum = maxLibTVExporterOutputBytes
 	command.Stdout = &stdout
 	if err := command.Run(); err != nil {
 		if stdout.exceeded {
-			return nil, fmt.Errorf("LibTV exporter output exceeds %d bytes", maxLibTVExporterOutputBytes)
+			return nil, fmt.Errorf("LibTV 适配器输出超过 %d 字节安全上限", maxLibTVExporterOutputBytes)
 		}
-		return nil, fmt.Errorf("LibTV exporter failed: %w", err)
+		return nil, fmt.Errorf("LibTV 适配器执行失败：%w", err)
 	}
 	if stdout.exceeded {
-		return nil, fmt.Errorf("LibTV exporter output exceeds %d bytes", maxLibTVExporterOutputBytes)
+		return nil, fmt.Errorf("LibTV 适配器输出超过 %d 字节安全上限", maxLibTVExporterOutputBytes)
 	}
-	var result libTVExportResult
-	decoder := json.NewDecoder(bytes.NewReader(stdout.Bytes()))
+	return append([]byte(nil), stdout.Bytes()...), nil
+}
+
+func decodeLibTVAuthResult(data []byte) (*libTVAuthResult, error) {
+	var result libTVAuthResult
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&result); err != nil {
-		return nil, fmt.Errorf("decode LibTV exporter result: %w", err)
+		return nil, fmt.Errorf("授权结果不是有效的 JSON：%w", err)
 	}
 	if err := ensureImportJSONEOF(decoder); err != nil {
-		return nil, fmt.Errorf("decode LibTV exporter result: %w", err)
+		return nil, err
+	}
+	if result.Schema != libTVAuthResultSchema {
+		return nil, fmt.Errorf("授权结果 schema 无效：%q", result.Schema)
+	}
+	if result.Provider != "libtv" {
+		return nil, fmt.Errorf("授权结果 provider 无效：%q", result.Provider)
+	}
+	if !result.Authenticated {
+		return nil, fmt.Errorf("LibTV 授权尚未完成")
+	}
+	if !libTVCLIVersionPattern.MatchString(result.CLIVersion) {
+		return nil, fmt.Errorf("授权结果中的 LibTV CLI 版本无效：%q", result.CLIVersion)
 	}
 	return &result, nil
 }
@@ -96,9 +172,9 @@ func ensureImportJSONEOF(decoder *json.Decoder) error {
 	if err := decoder.Decode(&trailing); err == io.EOF {
 		return nil
 	} else if err != nil {
-		return fmt.Errorf("decode trailing JSON: %w", err)
+		return fmt.Errorf("解析末尾 JSON 失败：%w", err)
 	}
-	return fmt.Errorf("JSON input must contain exactly one value")
+	return fmt.Errorf("JSON 输入必须且只能包含一个值")
 }
 
 type boundedBuffer struct {

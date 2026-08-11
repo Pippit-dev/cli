@@ -13,6 +13,21 @@ node adapters/libtv/cli.mjs export \
   --output-dir ./libtv-bundle
 ```
 
+Before an import starts reading a project or downloading media, callers can
+run the independent authentication preflight:
+
+```bash
+node adapters/libtv/cli.mjs auth
+```
+
+This command only prepares the verified LibTV CLI and runs `account info`. If
+the account is not authenticated, it runs `login web --open` and verifies the
+account again. It never receives or reads a project URL, node, or media file.
+Progress and browser-login output go to stderr; successful stdout remains one
+JSON object using `pippit-libtv-auth-result/0.1`. `--non-interactive` reports
+`AUTH_REQUIRED` without trying to read any project data, so an orchestration
+layer can retry after arranging authentication.
+
 An explicit `--libtv-cli`, `LIBTV_CLI_BINARY`, or `LIBTV_CLI_PATH` opts into a
 user-managed binary after a version check. Without an explicit override, the
 exporter never executes `libtv` from `PATH` or `~/.libtv`; it goes directly to

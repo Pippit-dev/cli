@@ -22,6 +22,7 @@ import {
 import { convertSnapshotToCanvasPlan } from './plan.mjs';
 
 const EXPORT_RESULT_SCHEMA = 'pippit-libtv-export-result/0.1';
+const AUTH_RESULT_SCHEMA = 'pippit-libtv-auth-result/0.1';
 const MEDIA_MANIFEST_SCHEMA = 'pippit-libtv-media-manifest/0.1';
 const SUPPORTED_NODE_TYPES = new Set(['group', 'image', 'video', 'audio', 'video-clip']);
 const MEDIA_NODE_TYPES = new Set(['image', 'video', 'audio']);
@@ -49,17 +50,17 @@ function parseLibTVCanvasURL(value) {
   try {
     url = new URL(String(value));
   } catch {
-    throw new LibTVExportError('INVALID_URL', 'LibTV URL is invalid');
+    throw new LibTVExportError('INVALID_URL', 'LibTV 画布链接无效');
   }
   if (url.protocol !== 'https:' || !['www.liblib.tv', 'liblib.tv'].includes(url.hostname) || url.pathname !== '/canvas') {
-    throw new LibTVExportError('INVALID_URL', 'expected an HTTPS LibTV canvas URL');
+    throw new LibTVExportError('INVALID_URL', '请输入 HTTPS 格式的 LibTV 画布链接');
   }
   if (url.username || url.password || url.searchParams.getAll('projectId').length !== 1) {
-    throw new LibTVExportError('INVALID_URL', 'LibTV URL must contain exactly one projectId and no credentials');
+    throw new LibTVExportError('INVALID_URL', 'LibTV 画布链接必须且只能包含一个 projectId，且不能包含账号凭据');
   }
   const projectId = url.searchParams.get('projectId')?.trim() ?? '';
   if (!/^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(projectId)) {
-    throw new LibTVExportError('INVALID_URL', 'LibTV projectId must be a 32-hex ID or UUID');
+    throw new LibTVExportError('INVALID_URL', 'LibTV projectId 必须是 32 位十六进制 ID 或 UUID');
   }
   return { projectId };
 }
@@ -162,7 +163,7 @@ async function locateLibTVCLI(options = {}) {
     const result = await runner.capture(['--version']);
     const version = result.exitCode === 0 ? result.stdout.trim().match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0] : undefined;
     if (version && supportsExporterVersion(version)) return { runner, version };
-    throw new LibTVExportError('CLI_UNAVAILABLE', `configured LibTV CLI is unavailable or invalid: ${override}`);
+    throw new LibTVExportError('CLI_UNAVAILABLE', `配置的 LibTV 命令行工具不可用或版本无效：${override}`);
   }
   let bootstrapped;
   try {
@@ -174,61 +175,99 @@ async function locateLibTVCLI(options = {}) {
   } catch (error) {
     throw new LibTVExportError(
       'CLI_BOOTSTRAP_FAILED',
-      `LibTV CLI bootstrap failed: ${error instanceof Error ? error.message : String(error)}. ` +
-        `Official installer metadata: ${OFFICIAL_INSTALLERS.shell}`,
+      `准备 LibTV 命令行工具失败：${error instanceof Error ? error.message : String(error)}。` +
+        `官方安装信息：${OFFICIAL_INSTALLERS.shell}`,
     );
   }
   const runner = createCommandRunner(bootstrapped, environment);
   const result = await runner.capture(['--version']);
   const version = result.exitCode === 0 ? result.stdout.trim().match(/\d+\.\d+\.\d+(?:[-+][\w.-]+)?/)?.[0] : undefined;
   if (version !== OFFICIAL_CLI_VERSION) {
-    throw new LibTVExportError('CLI_BOOTSTRAP_FAILED', 'verified LibTV CLI cache returned an unexpected version');
+    throw new LibTVExportError('CLI_BOOTSTRAP_FAILED', '经过校验的 LibTV 命令行工具缓存返回了非预期版本');
   }
   return { runner, version };
 }
 
-async function ensureAuthenticated(runner, nonInteractive) {
+async function ensureAuthenticated(runner, nonInteractive, onProgress) {
   const probe = await runner.capture(['account', 'info']);
-  if (probe.exitCode === 0) return;
-  if (nonInteractive) {
-    throw new LibTVExportError('AUTH_REQUIRED', 'LibTV authentication is required; run `libtv login web --open` first');
+  if (probe.exitCode === 0) {
+    reportProgress(onProgress, 'LibTV 登录状态有效');
+    return { loginPerformed: false };
   }
+  if (nonInteractive) {
+    throw new LibTVExportError(
+      'AUTH_REQUIRED',
+      '需要完成 LibTV 授权；请在交互终端中重新运行，或先执行 `libtv login web --open`',
+    );
+  }
+  reportProgress(onProgress, '未检测到有效的 LibTV 登录状态，正在打开浏览器完成 OAuth 授权…');
   const login = await runner.interactive(['login', 'web', '--open']);
   if (login.exitCode === 130 || login.signal) {
-    throw new LibTVExportError('LOGIN_CANCELLED', 'LibTV browser login was cancelled');
+    throw new LibTVExportError('LOGIN_CANCELLED', 'LibTV 浏览器授权已取消');
   }
   if (login.exitCode !== 0) {
-    throw new LibTVExportError('LOGIN_FAILED', 'LibTV browser login did not complete');
+    throw new LibTVExportError('LOGIN_FAILED', 'LibTV 浏览器授权未完成');
   }
+  reportProgress(onProgress, '浏览器授权已完成，正在确认 LibTV 登录状态…');
   const verified = await runner.capture(['account', 'info']);
   if (verified.exitCode !== 0) {
-    throw new LibTVExportError('LOGIN_FAILED', 'LibTV credentials were not available after browser login');
+    throw new LibTVExportError('LOGIN_FAILED', '浏览器授权后仍未获取到可用的 LibTV 登录凭据');
   }
+  reportProgress(onProgress, 'LibTV 授权成功');
+  return { loginPerformed: true };
+}
+
+async function prepareAuthenticatedLibTVCLI(options = {}) {
+  reportProgress(options.onProgress, '阶段：准备经过校验的 LibTV 命令行工具');
+  const located = await locateLibTVCLI({
+    binary: options.binary,
+    env: options.env ?? process.env,
+    bootstrap: options.bootstrap,
+    cacheRoot: options.cacheRoot,
+  });
+  reportProgress(options.onProgress, '阶段：检查 LibTV 登录状态');
+  const authentication = await ensureAuthenticated(
+    located.runner,
+    Boolean(options.nonInteractive),
+    options.onProgress,
+  );
+  return { ...located, ...authentication };
+}
+
+async function preflightLibTVAuth(options = {}) {
+  const { version, loginPerformed } = await prepareAuthenticatedLibTVCLI(options);
+  return {
+    schema: AUTH_RESULT_SCHEMA,
+    provider: 'libtv',
+    authenticated: true,
+    cli_version: version,
+    login_performed: loginPerformed,
+  };
 }
 
 function parseCommandJSON(result, commandName) {
   if (result.exitCode !== 0) {
-    throw new LibTVExportError('COMMAND_FAILED', `${commandName} failed (exit ${result.exitCode ?? 'spawn'})`);
+    throw new LibTVExportError('COMMAND_FAILED', `${commandName} 执行失败（退出状态：${result.exitCode ?? '无法启动'}）`);
   }
-  if (result.overflow) throw new LibTVExportError('COMMAND_OUTPUT_TOO_LARGE', `${commandName} output exceeded the safety limit`);
+  if (result.overflow) throw new LibTVExportError('COMMAND_OUTPUT_TOO_LARGE', `${commandName} 的输出超过安全上限`);
   try {
     return JSON.parse(result.stdout);
   } catch {
-    throw new LibTVExportError('INVALID_CLI_JSON', `${commandName} did not return valid JSON`);
+    throw new LibTVExportError('INVALID_CLI_JSON', `${commandName} 未返回有效的 JSON`);
   }
 }
 
 function validateProject(project, projectId) {
   if (project?.projectUuid !== projectId || !Array.isArray(project?.nodes) || !Array.isArray(project?.edges)) {
-    throw new LibTVExportError('INVALID_PROJECT', 'LibTV project summary is incomplete or does not match the URL');
+    throw new LibTVExportError('INVALID_PROJECT', 'LibTV 项目信息不完整，或与画布链接不匹配');
   }
   const seen = new Set();
   for (const [index, node] of project.nodes.entries()) {
     if (typeof node?.id !== 'string' || !node.id.trim() || seen.has(node.id)) {
-      throw new LibTVExportError('INVALID_PROJECT', `LibTV project node ${index} has a missing or duplicate ID`);
+      throw new LibTVExportError('INVALID_PROJECT', `LibTV 项目中的第 ${index + 1} 个节点缺少 ID 或 ID 重复`);
     }
     if (!SUPPORTED_NODE_TYPES.has(node.type)) {
-      throw new LibTVExportError('UNSUPPORTED_NODE', `unsupported LibTV node type: ${node.type ?? '<missing>'}`);
+      throw new LibTVExportError('UNSUPPORTED_NODE', `暂不支持该 LibTV 节点类型：${node.type ?? '未提供类型'}`);
     }
     seen.add(node.id);
   }
@@ -269,10 +308,10 @@ async function regularFilesUnder(root, current = root) {
   const files = [];
   for (const entry of await readdir(current, { withFileTypes: true })) {
     const path = join(current, entry.name);
-    if (entry.isSymbolicLink()) throw new LibTVExportError('UNSAFE_DOWNLOAD', 'LibTV download produced a symbolic link');
+    if (entry.isSymbolicLink()) throw new LibTVExportError('UNSAFE_DOWNLOAD', 'LibTV 下载结果中包含不安全的符号链接');
     if (entry.isDirectory()) files.push(...await regularFilesUnder(root, path));
     else if (entry.isFile()) files.push(path);
-    else throw new LibTVExportError('UNSAFE_DOWNLOAD', 'LibTV download produced an unsupported filesystem entry');
+    else throw new LibTVExportError('UNSAFE_DOWNLOAD', 'LibTV 下载结果中包含不支持的文件类型');
   }
   return files;
 }
@@ -306,16 +345,16 @@ async function exportMedia(runner, tasks, projectId, stagingPath, onProgress) {
   const manifest = [];
   const deduplicated = new Map();
   if (tasks.length === 0) {
-    reportProgress(onProgress, 'media downloads: processed=0/0, remaining=0');
+    reportProgress(onProgress, '素材下载进度：已完成 0/0，剩余 0');
   }
   for (const [index, task] of tasks.entries()) {
     reportProgress(
       onProgress,
-      `media download start: current=${index + 1}/${tasks.length}, processed=${index}, ` +
-        `remaining=${tasks.length - index - 1}`,
+      `开始下载素材：当前 ${index + 1}/${tasks.length}，已完成 ${index}，` +
+        `剩余 ${tasks.length - index - 1}`,
     );
     let downloaded;
-    let lastFailure = 'command failed';
+    let lastFailure = '命令执行失败';
     for (let attempt = 0; attempt < MEDIA_DOWNLOAD_ATTEMPTS; attempt += 1) {
       const downloadDirectory = join(
         downloadsDirectory,
@@ -331,12 +370,12 @@ async function exportMedia(runner, tasks, projectId, stagingPath, onProgress) {
             downloaded = { path: files[0], fileInfo };
             break;
           }
-          lastFailure = 'produced an invalid media file';
+          lastFailure = '生成了无效的素材文件';
         } else {
-          lastFailure = 'did not produce one direct media file';
+          lastFailure = '没有生成唯一且可直接使用的素材文件';
         }
       } else {
-        lastFailure = `failed with exit ${result.exitCode ?? 'spawn'}`;
+        lastFailure = `退出状态为 ${result.exitCode ?? '无法启动'}`;
       }
       if (attempt + 1 < MEDIA_DOWNLOAD_ATTEMPTS) {
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 200 * (2 ** attempt)));
@@ -345,7 +384,7 @@ async function exportMedia(runner, tasks, projectId, stagingPath, onProgress) {
     if (!downloaded) {
       throw new LibTVExportError(
         'MEDIA_DOWNLOAD_FAILED',
-        `LibTV ${task.node.type} download failed for node ${task.node.id} after ${MEDIA_DOWNLOAD_ATTEMPTS} attempts (${lastFailure})`,
+        `LibTV 节点 ${task.node.id} 的 ${task.node.type} 素材连续下载 ${MEDIA_DOWNLOAD_ATTEMPTS} 次仍失败（${lastFailure}）`,
       );
     }
     const digest = await fileSHA256(downloaded.path);
@@ -370,7 +409,7 @@ async function exportMedia(runner, tasks, projectId, stagingPath, onProgress) {
     });
     reportProgress(
       onProgress,
-      `media downloads: processed=${index + 1}/${tasks.length}, remaining=${tasks.length - index - 1}`,
+      `素材下载进度：已完成 ${index + 1}/${tasks.length}，剩余 ${tasks.length - index - 1}`,
     );
   }
   await rm(downloadsDirectory, { recursive: true, force: true });
@@ -381,27 +420,26 @@ async function exportLibTVURL(options) {
   const { projectId } = parseLibTVCanvasURL(options.url);
   const outputPath = resolve(options.outputDir);
   if (await pathExists(outputPath)) {
-    throw new LibTVExportError('OUTPUT_EXISTS', `output directory already exists: ${outputPath}`);
+    throw new LibTVExportError('OUTPUT_EXISTS', `导出目录已存在：${outputPath}`);
   }
-  reportProgress(options.onProgress, 'phase: preparing verified LibTV CLI');
-  const { runner, version } = await locateLibTVCLI({
+  const { runner, version } = await prepareAuthenticatedLibTVCLI({
     binary: options.binary,
     env: options.env ?? process.env,
     bootstrap: options.bootstrap,
     cacheRoot: options.cacheRoot,
+    nonInteractive: options.nonInteractive,
+    onProgress: options.onProgress,
   });
-  reportProgress(options.onProgress, 'phase: checking LibTV authentication');
-  await ensureAuthenticated(runner, Boolean(options.nonInteractive));
-  reportProgress(options.onProgress, 'phase: fetching LibTV project summary');
+  reportProgress(options.onProgress, '阶段：正在获取 LibTV 项目信息');
   const projectResult = await runner.capture(['project', projectId]);
   if (projectResult.exitCode !== 0) {
-    throw new LibTVExportError('PROJECT_FORBIDDEN', 'LibTV project is unavailable or permission was denied');
+    throw new LibTVExportError('PROJECT_FORBIDDEN', '无法访问该 LibTV 项目，请确认项目存在且当前账号拥有权限');
   }
-  const project = parseCommandJSON(projectResult, 'libtv project');
+  const project = parseCommandJSON(projectResult, 'LibTV 项目查询命令');
   validateProject(project, projectId);
   reportProgress(
     options.onProgress,
-    `project summary: nodes=${project.nodes.length}, edges=${project.edges.length}`,
+    `项目信息：节点 ${project.nodes.length} 个，连线 ${project.edges.length} 条`,
   );
 
   const nodeDetails = [];
@@ -411,14 +449,14 @@ async function exportLibTVURL(options) {
     const detailCommand = node.type === 'group' ? 'group' : 'node';
     const detail = parseCommandJSON(
       await runner.capture([detailCommand, node.id, '-p', projectId]),
-      `libtv ${detailCommand} ${node.id}`,
+      `LibTV 节点详情查询命令（${node.id}）`,
     );
     const downloadable = MEDIA_NODE_TYPES.has(node.type) && hasMediaResult(detail);
     if (downloadable) mediaTasks.push({ node, detail });
     else if (node.type === 'image' || node.type === 'video') {
       emptyMedia.push({ source_node_id: node.id, media_type: node.type, reason: 'source_has_no_media' });
     } else if (node.type === 'audio') {
-      throw new LibTVExportError('EMPTY_AUDIO', `LibTV audio node ${node.id} has no downloadable media`);
+      throw new LibTVExportError('EMPTY_AUDIO', `LibTV 音频节点 ${node.id} 没有可下载的素材`);
     }
     nodeDetails.push({
       sourceNodeId: node.id,
@@ -427,7 +465,7 @@ async function exportLibTVURL(options) {
     });
     reportProgress(
       options.onProgress,
-      `node details: processed=${index + 1}/${project.nodes.length}, remaining=${project.nodes.length - index - 1}`,
+      `节点详情进度：已完成 ${index + 1}/${project.nodes.length}，剩余 ${project.nodes.length - index - 1}`,
     );
   }
 
@@ -457,7 +495,7 @@ async function exportLibTVURL(options) {
     const plan = convertSnapshotToCanvasPlan(snapshot, { mediaManifest, title: options.title });
     const serialized = JSON.stringify({ snapshot, mediaManifest, plan });
     if (/\b(?:https?|data|blob):/i.test(serialized)) {
-      throw new LibTVExportError('SANITIZATION_FAILED', 'sanitized LibTV bundle still contains an external URL');
+      throw new LibTVExportError('SANITIZATION_FAILED', '清理后的 LibTV 导出数据中仍包含外部链接，已停止导出');
     }
     await writePrivateJSON(join(stagingPath, 'snapshot.json'), snapshot);
     await writePrivateJSON(join(stagingPath, 'media-manifest.json'), mediaManifest);
@@ -466,8 +504,8 @@ async function exportLibTVURL(options) {
     completed = true;
     reportProgress(
       options.onProgress,
-      `export complete: nodes=${plan.nodes.length}, groups=${plan.groups.length}, edges=${plan.edges.length}, ` +
-        `media=${media.length}, degradations=${plan.degradations.length}`,
+      `LibTV 导出完成：节点 ${plan.nodes.length} 个，分组 ${plan.groups.length} 个，连线 ${plan.edges.length} 条，` +
+        `素材 ${media.length} 个，兼容性降级 ${plan.degradations.length} 项`,
     );
     return {
       schema: EXPORT_RESULT_SCHEMA,
@@ -494,6 +532,7 @@ async function exportLibTVURL(options) {
 }
 
 export {
+  AUTH_RESULT_SCHEMA,
   EXPORT_RESULT_SCHEMA,
   MEDIA_MANIFEST_SCHEMA,
   LibTVExportError,
@@ -502,5 +541,6 @@ export {
   exportLibTVURL,
   locateLibTVCLI,
   parseLibTVCanvasURL,
+  preflightLibTVAuth,
   sanitizedChildEnvironment,
 };
