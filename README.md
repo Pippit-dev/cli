@@ -221,9 +221,29 @@ pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 
 PPE 只影响 Pippit API 同源请求。CLI 不会把 Access Key、`x-tt-env`、`x-use-ppe` 或 `x-schedule-vdc` 转发给第三方绝对 URL；`--ppe-env` 的优先级高于 `PIPPIT_CLI_PPE_ENV`，二者都未提供时访问生产环境。
 
-### LibTV 本地 adapter
+### 一键导入 LibTV 画布
 
-beta 同时提供一个无网络的 LibTV provider adapter，将导出的 snapshot 转成 ID-neutral `pippit-canvas-plan/0.1`：
+LibTV 迁移只是上述通用画布能力的 CLI 编排层，服务端不识别 LibTV。给定一个 LibTV 画布链接后，CLI 会通过官方 LibTV CLI 完成网页授权与草稿/素材导出，再依次调用通用的 `upload`、`create`、内部 ID 分配、单 transaction `apply` 和 `get` 全量校验：
+
+```bash
+pippit-tool-cli \
+  --ppe-env ppe_cli_canvas_ak \
+  canvas import \
+  --from libtv \
+  --url 'https://www.liblib.tv/canvas?projectId=<project-id>' \
+  --accept-degradations \
+  --open
+```
+
+生产环境使用时删除 `--ppe-env ppe_cli_canvas_ak`。当前登录能力仍沿用既有 Access Key 配置；CLI 自动保存 AK 的 `login` 流程会单独交付。
+
+首次运行时，若本机没有 LibTV CLI，导入器只会从 LibTV 官方静态域下载固定版本 1.1.3 的对应平台 ZIP，并同时校验 ZIP 和可执行文件的内置 SHA-256；不会执行远程安装脚本。若官方 LibTV CLI 尚未登录，它会打开 `libtv login web --open` 的官方网页授权流程，导入器本身不读取浏览器 Cookie 或 LibTV credential 文件。
+
+`--accept-degradations` 表示接受计划中明确列出的不可移植节点。例如没有生成结果的图片/视频节点会保留为空占位，LibTV 私有 `video-clip` 会降级成空的 Pippit video-composite。未显式接受时，CLI 会在任何 Pippit 写入前停止。
+
+导入状态会写入权限为 `0600` 的本地 journal。素材上传、画布创建或 transaction 结果不明确时，CLI 会保留已获得的持久 ID 并拒绝盲目重复写入；重复执行同一条命令会优先 query-back 恢复。只有 root 和所有伴生资产逐一通过 canonical hash 校验后，命令才返回 `state=verified` 并执行 `--open`。
+
+需要单独检查或生成 ID-neutral `pippit-canvas-plan/0.1` 时，仍可使用纯本地 adapter：
 
 ```bash
 pippit-tool-cli libtv plan \
@@ -233,7 +253,7 @@ pippit-tool-cli libtv plan \
   --output ./canvas-plan.json
 ```
 
-adapter 不读取 Pippit AK、不访问 LibTV、不分配 Pippit ID，也不执行 create/apply。后续 executor 只需把 plan 编译为上述通用 Canvas 命令即可。若 snapshot 只提供带签名参数的素材 URL，plan 会以 `0600` 权限保留它们以供后续下载；不要把 plan 打进日志、提交到仓库或分享给他人。完整边界见 `adapters/libtv/README.md`。
+完整 provider 边界见 `adapters/libtv/README.md`。
 
 ## 短剧工作流技能
 

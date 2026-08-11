@@ -5,7 +5,52 @@ LibTV snapshot into the ID-neutral `pippit-canvas-plan/0.1` contract. It does
 not read an access key, choose a Pippit environment, allocate Pippit asset IDs,
 upload files, create a project, write assets, bind a canvas, or use team state.
 
-Generate a plan:
+Export a LibTV URL with the official LibTV CLI, then generate a plan:
+
+```bash
+node adapters/libtv/cli.mjs export \
+  --url 'https://www.liblib.tv/canvas?projectId=<project-id>' \
+  --output-dir ./libtv-bundle
+```
+
+An explicit `--libtv-cli`, `LIBTV_CLI_BINARY`, or `LIBTV_CLI_PATH` opts into a
+user-managed binary after a version check. Without an explicit override, the
+exporter never executes `libtv` from `PATH` or `~/.libtv`; it goes directly to
+the verified cache/bootstrap path. This prevents an ambient binary from
+bypassing the pin. Bootstrap installs the pinned official 1.1.3 ZIP into the
+private Pippit tool cache and supports
+Darwin, Linux, and Windows on arm64/x64; it verifies both ZIP and binary against
+embedded SHA-256 values, uses `0700` directories/binary, and never executes a
+remote installer or script. Windows extraction uses the built-in `tar.exe`
+(Windows 10+); absence of a safe local extractor fails closed. Set
+`PIPPIT_CLI_LIBTV_CACHE_DIR` to override the cache root.
+
+After locating a verified CLI, the exporter probes existing official CLI
+credentials with `libtv account info`. If none are available, interactive use
+runs `libtv login web --open`; `--non-interactive` instead fails with an
+actionable login message. Login child output is redirected to stderr so stdout
+remains one machine-readable JSON object. The adapter never reads browser
+cookies or the LibTV credential file. The LibTV child receives only a small
+runtime/login environment allowlist. Unknown variables, SSH agent sockets, and
+all unlisted key/token/password values are omitted. HTTP/HTTPS/SOCKS proxy URLs
+are passed only when they contain no user information.
+
+The output directory must not already exist. Export is staged privately and
+renamed atomically, so cancellation, permission denial, or a partial media
+download leaves no final bundle. The successful stdout object uses
+`pippit-libtv-export-result/0.1` and returns `plan_path`, `snapshot_path`,
+`media_manifest_path`, and absolute local paths for each media item.
+
+The bundle contains:
+
+- a URL- and credential-sanitized `snapshot.json`;
+- `media-manifest.json` (`pippit-libtv-media-manifest/0.1`) with bundle-relative
+  paths, byte sizes, and bare lowercase SHA-256 digests;
+- local files downloaded through official `libtv download`, preserving LibTV's
+  source-account permission and watermark behavior;
+- `plan.json` (`pippit-canvas-plan/0.1`).
+
+To convert an existing snapshot instead:
 
 ```bash
 node adapters/libtv/cli.mjs plan \
@@ -16,16 +61,15 @@ node adapters/libtv/cli.mjs plan \
 ```
 
 `--media-manifest` is optional. It may provide `sourceNodeId` + `fileName` rows
-for a local export bundle. Existing prototype manifests may also contain
-Pippit IDs or authorization metadata; the adapter deliberately ignores those
-fields and never copies them into the plan. If no manifest row exists, the
-adapter uses the snapshot's HTTPS media reference and derives a file name.
+for an older export, or `source_node_id`, `relative_path`, `sha256`, and
+`media_type` rows for a local bundle. Existing prototype manifests may also
+contain Pippit IDs or authorization metadata; the adapter deliberately ignores
+those fields and never copies them into the plan.
 
-The generated plan is written with mode `0600`. When the source export only
-contains signed HTTPS media URLs, those URLs (including their query strings)
-must remain in the local plan so a later executor can download the files. Treat
-the plan as sensitive local state: do not print it into logs, commit it, or
-share it. Prefer a local export bundle plus `--media-manifest` when available.
+The generated plan is written with mode `0600`. Official URL export always
+uses bundle-relative `local_path` + `sha256` and omits source URLs. Legacy
+snapshot-only conversion may still accept an absolute HTTPS media URL, but its
+fingerprint strips query strings and authentication fields.
 
 The generic canvas executor owns the remaining steps:
 
@@ -43,7 +87,10 @@ snapshot and media mapping produce byte-for-byte stable JSON; the executor
 should hash the complete plan when deriving its operation identity.
 
 The v0.1 adapter fails closed for unsupported node types or dangling edges.
-Supported source types are `group`, `video`, `audio`, and `video-clip`.
+Supported source types are `group`, `image`, `video`, `audio`, and
+`video-clip`. Empty LibTV image/video generation nodes are preserved as
+`image-placeholder` / `video-placeholder` with an explicit degradation; they
+are not mistaken for partially downloaded media.
 
 LibTV `video-clip` nodes do not carry a portable generated result. The plan
 preserves their input references and records an explicit degradation to an

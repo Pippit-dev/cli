@@ -7,7 +7,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && node scripts/run.test.js && node adapters/libtv/plan.test.mjs && go test ./... && go vet ./..."
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && node scripts/run.test.js && node adapters/libtv/bootstrap.test.mjs && node adapters/libtv/plan.test.mjs && node adapters/libtv/exporter.test.mjs && go test ./... && go vet ./..."
   },
   "os": [
     "darwin",
