@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -14,11 +15,43 @@ type importPromptSession struct {
 	reader *bufio.Reader
 	stderr io.Writer
 	eof    bool
+	tui    *importPromptTUI
 }
 
 type importPromptChoice struct {
 	label   string
 	aliases []string
+}
+
+func newImportPromptSession(ctx context.Context, input io.Reader, stderr io.Writer) *importPromptSession {
+	return newImportPromptSessionWithTUI(
+		ctx,
+		input,
+		stderr,
+		importInputIsInteractive(input) && importOutputIsInteractive(stderr) &&
+			os.Getenv("PIPPIT_CLI_ACCESSIBLE") == "",
+	)
+}
+
+func importOutputIsInteractive(output io.Writer) bool {
+	file, ok := output.(*os.File)
+	return ok && importFileIsTerminal(file)
+}
+
+func newImportPromptSessionWithTUI(
+	ctx context.Context,
+	input io.Reader,
+	stderr io.Writer,
+	enableTUI bool,
+) *importPromptSession {
+	session := &importPromptSession{
+		reader: bufio.NewReader(input),
+		stderr: stderr,
+	}
+	if enableTUI {
+		session.tui = &importPromptTUI{ctx: ctx, input: input, output: stderr}
+	}
+	return session
 }
 
 func importInputIsInteractive(input io.Reader) bool {
@@ -30,6 +63,7 @@ func importInputIsInteractive(input io.Reader) bool {
 }
 
 func prepareCanvasImportOptions(
+	ctx context.Context,
 	input io.Reader,
 	opts importOptions,
 	isInteractive func(io.Reader) bool,
@@ -45,7 +79,7 @@ func prepareCanvasImportOptions(
 			importFlagsHint,
 		)
 	}
-	prompts := &importPromptSession{reader: bufio.NewReader(input), stderr: stderr}
+	prompts := newImportPromptSession(ctx, input, stderr)
 	if strings.TrimSpace(opts.Provider) == "" {
 		_, err := prompts.askChoice(
 			"Source provider:",
@@ -130,6 +164,9 @@ func (prompts *importPromptSession) askChoice(
 	choices []importPromptChoice,
 	defaultChoice int,
 ) (int, error) {
+	if prompts.tui != nil {
+		return prompts.tui.askChoice(title, choices, defaultChoice)
+	}
 	for {
 		fmt.Fprintln(prompts.stderr, title)
 		for index, choice := range choices {
@@ -165,6 +202,10 @@ func containsImportPromptAlias(values []string, expected string) bool {
 }
 
 func (prompts *importPromptSession) readLine(label string) (string, bool, error) {
+	if prompts.tui != nil {
+		value, err := prompts.tui.readLine(label)
+		return value, false, err
+	}
 	fmt.Fprint(prompts.stderr, label)
 	if prompts.eof {
 		return "", true, nil

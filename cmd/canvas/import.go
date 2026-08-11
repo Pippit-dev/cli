@@ -115,7 +115,7 @@ func newImportCommand(
 			opts.JournalExplicit = cmd.Flags().Changed("journal")
 			opts.AcceptDegradationsExplicit = cmd.Flags().Changed("accept-degradations")
 			prepared, prompts, err := prepareCanvasImportOptions(
-				cmd.InOrStdin(), opts, dependencies.isInteractive, stderr,
+				cmd.Context(), cmd.InOrStdin(), opts, dependencies.isInteractive, stderr,
 			)
 			if err != nil {
 				return err
