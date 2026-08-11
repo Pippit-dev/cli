@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -232,7 +233,7 @@ func TestExecutorAppliesOnceVerifiesAndReusesJournal(t *testing.T) {
 	}
 }
 
-func TestExecutorVerifiedResumeFailsOnCurrentAccountMismatch(t *testing.T) {
+func TestExecutorVerifiedResumeRejectsCurrentAccountMismatchWithoutOverwritingHistory(t *testing.T) {
 	plan, resolved := testPlanAndResolved()
 	api := newFakeCanvasAPI(len(plan.Nodes))
 	executor := &Executor{api: api}
@@ -242,20 +243,34 @@ func TestExecutorVerifiedResumeFailsOnCurrentAccountMismatch(t *testing.T) {
 	if err != nil || result.State != StateVerified {
 		t.Fatalf("first Execute() result=%#v error=%v, want verified", result, err)
 	}
+	beforeBytes, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	api.getErr = errors.New("assets are not visible to current account")
 	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
-	if err == nil || result == nil || result.State != StateVerificationFailed {
-		t.Fatalf("verified resume result=%#v error=%v, want current-auth verification failure", result, err)
+	if err == nil || result == nil || result.State != StateVerified {
+		t.Fatalf("verified resume result=%#v error=%v, want access error with historical verified state", result, err)
 	}
-	if result.Verification == nil || result.Verification.Verified {
-		t.Fatalf("verification = %#v, want fresh failed verification", result.Verification)
+	if result.Verification == nil || !result.Verification.Verified || !strings.Contains(result.Warning, "current authentication") {
+		t.Fatalf("result = %#v, want preserved verification and actionable access warning", result)
 	}
 	if api.applyCalls != 1 {
 		t.Fatalf("verified resume replayed apply: calls=%d", api.applyCalls)
 	}
+	if journal := readJournal(t, journalPath); journal.State != StateVerified || journal.Verification == nil || !journal.Verification.Verified {
+		t.Fatalf("saved journal = %#v, want preserved verified history", journal)
+	}
+	afterBytes, readErr := os.ReadFile(journalPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(afterBytes, beforeBytes) {
+		t.Fatal("verified journal bytes changed after current-account query failure")
+	}
 }
 
-func TestExecutorVerifiedResumeFailsOnRemoteDrift(t *testing.T) {
+func TestExecutorVerifiedResumeAllowsNormalRemoteEdits(t *testing.T) {
 	plan, resolved := testPlanAndResolved()
 	api := newFakeCanvasAPI(len(plan.Nodes))
 	executor := &Executor{api: api}
@@ -265,16 +280,20 @@ func TestExecutorVerifiedResumeFailsOnRemoteDrift(t *testing.T) {
 	if err != nil || result.State != StateVerified {
 		t.Fatalf("first Execute() result=%#v error=%v, want verified", result, err)
 	}
+	historicalVerification := *result.Verification
 	api.corruptGet = true
 	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
-	if err == nil || result == nil || result.State != StateVerificationFailed {
-		t.Fatalf("verified resume result=%#v error=%v, want remote-drift failure", result, err)
+	if err != nil || result == nil || result.State != StateVerified {
+		t.Fatalf("verified resume result=%#v error=%v, want accessible edited Canvas", result, err)
 	}
-	if result.Verification == nil || result.Verification.Verified || len(result.Verification.MismatchedAssetIDs) != 1 {
-		t.Fatalf("verification = %#v, want one mismatched asset", result.Verification)
+	if result.Verification == nil || !result.Verification.Verified || !strings.Contains(result.Warning, "changed after") {
+		t.Fatalf("result = %#v, want verified access with edit warning", result)
 	}
 	if api.applyCalls != 1 {
 		t.Fatalf("verified resume replayed apply: calls=%d", api.applyCalls)
+	}
+	if journal := readJournal(t, journalPath); journal.Verification == nil || !reflect.DeepEqual(*journal.Verification, historicalVerification) {
+		t.Fatalf("verified resume overwrote historical verification: before=%#v after=%#v", historicalVerification, journal.Verification)
 	}
 }
 
@@ -305,7 +324,7 @@ func TestExecutorNeverReplaysAmbiguousApply(t *testing.T) {
 	}
 }
 
-func TestExecutorRecoversCommittedAmbiguousApplyByQuery(t *testing.T) {
+func TestExecutorRecoversCommittedAmbiguousApplyByQueryInSameInvocation(t *testing.T) {
 	plan, resolved := testPlanAndResolved()
 	api := newFakeCanvasAPI(len(plan.Nodes))
 	api.applyErr = errors.New("connection lost after commit")
@@ -314,12 +333,11 @@ func TestExecutorRecoversCommittedAmbiguousApplyByQuery(t *testing.T) {
 	journalPath := filepath.Join(t.TempDir(), "committed-ambiguous.json")
 
 	result, err := executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
-	if err == nil || result.State != StateApplyAmbiguous {
-		t.Fatalf("first Execute() result=%#v error=%v, want ambiguity", result, err)
-	}
-	result, err = executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
 	if err != nil || result.State != StateVerified || result.Verification == nil || !result.Verification.RecoveredFromQuery {
-		t.Fatalf("resume result=%#v error=%v, want query recovery", result, err)
+		t.Fatalf("Execute() result=%#v error=%v, want same-invocation query recovery", result, err)
+	}
+	if !strings.Contains(result.Warning, "ambiguous") || !strings.Contains(result.Warning, "not replayed") {
+		t.Fatalf("Execute() warning = %q, want explicit safe-recovery message", result.Warning)
 	}
 	if api.applyCalls != 1 {
 		t.Fatalf("committed apply was replayed: calls=%d", api.applyCalls)
@@ -375,6 +393,9 @@ func TestExecutorResumesAcceptedCreateWithoutCreatingAgain(t *testing.T) {
 	result, err := executor.Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
 	if err != nil || result.State != StateCreatePending || result.ProjectID == "" {
 		t.Fatalf("first Execute() result=%#v error=%v", result, err)
+	}
+	if result.DegradationCount != len(plan.Degradations) {
+		t.Fatalf("degradation count = %d, want %d", result.DegradationCount, len(plan.Degradations))
 	}
 	if api.createCalls != 1 || api.resumeCreateCalls != 0 {
 		t.Fatalf("first call create=%d resume=%d", api.createCalls, api.resumeCreateCalls)
@@ -470,6 +491,7 @@ type fakeCanvasAPI struct {
 	createPending          bool
 	createErr              error
 	getErr                 error
+	getNil                 bool
 	applyErr               error
 	commitBeforeApplyError bool
 	corruptGet             bool
@@ -523,6 +545,9 @@ func (api *fakeCanvasAPI) Get(_ context.Context, assetIDs []string) (*canvas.Get
 	api.getCalls++
 	if api.getErr != nil {
 		return nil, api.getErr
+	}
+	if api.getNil {
+		return nil, nil
 	}
 	assets := make([]json.RawMessage, 0, len(assetIDs))
 	for _, assetID := range assetIDs {
