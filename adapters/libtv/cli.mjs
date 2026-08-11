@@ -4,13 +4,20 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { exportLibTVURL } from './exporter.mjs';
 import { convertSnapshotToCanvasPlan } from './plan.mjs';
+
+const BOOLEAN_FLAGS = new Set(['non-interactive']);
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
   const args = { command };
   for (let index = 0; index < rest.length; index += 1) {
     const key = rest[index];
+    if (key?.startsWith('--') && BOOLEAN_FLAGS.has(key.slice(2))) {
+      args[key.slice(2)] = true;
+      continue;
+    }
     const value = rest[index + 1];
     if (!key?.startsWith('--') || !value || value.startsWith('--')) {
       throw new Error(`invalid argument near ${key ?? '<end>'}`);
@@ -19,6 +26,18 @@ function parseArgs(argv) {
     index += 1;
   }
   return args;
+}
+
+async function runExport(args) {
+  const result = await exportLibTVURL({
+    url: required(args, 'url'),
+    outputDir: required(args, 'output-dir'),
+    binary: args['libtv-cli'],
+    nonInteractive: Boolean(args['non-interactive']),
+    title: args.title,
+    env: process.env,
+  });
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 function required(args, key) {
@@ -63,13 +82,21 @@ async function runPlan(args) {
 
 async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (args.command !== 'plan') {
-    throw new Error(
-      'usage: node adapters/libtv/cli.mjs plan --snapshot <snapshot.json> ' +
-        '[--media-manifest <manifest.json>] [--title <title>] --output <plan.json|->',
-    );
+  if (args.command === 'plan') {
+    await runPlan(args);
+    return;
   }
-  await runPlan(args);
+  if (args.command === 'export') {
+    await runExport(args);
+    return;
+  }
+  throw new Error(
+    'usage:\n' +
+      '  node adapters/libtv/cli.mjs export --url <LibTV canvas URL> --output-dir <new directory> ' +
+      '[--libtv-cli <path>] [--non-interactive] [--title <title>]\n' +
+      '  node adapters/libtv/cli.mjs plan --snapshot <snapshot.json> ' +
+      '[--media-manifest <manifest.json>] [--title <title>] --output <plan.json|->',
+  );
 }
 
 export { main, parseArgs };
