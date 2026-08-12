@@ -148,7 +148,10 @@ func (s *resilientCredentialStore) Load(ctx context.Context) (*Credential, error
 	if fallbackErr == nil {
 		return credential, nil
 	}
-	if errors.Is(primaryErr, ErrCredentialNotFound) && errors.Is(fallbackErr, ErrCredentialNotFound) {
+	if errors.Is(fallbackErr, ErrCredentialNotFound) {
+		// An available, empty fallback is the active store when the primary
+		// keyring is unavailable. Report a fresh login state so Manager can
+		// create the device identity and Save can persist it to that fallback.
 		return nil, ErrCredentialNotFound
 	}
 	if !errors.Is(fallbackErr, ErrCredentialNotFound) {

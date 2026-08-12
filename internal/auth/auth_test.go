@@ -581,6 +581,40 @@ func TestResilientStoreFallsBackOnlyToSecureStore(t *testing.T) {
 	}
 }
 
+func TestManagerFreshIdentityUsesEmptyFallbackWhenKeyringUnavailable(t *testing.T) {
+	primary := &memoryCredentialStore{loadErr: ErrSecureStore, saveErr: ErrSecureStore}
+	fallback := &memoryCredentialStore{}
+	store := &resilientCredentialStore{primary: primary, fallback: fallback}
+	manager := NewManager(
+		config.Load(),
+		WithCredentialStore(store),
+		withRandomReaderForTest(bytes.NewReader(bytes.Repeat([]byte{0x2a}, deviceIDBytes))),
+	)
+
+	identity, err := manager.ensureIdentity(context.Background())
+	if err != nil {
+		t.Fatalf("ensureIdentity() error = %v", err)
+	}
+	if identity.AccessKey != "" || !validDeviceID(identity.DeviceID) {
+		t.Fatalf("fresh identity = %#v", credentialWithoutSecret(identity))
+	}
+	fallback.mu.Lock()
+	stored := cloneCredential(fallback.credential)
+	fallbackLoads, fallbackSaves := fallback.loads, fallback.saves
+	fallback.mu.Unlock()
+	if stored == nil || stored.DeviceID != identity.DeviceID || fallbackLoads != 1 || fallbackSaves != 1 {
+		t.Fatalf("fallback identity/loads/saves = %#v/%d/%d", credentialWithoutSecret(stored), fallbackLoads, fallbackSaves)
+	}
+	if primary.loads != 1 || primary.saves != 1 {
+		t.Fatalf("primary loads/saves = %d/%d, want 1/1", primary.loads, primary.saves)
+	}
+
+	again, err := manager.ensureIdentity(context.Background())
+	if err != nil || again.DeviceID != identity.DeviceID || fallback.loads != 1 {
+		t.Fatalf("cached ensureIdentity() = %#v/%v, fallback loads=%d", credentialWithoutSecret(again), err, fallback.loads)
+	}
+}
+
 func TestResilientStoreDoesNotMaskCorruptPrimaryOrCleanupFailure(t *testing.T) {
 	identity, _ := newIdentity(bytes.NewReader(bytes.Repeat([]byte{4}, deviceIDBytes)))
 	corrupt := errors.New("corrupt primary credential")
