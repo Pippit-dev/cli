@@ -99,7 +99,9 @@ type storedCredential struct {
 	Version         int    `json:"version"`
 	DeviceID        string `json:"device_id"`
 	CredentialScope string `json:"credential_scope"`
-	TokenName       string `json:"token_name"`
+	// LegacyTokenName is decoded only for compatibility with credentials written
+	// by the first browser-auth beta. New records intentionally omit it.
+	LegacyTokenName string `json:"token_name,omitempty"`
 	AccessKey       string `json:"access_key,omitempty"`
 	TokenID         string `json:"token_id,omitempty"`
 	UID             string `json:"uid,omitempty"`
@@ -212,7 +214,6 @@ func encodeCredential(credential *Credential) ([]byte, error) {
 		Version:         credential.Version,
 		DeviceID:        credential.DeviceID,
 		CredentialScope: credential.CredentialScope,
-		TokenName:       credential.TokenName,
 		AccessKey:       credential.AccessKey,
 		TokenID:         credential.TokenID,
 		UID:             credential.UID,
@@ -236,7 +237,6 @@ func decodeCredential(payload []byte) (*Credential, error) {
 		Version:         record.Version,
 		DeviceID:        record.DeviceID,
 		CredentialScope: record.CredentialScope,
-		TokenName:       record.TokenName,
 		AccessKey:       record.AccessKey,
 		TokenID:         record.TokenID,
 		UID:             record.UID,
@@ -280,18 +280,18 @@ func validateCredential(credential *Credential) error {
 	if !validDeviceID(credential.DeviceID) {
 		return errors.New("本机登录设备标识无效")
 	}
-	if !constantTimeEqual(credential.TokenName, tokenNameForDevice(credential.DeviceID)) {
-		return errors.New("本机登录凭证作用域无效")
-	}
 	if credential.AccessKey == "" {
-		if strings.TrimSpace(credential.TokenID) != credential.TokenID || credential.UID != "" || credential.ExpiredAt != 0 ||
-			(credential.CredentialScope != "" && !constantTimeEqual(credential.CredentialScope, legacyCredentialScope(credential.DeviceID))) {
+		// TokenID is non-secret. Keeping it lets an explicit force login select
+		// exactly this device token without guessing by display name.
+		if (credential.TokenID != "" && !validTokenID(credential.TokenID)) || credential.UID != "" ||
+			credential.ExpiredAt != 0 || credential.CredentialScope != "" {
 			return errors.New("本机登录凭证不完整")
 		}
 		return nil
 	}
-	if strings.TrimSpace(credential.AccessKey) != credential.AccessKey ||
-		credential.TokenID == "" || credential.UID == "" || credential.ExpiredAt <= 0 {
+	if strings.TrimSpace(credential.AccessKey) != credential.AccessKey || len(credential.AccessKey) > 4096 ||
+		!validTokenID(credential.TokenID) ||
+		credential.UID == "" || len(credential.UID) > 256 || strings.TrimSpace(credential.UID) != credential.UID || credential.ExpiredAt <= 0 {
 		return errors.New("本机登录凭证不完整")
 	}
 	expectedScope := credentialScope(credential.UID, credential.DeviceID)

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 type Manager struct {
 	cfg                   *config.Config
 	store                 CredentialStore
-	httpClient            *http.Client
 	authBaseURL           *url.URL
 	random                io.Reader
 	now                   func() time.Time
@@ -33,23 +31,6 @@ func WithCredentialStore(store CredentialStore) ManagerOption {
 	return func(manager *Manager) {
 		if store != nil {
 			manager.store = store
-		}
-	}
-}
-
-func WithHTTPClient(client *http.Client) ManagerOption {
-	return func(manager *Manager) {
-		if client != nil {
-			manager.httpClient = client
-		}
-	}
-}
-
-func withAuthBaseURLForTest(rawURL string) ManagerOption {
-	return func(manager *Manager) {
-		parsed, err := url.Parse(rawURL)
-		if err == nil {
-			manager.authBaseURL = parsed
 		}
 	}
 }
@@ -70,20 +51,15 @@ func withClockForTest(now func() time.Time) ManagerOption {
 	}
 }
 
-// NewManager always uses the canonical production auth origin. cfg.BaseURL and
-// cfg.PPEEnv intentionally do not affect browser grants, login cookies, or AK
-// provisioning; PPE routing applies only after a dedicated AK has been issued.
+// NewManager always uses the canonical production login page. cfg.BaseURL and
+// cfg.PPEEnv intentionally do not affect browser login; PPE routing applies
+// only to business requests after the page has returned an Access Key.
 func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {
 	serviceName := config.DefaultAuthStoreServiceName
 	authBaseURL, _ := url.Parse(config.DefaultBaseURL)
-	timeout := config.DefaultHTTPTimeout
-	if cfg != nil && cfg.HTTPTimeout > 0 {
-		timeout = cfg.HTTPTimeout
-	}
 	manager := &Manager{
 		cfg:         cfg,
 		store:       NewDefaultCredentialStore(serviceName),
-		httpClient:  &http.Client{Timeout: timeout},
 		authBaseURL: authBaseURL,
 		random:      rand.Reader,
 		now:         time.Now,
@@ -123,7 +99,21 @@ func (m *Manager) Login(ctx context.Context, options LoginOptions) (*Credential,
 	if err != nil {
 		return nil, err
 	}
-	flow, err := startBrowserFlow(m.authBaseURL, m.random)
+	forceRefresh := options.ForceRefresh && strings.TrimSpace(identity.TokenID) != ""
+	expectedAccount := ""
+	if identity.UID != "" {
+		expectedAccount = accountBinding(identity.UID)
+	}
+	if expectedScope := strings.TrimSpace(options.ExpectedCredentialScope); expectedScope != "" {
+		scopeAccount, ok := accountBindingFromCredentialScope(expectedScope, identity.DeviceID)
+		if !ok || (expectedAccount != "" && !constantTimeEqual(expectedAccount, scopeAccount)) {
+			return nil, ErrCredentialAccountMismatch
+		}
+		expectedAccount = scopeAccount
+	}
+	flow, err := startBrowserFlow(
+		m.authBaseURL, m.random, identity.DeviceID, identity.TokenID, expectedAccount, forceRefresh,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -149,16 +139,38 @@ func (m *Manager) Login(ctx context.Context, options LoginOptions) (*Credential,
 	if err != nil {
 		return nil, err
 	}
-	writeProgress(options.Progress, "网页授权已完成，正在准备本机专属 CLI 凭证…")
-	credential, err := m.exchangeAndProvision(waitCtx, payload, identity, options)
-	if err != nil {
-		return nil, err
+	writeProgress(options.Progress, "网页授权已完成，正在安全保存本机 CLI 凭证…")
+	credential := credentialFromCallback(identity, payload)
+	if credential.ExpiredAt <= m.now().Add(m.ensureTTL()).Unix() {
+		return nil, ErrCredentialExpired
+	}
+	if expected := strings.TrimSpace(options.ExpectedCredentialScope); expected != "" &&
+		!constantTimeEqual(expected, credential.CredentialScope) {
+		return nil, ErrCredentialAccountMismatch
+	}
+	if forceRefresh &&
+		((identity.AccessKey != "" && constantTimeEqual(identity.AccessKey, credential.AccessKey)) ||
+			constantTimeEqual(identity.TokenID, credential.TokenID)) {
+		return nil, errors.New("网页授权未轮换已失效的 CLI Access Key，已拒绝继续使用旧凭证")
+	}
+	if err := validateCredential(credential); err != nil {
+		return nil, errors.New("网页返回的 CLI 凭证格式无效")
 	}
 	if err := m.saveCredential(waitCtx, credential); err != nil {
 		return nil, err
 	}
 	writeProgress(options.Progress, "小云雀 CLI 登录成功。")
 	return cloneCredential(credential), nil
+}
+
+func credentialFromCallback(identity *Credential, payload accessKeyPayload) *Credential {
+	credential := cloneCredential(identity)
+	credential.AccessKey = payload.AccessKey
+	credential.TokenID = payload.TokenID
+	credential.UID = payload.UID
+	credential.ExpiredAt = payload.ExpiredAt
+	credential.CredentialScope = credentialScope(payload.UID, identity.DeviceID)
+	return credential
 }
 
 func (m *Manager) Status(ctx context.Context) (*Status, error) {
@@ -305,7 +317,7 @@ func normalizeCredential(credential *Credential) *Credential {
 }
 
 func (m *Manager) validate() error {
-	if m == nil || m.store == nil || m.httpClient == nil || m.authBaseURL == nil || m.random == nil || m.now == nil {
+	if m == nil || m.store == nil || m.authBaseURL == nil || m.random == nil || m.now == nil {
 		return errors.New("小云雀 CLI 授权管理器未正确初始化")
 	}
 	if m.authBaseURL.Scheme != "https" && !(m.authBaseURL.Scheme == "http" && isLoopbackHost(m.authBaseURL.Hostname())) {

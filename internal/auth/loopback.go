@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,30 +18,48 @@ import (
 
 const maxCallbackBodyBytes = 64 << 10
 
-type loginGrantPayload struct {
+type accessKeyPayload struct {
 	Type            string `json:"type"`
-	Grant           string `json:"grant"`
+	AccessKey       string `json:"access_key"`
+	UID             string `json:"uid"`
+	TokenID         string `json:"token_id"`
+	ExpiredAt       int64  `json:"expired_at"`
 	RandomSecretKey string `json:"random_secret_key"`
-	ExpireAt        int64  `json:"expire_at,omitempty"`
 	Source          string `json:"source"`
 	CallbackURL     string `json:"callback_url"`
 }
 
 type browserFlow struct {
-	loginURL    string
-	callbackURL string
-	secret      string
-	state       string
-	source      string
-	origin      string
-	listener    net.Listener
-	server      *http.Server
-	payload     chan loginGrantPayload
-	serveErr    chan error
-	closeOnce   sync.Once
+	loginURL     string
+	callbackURL  string
+	secret       string
+	state        string
+	source       string
+	origin       string
+	listener     net.Listener
+	server       *http.Server
+	payload      chan accessKeyPayload
+	serveErr     chan error
+	callbackOnce sync.Once
+	closeOnce    sync.Once
 }
 
-func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader) (*browserFlow, error) {
+func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader, deviceID, tokenID, expectedAccount string, forceRefresh bool) (*browserFlow, error) {
+	if !validDeviceID(deviceID) {
+		return nil, errors.New("本机登录设备标识无效")
+	}
+	if tokenID != "" && !validTokenID(tokenID) {
+		return nil, errors.New("本机 CLI 凭证编号无效")
+	}
+	if forceRefresh && tokenID == "" {
+		return nil, errors.New("无法确认需要轮换的本机 CLI 凭证编号")
+	}
+	if expectedAccount != "" && !validAccountBinding(expectedAccount) {
+		return nil, errors.New("本机登录账号绑定无效")
+	}
+	if forceRefresh && expectedAccount == "" {
+		return nil, errors.New("无法确认需要轮换的本机 CLI 登录账号")
+	}
 	secret, err := randomEncoded(randomReader, randomBindingBytes)
 	if err != nil {
 		return nil, errors.New("生成网页授权绑定信息失败")
@@ -64,7 +83,7 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader) (*browserFlo
 	callback.RawQuery = callbackQuery.Encode()
 
 	loginURL := *authBaseURL
-	loginURL.Path = loginExportPath
+	loginURL.Path = loginPagePath
 	loginURL.RawPath = ""
 	loginURL.RawQuery = ""
 	loginURL.Fragment = ""
@@ -72,6 +91,16 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader) (*browserFlo
 	query.Set("callback", callback.String())
 	query.Set("random_secret_key", secret)
 	query.Set("source", loginSource)
+	query.Set("device_id", deviceID)
+	if tokenID != "" {
+		query.Set("token_id", tokenID)
+	}
+	if expectedAccount != "" {
+		query.Set("expected_account", expectedAccount)
+	}
+	if forceRefresh {
+		query.Set("force", "1")
+	}
 	loginURL.RawQuery = query.Encode()
 
 	flow := &browserFlow{
@@ -82,7 +111,7 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader) (*browserFlo
 		source:      loginSource,
 		origin:      originOf(authBaseURL),
 		listener:    listener,
-		payload:     make(chan loginGrantPayload, 1),
+		payload:     make(chan accessKeyPayload, 1),
 		serveErr:    make(chan error, 1),
 	}
 	mux := http.NewServeMux()
@@ -104,20 +133,20 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader) (*browserFlo
 	return flow, nil
 }
 
-func (f *browserFlow) wait(ctx context.Context) (loginGrantPayload, error) {
+func (f *browserFlow) wait(ctx context.Context) (accessKeyPayload, error) {
 	select {
 	case payload := <-f.payload:
 		return payload, nil
 	case err, open := <-f.serveErr:
 		if open && err != nil {
-			return loginGrantPayload{}, errors.New("本机网页授权回调异常退出")
+			return accessKeyPayload{}, errors.New("本机网页授权回调异常退出")
 		}
-		return loginGrantPayload{}, errors.New("本机网页授权回调已关闭")
+		return accessKeyPayload{}, errors.New("本机网页授权回调已关闭")
 	case <-ctx.Done():
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return loginGrantPayload{}, errors.New("等待网页授权超时，请重新登录")
+			return accessKeyPayload{}, errors.New("等待网页授权超时，请重新登录")
 		}
-		return loginGrantPayload{}, ctx.Err()
+		return accessKeyPayload{}, ctx.Err()
 	}
 }
 
@@ -164,7 +193,7 @@ func (f *browserFlow) handleCallback(writer http.ResponseWriter, request *http.R
 	reader := http.MaxBytesReader(writer, request.Body, maxCallbackBodyBytes)
 	decoder := json.NewDecoder(reader)
 	decoder.DisallowUnknownFields()
-	payload := loginGrantPayload{}
+	payload := accessKeyPayload{}
 	if err := decoder.Decode(&payload); err != nil {
 		http.Error(writer, "invalid callback payload", http.StatusBadRequest)
 		return
@@ -173,21 +202,51 @@ func (f *browserFlow) handleCallback(writer http.ResponseWriter, request *http.R
 		http.Error(writer, "invalid callback payload", http.StatusBadRequest)
 		return
 	}
-	if payload.Type != "login_grant" || strings.TrimSpace(payload.Grant) == "" ||
+	if payload.Type != "access_key" || !validCallbackValue(payload.AccessKey, 4096) ||
+		!validCallbackValue(payload.UID, 256) || !validTokenID(payload.TokenID) || payload.ExpiredAt <= 0 ||
 		!constantTimeEqual(payload.RandomSecretKey, f.secret) ||
 		!constantTimeEqual(payload.Source, f.source) ||
 		!constantTimeEqual(payload.CallbackURL, f.callbackURL) {
 		http.Error(writer, "callback binding mismatch", http.StatusBadRequest)
 		return
 	}
-	select {
-	case f.payload <- payload:
+	accepted := false
+	f.callbackOnce.Do(func() {
+		f.payload <- payload
+		accepted = true
+	})
+	if accepted {
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusOK)
 		_, _ = writer.Write([]byte(`{"ok":true}`))
-	default:
-		http.Error(writer, "callback already received", http.StatusConflict)
+		return
 	}
+	http.Error(writer, "callback already received", http.StatusConflict)
+}
+
+func validCallbackValue(value string, maxLength int) bool {
+	return value != "" && len(value) <= maxLength && strings.TrimSpace(value) == value
+}
+
+func validTokenID(value string) bool {
+	if len(value) == 0 || len(value) > 128 {
+		return false
+	}
+	for index := range len(value) {
+		character := value[index]
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || strings.ContainsRune(":._-", rune(character)) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func validAccountBinding(value string) bool {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	return err == nil && len(decoded) == 16 && len(value) == 22 &&
+		constantTimeEqual(value, base64.RawURLEncoding.EncodeToString(decoded))
 }
 
 func (f *browserFlow) validRequestTarget(request *http.Request) bool {
