@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -220,20 +221,48 @@ func runInherit(stderr io.Writer, name string, args ...string) error {
 
 func runInheritEnv(stderr io.Writer, env []string, name string, args ...string) error {
 	cmd := command(name, args...)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	cmd.Env = sanitizedUpdateEnv(os.Environ(), env)
 	cmd.Stdout = stderr
 	cmd.Stderr = stderr
 	return cmd.Run()
 }
 
+func sanitizedUpdateEnv(environment, overrides []string) []string {
+	merged := overlayEnvironment(environment, overrides)
+	return auth.SanitizedBrowserEnv(merged)
+}
+
+func overlayEnvironment(environment, overrides []string) []string {
+	result := make([]string, 0, len(environment)+len(overrides))
+	indexes := make(map[string]int, len(environment)+len(overrides))
+	for _, entry := range append(append([]string(nil), environment...), overrides...) {
+		name, _, found := strings.Cut(entry, "=")
+		if !found || strings.TrimSpace(name) == "" {
+			continue
+		}
+		key := name
+		if runtime.GOOS == "windows" {
+			key = strings.ToUpper(key)
+		}
+		if index, exists := indexes[key]; exists {
+			result[index] = entry
+			continue
+		}
+		indexes[key] = len(result)
+		result = append(result, entry)
+	}
+	return result
+}
 func command(name string, args ...string) *exec.Cmd {
+	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmdArgs := append([]string{"/c", name}, args...)
-		return exec.Command("cmd.exe", cmdArgs...)
+		cmd = exec.Command("cmd.exe", cmdArgs...)
+	} else {
+		cmd = exec.Command(name, args...)
 	}
-	return exec.Command(name, args...)
+	cmd.Env = sanitizedUpdateEnv(os.Environ(), nil)
+	return cmd
 }
 
 func prepareSelfReplace() (func(), error) {
