@@ -3,9 +3,13 @@ package canvas
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +18,7 @@ import (
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
 type trackingImportAuthAPI struct {
@@ -121,7 +126,7 @@ func (api *expiringImportMediaAPI) Upload(
 ) (*canvascore.UploadResult, error) {
 	api.uploads++
 	if api.uploads == 1 && !api.uploadSucceeds {
-		return nil, errors.New("HTTP 401")
+		return nil, fmt.Errorf("HTTP 401: %w", internal_auth.ErrCredentialRejected)
 	}
 	return &canvascore.UploadResult{
 		State: canvascore.StateReady, AssetID: "asset-after-reauth", PippitAssetID: "pippit-after-reauth",
@@ -547,6 +552,57 @@ func TestCanvasImportReauthorizesWhileWaitingForAcceptedCreate(t *testing.T) {
 	}
 	if pippit.key != "replacement-key" || !strings.Contains(stderr.String(), "不会重复创建") {
 		t.Fatalf("key/stderr = %q/%q, want safe create reauthorization", pippit.key, stderr.String())
+	}
+}
+
+func TestCanvasImportRealInitialCreateRejectionReauthenticatesFromInitialized(t *testing.T) {
+	temp := t.TempDir()
+	plan, mediaBytes := testImportPlan(t, false)
+	exporter := &fakeImportExporter{plan: plan, mediaBytes: mediaBytes}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Path != canvascore.CreatePath {
+			http.NotFound(writer, request)
+			return
+		}
+		if request.Header.Get("Authorization") != "Bearer expired-ak" {
+			t.Errorf("Authorization = %q", request.Header.Get("Authorization"))
+		}
+		http.Error(writer, "expired", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	client := common.NewHTTPClient(server.URL, time.Second, common.NewAccessKeyAuthorizer("expired-ak"))
+	runner := common.NewRunner(nil, client)
+	pippit := &trackingImportAuthAPI{
+		key:         "expired-ak",
+		loginErrors: []error{errors.New("stop after observing browser reauthentication")},
+	}
+	deps := testImportDependencies(temp, exporter, &fakeImportMediaAPI{}, runnerImportExecutor{executor: canvasplan.NewExecutor(runner)})
+	deps.pippitAuth = pippit
+	journalPath := filepath.Join(temp, "real-create-auth.journal.json")
+	var stderr bytes.Buffer
+	prompts := newImportPromptSessionWithTUI(context.Background(), strings.NewReader(""), &stderr, false)
+
+	result, err := runCanvasImport(context.Background(), importOptions{
+		Provider: "libtv", SourceURL: testLibTVURL, JournalPath: journalPath, JournalExplicit: true,
+	}, deps, &stderr, prompts)
+	if err == nil || !strings.Contains(err.Error(), "网页重新授权失败") {
+		t.Fatalf("runCanvasImport() result/error = %#v/%v, want browser reauthentication attempt", result, err)
+	}
+	if result == nil || result.State != canvasplan.StateInitialized || pippit.logins != 1 || requests != 1 {
+		t.Fatalf("result/logins/requests = %#v/%d/%d, want initialized/1/1", result, pippit.logins, requests)
+	}
+	payload, readErr := os.ReadFile(journalPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	journal := &canvasplan.Journal{}
+	if err := json.Unmarshal(payload, journal); err != nil || journal.State != canvasplan.StateInitialized || journal.Create != nil {
+		t.Fatalf("journal/error = %#v/%v, want durable initialized state", journal, err)
+	}
+	if !strings.Contains(stderr.String(), "断点已保存") {
+		t.Fatalf("stderr missing safe retry guidance: %q", stderr.String())
 	}
 }
 

@@ -7,14 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/canvas"
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
 func TestMaterializeCanonicalDocumentWithoutTransientMediaLocations(t *testing.T) {
@@ -391,6 +395,38 @@ func TestExecutorRetriesOnlyProvenPreSendCredentialFailure(t *testing.T) {
 	}
 	if api.createCalls != 2 || api.resumeCreateCalls != 0 {
 		t.Fatalf("calls after safe retry create=%d resume=%d, want create=2 resume=0", api.createCalls, api.resumeCreateCalls)
+	}
+}
+
+func TestExecutorRealCreateAuthRejectionReturnsToInitialized(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		if request.URL.Path != canvas.CreatePath {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"ret": "1015", "errmsg": "invalid access key", "log_id": "log-auth", "data": map[string]any{},
+		})
+	}))
+	defer server.Close()
+	client := common.NewHTTPClient(server.URL, time.Second, common.NewAccessKeyAuthorizer("expired-ak"))
+	runner := common.NewRunner(nil, client)
+	plan, resolved := testPlanAndResolved()
+	journalPath := filepath.Join(t.TempDir(), "real-auth-rejection.json")
+
+	result, err := NewExecutor(runner).Execute(context.Background(), plan, resolved, ExecuteOptions{JournalPath: journalPath})
+	if !errors.Is(err, internal_auth.ErrCredentialRejected) || result == nil || result.State != StateInitialized {
+		t.Fatalf("Execute() result/error = %#v/%v, want initialized typed auth rejection", result, err)
+	}
+	if requests != 1 {
+		t.Fatalf("HTTP requests = %d, want only the rejected Create", requests)
+	}
+	journal := readJournal(t, journalPath)
+	if journal.State != StateInitialized || journal.Create != nil {
+		t.Fatalf("journal after rejected Create = %#v", journal)
 	}
 }
 

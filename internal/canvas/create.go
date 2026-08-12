@@ -95,9 +95,10 @@ func Create(ctx context.Context, opts CreateOptions, runner *common.Runner) (*Cr
 	}, &envelope)
 	if err != nil {
 		if IsCredentialUnavailable(err) {
-			// The authorizer rejected the request before http.Client.Do. This is
-			// the only create failure that is proven safe to retry after login.
-			return nil, fmt.Errorf("canvas create request was not sent because authentication is unavailable: %w", err)
+			// The authorizer rejected before http.Client.Do, or the service
+			// explicitly rejected authentication with 401/403. Both prove that
+			// no create write was accepted and are safe to retry after login.
+			return nil, fmt.Errorf("canvas create was not accepted because authentication is unavailable or rejected: %w", err)
 		}
 		return nil, fmt.Errorf("canvas create request failed; outcome may be ambiguous, do not retry blindly: %w", err)
 	}
@@ -178,7 +179,8 @@ func finalizeReadyCanvas(ctx context.Context, result *CreateResult, runner *comm
 // from user-facing warning text.
 func IsCredentialUnavailable(err error) bool {
 	return errors.Is(err, internal_auth.ErrCredentialNotFound) ||
-		errors.Is(err, internal_auth.ErrCredentialExpired)
+		errors.Is(err, internal_auth.ErrCredentialExpired) ||
+		errors.Is(err, internal_auth.ErrCredentialRejected)
 }
 
 func acceptedCreationError(result *CreateResult, cause error) error {

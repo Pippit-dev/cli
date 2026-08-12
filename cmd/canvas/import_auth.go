@@ -313,7 +313,8 @@ func isCanvasImportPippitAuthFailure(err error) bool {
 	}
 	if errors.Is(err, errCanvasImportReauthenticationRequired) ||
 		errors.Is(err, internal_auth.ErrCredentialNotFound) ||
-		errors.Is(err, internal_auth.ErrCredentialExpired) {
+		errors.Is(err, internal_auth.ErrCredentialExpired) ||
+		errors.Is(err, internal_auth.ErrCredentialRejected) {
 		return true
 	}
 	message := strings.ToLower(err.Error())
@@ -327,4 +328,14 @@ func isCanvasImportPippitAuthFailure(err error) bool {
 		}
 	}
 	return false
+}
+
+// isProvenPrewriteCredentialFailure is intentionally stricter than the
+// user-facing detector above. Only structured credential failures prove that
+// a protected write was rejected before execution; message substrings are not
+// sufficient evidence for clearing a durable upload-requested marker.
+func isProvenPrewriteCredentialFailure(err error) bool {
+	return errors.Is(err, internal_auth.ErrCredentialNotFound) ||
+		errors.Is(err, internal_auth.ErrCredentialExpired) ||
+		errors.Is(err, internal_auth.ErrCredentialRejected)
 }

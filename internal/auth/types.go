@@ -26,6 +26,7 @@ const (
 var (
 	ErrCredentialNotFound        = errors.New("未找到本机小云雀 CLI 登录凭证")
 	ErrCredentialExpired         = errors.New("本机小云雀 CLI 登录凭证已过期")
+	ErrCredentialRejected        = errors.New("小云雀拒绝了当前 CLI 登录凭证")
 	ErrSecureStore               = errors.New("安全凭证存储不可用")
 	ErrCredentialAccountMismatch = errors.New("网页授权账号与当前任务账号不一致")
 	ErrRemoteRevokeUnsupported   = errors.New("当前版本不支持在 CLI 中安全撤销远程 Access Key")

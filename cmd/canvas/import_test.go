@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/canvasplan"
 )
@@ -900,6 +901,43 @@ func TestImportCommandBlocksUnknownUploadOutcome(t *testing.T) {
 	}
 	if media.uploads != 1 || executor.calls != 0 {
 		t.Fatalf("upload/execute = %d/%d, want no blind retry or execute", media.uploads, executor.calls)
+	}
+}
+
+func TestMediaUploadTextHeuristicCannotClearAmbiguousMarker(t *testing.T) {
+	opts := testMediaResolutionOptions(t)
+	first := &fakeImportMediaAPI{uploadErr: errors.New("HTTP 500: upstream diagnostic mentioned unauthorized")}
+	_, err := resolveImportMedia(context.Background(), opts, first, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("first resolve error = %v, want blocked unknown outcome", err)
+	}
+	checkpoint := readTestMediaCheckpoint(t, opts.CheckpointPath)
+	if len(checkpoint.Entries) != 1 || checkpoint.Entries[0].Status != mediaStatusBlocked {
+		t.Fatalf("checkpoint entries = %#v, want durable blocked marker", checkpoint.Entries)
+	}
+
+	second := &fakeImportMediaAPI{}
+	_, err = resolveImportMedia(context.Background(), opts, second, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "blocked") || second.uploads != 0 {
+		t.Fatalf("second resolve error/uploads = %v/%d, want no blind re-upload", err, second.uploads)
+	}
+}
+
+func TestMediaUploadTypedCredentialRejectionClearsMarkerForRetry(t *testing.T) {
+	opts := testMediaResolutionOptions(t)
+	first := &fakeImportMediaAPI{uploadErr: fmt.Errorf("upload rejected: %w", internal_auth.ErrCredentialRejected)}
+	_, err := resolveImportMedia(context.Background(), opts, first, io.Discard)
+	if !errors.Is(err, errCanvasImportReauthenticationRequired) || first.uploads != 1 {
+		t.Fatalf("first resolve error/uploads = %v/%d, want structured reauthentication", err, first.uploads)
+	}
+	if checkpoint := readTestMediaCheckpoint(t, opts.CheckpointPath); len(checkpoint.Entries) != 0 {
+		t.Fatalf("checkpoint entries = %#v, want rejected prewrite marker removed", checkpoint.Entries)
+	}
+
+	second := &fakeImportMediaAPI{}
+	resolved, err := resolveImportMedia(context.Background(), opts, second, io.Discard)
+	if err != nil || second.uploads != 1 || len(resolved.Media) != 1 {
+		t.Fatalf("second resolve result/error/uploads = %#v/%v/%d", resolved, err, second.uploads)
 	}
 }
 

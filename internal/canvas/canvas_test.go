@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,8 +133,51 @@ func TestCreateCredentialUnavailableBeforeRequestIsProvenRetryable(t *testing.T)
 	}}
 	result, err := Create(context.Background(), CreateOptions{RequestID: "request-1"}, runnerWithClient(client))
 	if result != nil || !errors.Is(err, internal_auth.ErrCredentialExpired) ||
-		!strings.Contains(err.Error(), "was not sent") || strings.Contains(err.Error(), "outcome may be ambiguous") {
+		!strings.Contains(err.Error(), "not accepted") || strings.Contains(err.Error(), "outcome may be ambiguous") {
 		t.Fatalf("Create() result/error = %#v/%v, want typed pre-send credential failure", result, err)
+	}
+}
+
+func TestCreateRealHTTPAuthenticationRejectionIsTypedAndNotAmbiguous(t *testing.T) {
+	tests := []struct {
+		name         string
+		status       int
+		body         string
+		wantRejected bool
+	}{
+		{name: "HTTP 401", status: http.StatusUnauthorized, body: `{"message":"expired"}`, wantRejected: true},
+		{name: "HTTP 403", status: http.StatusForbidden, body: `{"message":"forbidden"}`, wantRejected: true},
+		{name: "business ret 1015", status: http.StatusOK, body: `{"ret":"1015","errmsg":"invalid access key","log_id":"log-auth","data":{}}`, wantRejected: true},
+		{name: "HTTP 500", status: http.StatusInternalServerError, body: `{"message":"temporary"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				if request.URL.Path != CreatePath {
+					http.NotFound(writer, request)
+					return
+				}
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(test.status)
+				_, _ = io.WriteString(writer, test.body)
+			}))
+			defer server.Close()
+			client := common.NewHTTPClient(server.URL, time.Second, common.NewAccessKeyAuthorizer("test-ak"))
+
+			result, err := Create(context.Background(), CreateOptions{RequestID: "request-real-auth"}, common.NewRunner(nil, client))
+			if result != nil || err == nil {
+				t.Fatalf("Create() result/error = %#v/%v, want failure", result, err)
+			}
+			if got := errors.Is(err, internal_auth.ErrCredentialRejected); got != test.wantRejected {
+				t.Fatalf("errors.Is(ErrCredentialRejected) = %v, error=%v", got, err)
+			}
+			if test.wantRejected && strings.Contains(err.Error(), "outcome may be ambiguous") {
+				t.Fatalf("explicit rejection was marked ambiguous: %v", err)
+			}
+			if !test.wantRejected && !strings.Contains(err.Error(), "outcome may be ambiguous") {
+				t.Fatalf("non-auth server failure lost ambiguous safety state: %v", err)
+			}
+		})
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 )
 
@@ -40,10 +41,16 @@ func (r responseEnvelope) validate(operation string) error {
 	if message == "" {
 		message = "unknown error"
 	}
-	return common.NewLogIDError(
+	responseErr := common.NewLogIDError(
 		fmt.Sprintf("%s failed: ret=%q errmsg=%s", operation, r.Ret, message),
 		r.LogID,
 	)
+	if r.Ret == "1015" {
+		// ret=1015 is the service's explicit credential rejection. Unlike a
+		// transport failure or 5xx, it proves the business write was rejected.
+		return fmt.Errorf("%w: %w", internal_auth.ErrCredentialRejected, responseErr)
+	}
+	return responseErr
 }
 
 func base() map[string]any {

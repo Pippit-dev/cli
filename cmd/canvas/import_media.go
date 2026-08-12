@@ -339,7 +339,7 @@ func resolveImportMedia(
 		entries[media.LogicalID] = &entry
 		reportImportMediaProgress(stderr, index, len(opts.Media), "uploading", media)
 		uploaded, uploadErr := api.Upload(ctx, media)
-		if uploadErr != nil && isCanvasImportPippitAuthFailure(uploadErr) {
+		if uploadErr != nil && isProvenPrewriteCredentialFailure(uploadErr) {
 			if checkpointErr := removeAndSaveMediaEntry(opts.CheckpointPath, checkpoint, media.LogicalID); checkpointErr != nil {
 				return canvasplan.ResolvedMediaSet{}, fmt.Errorf(
 					"发送素材 %q 的上传请求前，小云雀授权失败，且无法清理 upload-requested 断点记录；请勿直接重试：%w",

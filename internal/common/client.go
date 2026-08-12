@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
 )
@@ -367,7 +368,13 @@ func (c *httpClient) do(req *http.Request, out any) error {
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return fmt.Errorf("%s %s 返回 HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg)
+		responseErr := fmt.Errorf("%s %s 返回 HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg)
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			// An explicit authentication/authorization rejection proves that
+			// the protected operation was not accepted for execution.
+			return fmt.Errorf("%w: %w", internal_auth.ErrCredentialRejected, responseErr)
+		}
+		return responseErr
 	}
 	if out == nil || len(data) == 0 {
 		return nil
