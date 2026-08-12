@@ -269,31 +269,6 @@ func TestGetRejectsNumericAssetIDInResponse(t *testing.T) {
 	}
 }
 
-func TestAllocateRequiresExactUniqueStringIDs(t *testing.T) {
-	client := &fakeClient{send: func(_ context.Context, path string, body any, out any) error {
-		if path != AllocatePath {
-			t.Fatalf("path = %q, want allocate", path)
-		}
-		request := requestJSON(t, body)
-		if request["count"] != float64(2) {
-			t.Fatalf("count = %#v, want 2", request["count"])
-		}
-		return decodeInto(out, `{"ret":"0","data":{"ids":["10","11"]}}`)
-	}}
-	result, err := Allocate(context.Background(), 2, runnerWithClient(client))
-	if err != nil || strings.Join(result.AssetIDs, ",") != "10,11" {
-		t.Fatalf("Allocate() = (%#v, %v), want two IDs", result, err)
-	}
-
-	duplicate := &fakeClient{send: func(_ context.Context, _ string, _ any, out any) error {
-		return decodeInto(out, `{"ret":"0","data":{"ids":["10","10"]}}`)
-	}}
-	_, err = Allocate(context.Background(), 2, runnerWithClient(duplicate))
-	if err == nil || !strings.Contains(err.Error(), "duplicate id") {
-		t.Fatalf("Allocate() error = %v, want duplicate rejection", err)
-	}
-}
-
 func TestApplyRequiresAcknowledgementAndEveryAssetVersion(t *testing.T) {
 	version := int64(0)
 	request := ApplyRequest{

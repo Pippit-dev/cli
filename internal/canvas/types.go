@@ -12,7 +12,6 @@ import (
 const (
 	CreatePath   = "/api/biz/v1/skill/canvas/create"
 	QueryPath    = "/api/biz/v1/skill/canvas/query"
-	AllocatePath = "/api/biz/v1/skill/canvas/batch_generate_asset_id"
 	ApplyPath    = "/api/biz/v1/skill/canvas/batch_patch_asset"
 	UploadPath   = "/api/biz/v1/skill/upload_file"
 )
