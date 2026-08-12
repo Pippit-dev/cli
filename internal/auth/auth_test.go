@@ -145,11 +145,15 @@ func TestBrowserFlowUsesDedicatedPageAndStrictBoundCallback(t *testing.T) {
 	if status := sendCallback(t, callbackURL+"&state=duplicate", config.DefaultBaseURL, payload); status != http.StatusBadRequest {
 		t.Fatalf("duplicate state status = %d", status)
 	}
+	if status := sendCallback(t, callbackURL+"&unexpected=value", config.DefaultBaseURL, payload); status != http.StatusBadRequest {
+		t.Fatalf("unexpected transport query status = %d", status)
+	}
 	if status := sendPreflight(t, callbackURL, config.DefaultBaseURL); status != http.StatusNoContent {
 		t.Fatalf("preflight status = %d", status)
 	}
-	if status := sendCallback(t, callbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
-		t.Fatalf("valid callback status = %d", status)
+	securityRuntimeCallback := callbackURL + "&a_bogus=signed-request&msToken=transport-token"
+	if status := sendCallback(t, securityRuntimeCallback, config.DefaultBaseURL, payload); status != http.StatusOK {
+		t.Fatalf("security-runtime callback status = %d", status)
 	}
 	got, err := flow.wait(context.Background())
 	if err != nil || got.AccessKey != payload.AccessKey || got.UID != payload.UID || got.TokenID != payload.TokenID {

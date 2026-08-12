@@ -18,6 +18,8 @@ import (
 
 const maxCallbackBodyBytes = 64 << 10
 
+const maxInjectedCallbackQueryValueBytes = 4 << 10
+
 type accessKeyPayload struct {
 	Type            string `json:"type"`
 	AccessKey       string `json:"access_key"`
@@ -255,7 +257,27 @@ func (f *browserFlow) validRequestTarget(request *http.Request) bool {
 	}
 	query := request.URL.Query()
 	states, ok := query["state"]
-	return ok && len(query) == 1 && len(states) == 1 && constantTimeEqual(states[0], f.state)
+	if !ok || len(states) != 1 || !constantTimeEqual(states[0], f.state) {
+		return false
+	}
+	for key, values := range query {
+		if key == "state" {
+			continue
+		}
+		// The site's security runtime appends these transport-only query
+		// parameters to cross-origin requests. They are not part of the
+		// callback binding: state, Origin, callback_url, and the body secret
+		// remain exact and independently verified below.
+		if key != "a_bogus" && key != "msToken" || len(values) != 1 ||
+			!validInjectedCallbackQueryValue(values[0]) {
+			return false
+		}
+	}
+	return true
+}
+
+func validInjectedCallbackQueryValue(value string) bool {
+	return value != "" && len(value) <= maxInjectedCallbackQueryValueBytes && strings.TrimSpace(value) == value
 }
 
 func (f *browserFlow) callbackURLHost() string {
