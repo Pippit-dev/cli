@@ -6,7 +6,6 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"io"
 	"strings"
 )
@@ -36,14 +35,23 @@ func validDeviceID(deviceID string) bool {
 		constantTimeEqual(deviceID, base64.RawURLEncoding.EncodeToString(decoded))
 }
 
-func tokenNameForDevice(deviceID string) string {
-	digest := sha256.Sum256([]byte(deviceID))
-	return "pippit-tool-cli-" + base64.RawURLEncoding.EncodeToString(digest[:16])
+func credentialScope(uid, deviceID string) string {
+	return "pippit-tool-cli:user:" + accountBinding(uid) + ":device:" + deviceID
 }
 
-func credentialScope(uid, deviceID string) string {
+func accountBinding(uid string) string {
 	digest := sha256.Sum256([]byte(strings.TrimSpace(uid)))
-	return "pippit-tool-cli:user:" + base64.RawURLEncoding.EncodeToString(digest[:16]) + ":device:" + deviceID
+	return base64.RawURLEncoding.EncodeToString(digest[:16])
+}
+
+func accountBindingFromCredentialScope(scope, deviceID string) (string, bool) {
+	prefix := "pippit-tool-cli:user:"
+	suffix := ":device:" + deviceID
+	if !strings.HasPrefix(scope, prefix) || !strings.HasSuffix(scope, suffix) {
+		return "", false
+	}
+	binding := strings.TrimSuffix(strings.TrimPrefix(scope, prefix), suffix)
+	return binding, validAccountBinding(binding)
 }
 
 func legacyCredentialScope(deviceID string) string {
@@ -62,9 +70,8 @@ func newIdentity(reader io.Reader) (*Credential, error) {
 		return nil, errors.New("生成本机登录设备标识失败")
 	}
 	return &Credential{
-		Version:   credentialVersion,
-		DeviceID:  deviceID,
-		TokenName: tokenNameForDevice(deviceID),
+		Version:  credentialVersion,
+		DeviceID: deviceID,
 	}, nil
 }
 
@@ -73,20 +80,10 @@ func identityOnly(credential *Credential) *Credential {
 		return nil
 	}
 	return &Credential{
-		Version:   credential.Version,
-		DeviceID:  credential.DeviceID,
-		TokenName: credential.TokenName,
-		// TokenID is not an authentication secret. Keeping this exact remote
-		// reference lets a later login reuse or rotate the same device token
-		// without consuming another per-account AK slot.
+		Version:  credential.Version,
+		DeviceID: credential.DeviceID,
+		// TokenID is a non-secret exact selector used by the Web page to reuse the
+		// same remote token after logout instead of consuming another AK slot.
 		TokenID: credential.TokenID,
 	}
-}
-
-func redactedOperationError(operation string) error {
-	operation = strings.TrimSpace(operation)
-	if operation == "" {
-		operation = "授权操作"
-	}
-	return fmt.Errorf("%s失败，请稍后重试", operation)
 }
