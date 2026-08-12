@@ -140,7 +140,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 			t.Fatalf("help output = %q, want %q", got, want)
 		}
 	}
-	for _, unwanted := range []string{"completion", "version     "} {
+	for _, unwanted := range []string{"completion", "\n  version "} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("help output = %q, should not contain %q", got, unwanted)
 		}
