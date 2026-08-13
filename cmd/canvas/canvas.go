@@ -32,8 +32,30 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newCreateCommand(stdout, stderr, runner))
 	cmd.AddCommand(newGetCommand(stdout, stderr, runner))
+	cmd.AddCommand(newAllocateCommand(stdout, stderr, runner))
 	cmd.AddCommand(newApplyCommand(stdout, stderr, runner))
 	cmd.AddCommand(newUploadCommand(stdout, stderr, runner))
+	return cmd
+}
+
+func newAllocateCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	var count int
+	cmd := &cobra.Command{
+		Use:   "allocate",
+		Short: "Allocate IDs for assets created by a later Canvas transaction",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			result, err := canvascore.Allocate(cmd.Context(), count, runner)
+			if err != nil {
+				logCanvasError("canvas allocate", err, map[string]string{"count": fmt.Sprint(count)})
+				return err
+			}
+			return common.WriteJSON(stdout, result)
+		},
+	}
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.Flags().IntVar(&count, "count", 0, "number of unique Pippit asset IDs to allocate")
 	return cmd
 }
 

@@ -39,13 +39,33 @@ func TestCommandExposesOnlyProviderNeutralPublicVerbs(t *testing.T) {
 	for _, child := range cmd.Commands() {
 		got = append(got, child.Name())
 	}
-	if strings.Join(got, ",") != "apply,create,get,upload" {
-		t.Fatalf("commands = %v, want apply/create/get/upload", got)
+	if strings.Join(got, ",") != "allocate,apply,create,get,upload" {
+		t.Fatalf("commands = %v, want allocate/apply/create/get/upload", got)
 	}
-	for _, forbidden := range []string{"import", "bind", "team", "allocate"} {
+	for _, forbidden := range []string{"import", "bind", "team"} {
 		if strings.Contains(strings.ToLower(cmd.CommandPath()+" "+cmd.Short+" "+strings.Join(got, " ")), forbidden) {
 			t.Fatalf("public command surface contains forbidden verb %q", forbidden)
 		}
+	}
+}
+
+func TestAllocateCommandPrintsOneMachineReadableJSONLine(t *testing.T) {
+	client := &commandFakeClient{response: `{"ret":"0","log_id":"log-1","data":{"ids":["10","11"]}}`}
+	var stdout, stderr bytes.Buffer
+	cmd := NewCommand(&stdout, &stderr, &common.Runner{Client: client})
+	cmd.SetArgs([]string{"allocate", "--count", "2"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if strings.Count(stdout.String(), "\n") != 1 {
+		t.Fatalf("stdout = %q, want one JSON line", stdout.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
+		t.Fatalf("stdout is not JSON: %v", err)
+	}
+	if len(result["asset_ids"].([]any)) != 2 || client.request["count"] != float64(2) {
+		t.Fatalf("result/request = (%#v, %#v), want two allocated IDs", result, client.request)
 	}
 }
 

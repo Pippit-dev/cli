@@ -231,8 +231,9 @@ CLI 提供个人漫剧画布的通用原子命令，不包含特定来源的导�
 pippit-tool-cli login
 pippit-tool-cli status
 
-# 创建、查询、上传与提交单个画布 transaction
+# 创建、分配资产 ID、查询、上传与提交单个画布 transaction
 pippit-tool-cli canvas create --title "CLI Canvas" --wait
+pippit-tool-cli canvas allocate --count 3
 pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
 pippit-tool-cli canvas upload --path ./reference.png
 pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
@@ -240,7 +241,7 @@ pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 
 仅测试 PPE 时，在命令前增加 `--ppe-env ppe_cli_canvas_ak`；生产环境不要设置该参数。PPE 只影响登录完成后的同源业务请求，不改变登录账号或本机凭证。
 
-四个命令均输出单行 JSON，资源 ID 保持字符串。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
+五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
 
 ## 生图 CLI
 
