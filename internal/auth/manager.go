@@ -119,13 +119,15 @@ func (m *Manager) Login(ctx context.Context, options LoginOptions) (*Credential,
 	}
 	defer flow.close()
 
-	writeProgress(options.Progress, "正在打开小云雀网页授权…")
+	writeProgress(options.Progress, "小云雀网页授权地址（如未自动打开，请复制到浏览器）：")
+	writeProgress(options.Progress, flow.loginURL)
+	writeProgress(options.Progress, "正在尝试自动打开浏览器…")
 	opener := options.OpenURL
 	if opener == nil {
 		opener = OpenBrowser
 	}
 	if err := opener(flow.loginURL); err != nil {
-		return nil, errors.New("无法自动打开浏览器，请检查系统默认浏览器设置后重试")
+		writeProgress(options.Progress, "未能自动打开浏览器，请复制上方授权地址到浏览器继续；CLI 将继续等待授权回调…")
 	}
 	writeProgress(options.Progress, "请在浏览器中完成登录和授权，CLI 会自动继续…")
 

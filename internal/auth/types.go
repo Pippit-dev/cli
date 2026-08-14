@@ -46,8 +46,10 @@ type CredentialStore interface {
 }
 
 type LoginOptions struct {
-	// OpenURL should open the URL without logging it. When nil, the platform's
-	// standard browser opener is used with credential-bearing env vars removed.
+	// OpenURL should open the URL without persisting it. Login writes the
+	// one-time URL to Progress so the user can continue manually when automatic
+	// opening is unavailable. When nil, the platform's standard browser opener
+	// is used with credential-bearing env vars removed.
 	OpenURL  func(string) error
 	Progress io.Writer
 	Timeout  time.Duration

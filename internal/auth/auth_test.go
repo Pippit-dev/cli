@@ -177,9 +177,13 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 	)
 	var progress bytes.Buffer
 	var callbackSecret string
+	var loginURLAtOpen string
+	var loginURLShownBeforeOpen bool
 	credential, err := manager.Login(context.Background(), LoginOptions{
 		Progress: &progress,
 		OpenURL: func(rawURL string) error {
+			loginURLAtOpen = rawURL
+			loginURLShownBeforeOpen = strings.Contains(progress.String(), rawURL)
 			loginURL, parseErr := url.Parse(rawURL)
 			if parseErr != nil {
 				return parseErr
@@ -217,10 +221,57 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 	if stored == nil || stored.AccessKey != credential.AccessKey {
 		t.Fatalf("stored credential = %#v", credentialWithoutSecret(stored))
 	}
-	for _, secret := range []string{credential.AccessKey, callbackSecret} {
-		if strings.Contains(progress.String(), secret) {
-			t.Fatalf("progress leaked a secret: %q", progress.String())
-		}
+	if loginURLAtOpen == "" || !loginURLShownBeforeOpen || !strings.Contains(progress.String(), loginURLAtOpen) ||
+		!strings.Contains(progress.String(), "如未自动打开") {
+		t.Fatalf("progress omitted the manual login URL: %q", progress.String())
+	}
+	if strings.Contains(progress.String(), credential.AccessKey) {
+		t.Fatalf("progress leaked the issued Access Key: %q", progress.String())
+	}
+}
+
+func TestManagerWaitsForCallbackWhenBrowserOpenFails(t *testing.T) {
+	fixedNow := time.Unix(1_800_000_000, 0)
+	store := &memoryCredentialStore{}
+	manager := NewManager(
+		config.Load(),
+		WithCredentialStore(store),
+		withRandomReaderForTest(bytes.NewReader(bytes.Repeat([]byte{0x32}, deviceIDBytes+2*randomBindingBytes))),
+		withClockForTest(func() time.Time { return fixedNow }),
+	)
+	var progress bytes.Buffer
+	credential, err := manager.Login(context.Background(), LoginOptions{
+		Progress: &progress,
+		OpenURL: func(rawURL string) error {
+			loginURL, parseErr := url.Parse(rawURL)
+			if parseErr != nil {
+				return parseErr
+			}
+			payload := accessKeyPayload{
+				Type:            "access_key",
+				AccessKey:       "page-issued-after-open-failure",
+				UID:             "user-after-open-failure",
+				TokenID:         "ak-id-after-open-failure",
+				ExpiredAt:       fixedNow.Add(time.Hour).Unix(),
+				RandomSecretKey: loginURL.Query().Get("random_secret_key"),
+				Source:          loginSource,
+				CallbackURL:     loginURL.Query().Get("callback"),
+			}
+			if status := sendCallback(t, payload.CallbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
+				return fmt.Errorf("callback status %d", status)
+			}
+			return errors.New("browser opener unavailable")
+		},
+	})
+	if err != nil {
+		t.Fatalf("Login() after browser open failure error = %v", err)
+	}
+	if credential.AccessKey != "page-issued-after-open-failure" || credential.UID != "user-after-open-failure" {
+		t.Fatalf("credential = %#v", credentialWithoutSecret(credential))
+	}
+	if !strings.Contains(progress.String(), "未能自动打开浏览器") ||
+		!strings.Contains(progress.String(), "复制上方授权地址") {
+		t.Fatalf("open failure fallback was not actionable: %q", progress.String())
 	}
 }
 

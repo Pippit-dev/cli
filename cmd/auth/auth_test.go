@@ -15,11 +15,12 @@ import (
 )
 
 type fakeAuthManager struct {
-	credential   *internal_auth.Credential
-	status       *internal_auth.Status
-	loginCalls   int
-	loginOptions []internal_auth.LoginOptions
-	logoutCalls  int
+	credential    *internal_auth.Credential
+	status        *internal_auth.Status
+	loginProgress string
+	loginCalls    int
+	loginOptions  []internal_auth.LoginOptions
+	logoutCalls   int
 }
 
 func (manager *fakeAuthManager) ResolveAccessKey(context.Context) (string, error) {
@@ -33,7 +34,11 @@ func (manager *fakeAuthManager) Login(_ context.Context, options internal_auth.L
 	manager.loginCalls++
 	manager.loginOptions = append(manager.loginOptions, options)
 	if options.Progress != nil {
-		_, _ = options.Progress.Write([]byte("正在完成浏览器授权…\n"))
+		message := manager.loginProgress
+		if message == "" {
+			message = "正在完成浏览器授权…\n"
+		}
+		_, _ = options.Progress.Write([]byte(message))
 	}
 	return manager.credential, nil
 }
@@ -67,10 +72,11 @@ func (manager *fakeAuthManager) CredentialScope(context.Context) (string, error)
 
 func TestLoginCommandPrintsMetadataWithoutAccessKey(t *testing.T) {
 	const accessKey = "must-never-be-printed"
+	const loginURL = "https://xyq.jianying.com/cli/pippit-tool-login?callback=http%3A%2F%2F127.0.0.1%3A1234&random_secret_key=one-time-secret"
 	expiresAt := time.Now().Add(time.Hour).Unix()
 	manager := &fakeAuthManager{credential: &internal_auth.Credential{
 		AccessKey: accessKey, UID: "123", CredentialScope: "device-scope", ExpiredAt: expiresAt,
-	}}
+	}, loginProgress: "正在完成浏览器授权…\n授权地址：\n" + loginURL + "\n"}
 	var stdout, stderr bytes.Buffer
 	command := NewLoginCommand(&stdout, &stderr, &common.Runner{Config: &config.Config{}, Auth: manager})
 	command.SetArgs(nil)
@@ -82,6 +88,9 @@ func TestLoginCommandPrintsMetadataWithoutAccessKey(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), accessKey) || strings.Contains(stderr.String(), accessKey) {
 		t.Fatalf("command output leaked Access Key: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), loginURL) || strings.Contains(stdout.String(), loginURL) {
+		t.Fatalf("login URL stream contract violated: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	var result loginResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
