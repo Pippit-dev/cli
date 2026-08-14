@@ -20,7 +20,7 @@ type observedHeaders struct {
 	scheduleVDC   string
 }
 
-func TestHTTPClientScopesCredentialsAndPPEToBaseOrigin(t *testing.T) {
+func TestHTTPClientScopesCredentialsAndStripsInternalRoutingHeaders(t *testing.T) {
 	apiHeaders := make(chan observedHeaders, 1)
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		apiHeaders <- captureRoutingHeaders(r)
@@ -35,11 +35,10 @@ func TestHTTPClientScopesCredentialsAndPPEToBaseOrigin(t *testing.T) {
 	}))
 	defer thirdParty.Close()
 
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		api.URL,
 		time.Second,
 		NewAccessKeyAuthorizer("secret-ak"),
-		func() string { return "ppe_cli_canvas_ak" },
 	)
 	if err := client.SendRequest(context.Background(), "/api/test", nil, nil); err != nil {
 		t.Fatalf("same-origin SendRequest() error = %v", err)
@@ -48,8 +47,8 @@ func TestHTTPClientScopesCredentialsAndPPEToBaseOrigin(t *testing.T) {
 	if gotAPI.authorization != "Bearer secret-ak" {
 		t.Fatalf("same-origin Authorization = %q", gotAPI.authorization)
 	}
-	if gotAPI.usePPE != "1" || gotAPI.ppeEnv != "ppe_cli_canvas_ak" || gotAPI.scheduleVDC != defaultPPEVDC {
-		t.Fatalf("same-origin PPE headers = %#v", gotAPI)
+	if gotAPI.usePPE != "" || gotAPI.ppeEnv != "" || gotAPI.scheduleVDC != "" {
+		t.Fatalf("same-origin internal routing headers leaked: %#v", gotAPI)
 	}
 
 	thirdPartyURL := thirdParty.URL + "/asset.mp4"
@@ -76,17 +75,16 @@ func TestHTTPClientTreatsSameOriginAbsoluteURLAsAPI(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		server.URL+"/base-path",
 		time.Second,
 		NewAccessKeyAuthorizer("same-origin-ak"),
-		func() string { return "ppe_absolute" },
 	)
 	if err := client.SendRequest(context.Background(), server.URL+"/api/absolute", nil, nil); err != nil {
 		t.Fatalf("SendRequest() error = %v", err)
 	}
 	got := <-headers
-	if got.authorization != "Bearer same-origin-ak" || got.usePPE != "1" || got.ppeEnv != "ppe_absolute" || got.scheduleVDC != defaultPPEVDC {
+	if got.authorization != "Bearer same-origin-ak" || got.usePPE != "" || got.ppeEnv != "" || got.scheduleVDC != "" {
 		t.Fatalf("same-origin absolute headers = %#v", got)
 	}
 }
@@ -104,11 +102,10 @@ func TestHTTPClientRejectsAPICrossOriginRedirectBeforeSendingBody(t *testing.T) 
 	}))
 	defer api.Close()
 
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		api.URL,
 		time.Second,
 		NewAccessKeyAuthorizer("redirect-ak"),
-		func() string { return "ppe_redirect" },
 	)
 	err := client.SendRequest(context.Background(), "/api/redirect", map[string]string{"canvas": "private"}, nil)
 	if err == nil || !strings.Contains(err.Error(), "拒绝 Pippit API 跨域重定向") {
@@ -137,11 +134,10 @@ func TestHTTPClientDoesNotRestoreProtectedHeadersAfterCrossOriginRedirect(t *tes
 	defer api.Close()
 	apiURL = api.URL
 
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		api.URL,
 		time.Second,
 		NewAccessKeyAuthorizer("redirect-bounce-ak"),
-		func() string { return "ppe_redirect_bounce" },
 	)
 	if err := client.SendRequest(context.Background(), thirdParty.URL+"/bounce", nil, nil); err != nil {
 		t.Fatalf("SendRequest() error = %v", err)
@@ -151,30 +147,7 @@ func TestHTTPClientDoesNotRestoreProtectedHeadersAfterCrossOriginRedirect(t *tes
 	}
 }
 
-func TestHTTPClientRejectsInvalidPPEEnvBeforeNetwork(t *testing.T) {
-	var requests atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests.Add(1)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	client := NewHTTPClientWithPPEEnv(
-		server.URL,
-		time.Second,
-		NewAccessKeyAuthorizer("secret-ak"),
-		func() string { return "production" },
-	)
-	err := client.SendRequest(context.Background(), "/api/test", nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "PPE 环境") {
-		t.Fatalf("SendRequest() error = %v, want invalid PPE error", err)
-	}
-	if got := requests.Load(); got != 0 {
-		t.Fatalf("server received %d requests, want 0", got)
-	}
-}
-
-func TestHTTPClientProductionRequestOmitsPPEHeaders(t *testing.T) {
+func TestHTTPClientPreventsCallerRoutingAndAuthorizationOverride(t *testing.T) {
 	headers := make(chan observedHeaders, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headers <- captureRoutingHeaders(r)
@@ -182,11 +155,10 @@ func TestHTTPClientProductionRequestOmitsPPEHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		server.URL,
 		time.Second,
 		NewAccessKeyAuthorizer("production-ak"),
-		func() string { return "" },
 	)
 	err := client.SendRequestWithHeaders(context.Background(), "/api/test", nil, map[string]string{
 		"Authorization":  "Bearer caller-override",
@@ -199,40 +171,11 @@ func TestHTTPClientProductionRequestOmitsPPEHeaders(t *testing.T) {
 	}
 	got := <-headers
 	if got.authorization != "Bearer production-ak" || got.usePPE != "" || got.ppeEnv != "" || got.scheduleVDC != "" {
-		t.Fatalf("production headers = %#v", got)
-	}
-}
-
-func TestHTTPClientProtectsConfiguredPPEHeadersFromCallerOverride(t *testing.T) {
-	headers := make(chan observedHeaders, 1)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		headers <- captureRoutingHeaders(r)
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer server.Close()
-
-	client := NewHTTPClientWithPPEEnv(
-		server.URL,
-		time.Second,
-		NewAccessKeyAuthorizer("configured-ak"),
-		func() string { return "ppe_configured" },
-	)
-	err := client.SendRequestWithHeaders(context.Background(), "/api/test", nil, map[string]string{
-		"Authorization":  "Bearer caller-override",
-		"x-use-ppe":      "0",
-		"x-tt-env":       "ppe_caller_override",
-		"x-schedule-vdc": "caller-vdc",
-	}, nil)
-	if err != nil {
-		t.Fatalf("SendRequest() error = %v", err)
-	}
-	got := <-headers
-	if got.authorization != "Bearer configured-ak" || got.usePPE != "1" || got.ppeEnv != "ppe_configured" || got.scheduleVDC != defaultPPEVDC {
 		t.Fatalf("protected headers = %#v", got)
 	}
 }
 
-func TestHTTPClientMultipartRequestInjectsPPEHeaders(t *testing.T) {
+func TestHTTPClientMultipartRequestInjectsOnlyAuthorization(t *testing.T) {
 	headers := make(chan observedHeaders, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headers <- captureRoutingHeaders(r)
@@ -244,11 +187,10 @@ func TestHTTPClientMultipartRequestInjectsPPEHeaders(t *testing.T) {
 	if err := os.WriteFile(filePath, []byte("sample"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	client := NewHTTPClientWithPPEEnv(
+	client := NewHTTPClient(
 		server.URL,
 		time.Second,
 		NewAccessKeyAuthorizer("upload-ak"),
-		func() string { return "ppe_upload" },
 	)
 	err := client.SendMultipartRequest(context.Background(), "/api/upload", nil, MultipartFile{
 		FieldName: "file",
@@ -258,7 +200,7 @@ func TestHTTPClientMultipartRequestInjectsPPEHeaders(t *testing.T) {
 		t.Fatalf("SendMultipartRequest() error = %v", err)
 	}
 	got := <-headers
-	if got.authorization != "Bearer upload-ak" || got.usePPE != "1" || got.ppeEnv != "ppe_upload" || got.scheduleVDC != defaultPPEVDC {
+	if got.authorization != "Bearer upload-ak" || got.usePPE != "" || got.ppeEnv != "" || got.scheduleVDC != "" {
 		t.Fatalf("multipart headers = %#v", got)
 	}
 }

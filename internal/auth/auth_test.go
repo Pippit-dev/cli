@@ -471,10 +471,9 @@ func TestResolveStatusLogoutAndAuthOrigin(t *testing.T) {
 	cfg := config.Load()
 	cfg.AccessKey = " env-ak "
 	cfg.BaseURL = "https://untrusted.invalid"
-	cfg.PPEEnv = "ppe_untrusted"
 	manager := NewManager(cfg, WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 	if manager.authBaseURL.String() != config.DefaultBaseURL {
-		t.Fatalf("browser login followed runtime PPE/base URL: %q", manager.authBaseURL)
+		t.Fatalf("browser login followed runtime business base URL: %q", manager.authBaseURL)
 	}
 	if key, err := manager.ResolveAccessKey(context.Background()); err != nil || key != "env-ak" {
 		t.Fatalf("environment precedence = %q, %v", key, err)
@@ -681,7 +680,7 @@ func TestSanitizedBrowserEnv(t *testing.T) {
 		"XYQ_ACCESS_KEY=secret",
 		"PIPPIT_TOKEN=secret",
 		"PIPPIT_CLI_AK=secret",
-		"PIPPIT_CLI_PPE_ENV=ppe_safe",
+		"PIPPIT_CLI_MODE=desktop",
 		"OTHER_TOKEN=unrelated",
 	}
 	joined := strings.Join(SanitizedBrowserEnv(input), "\n")
@@ -690,7 +689,7 @@ func TestSanitizedBrowserEnv(t *testing.T) {
 			t.Fatalf("browser env retained %s", forbidden)
 		}
 	}
-	for _, wanted := range []string{"PATH=/usr/bin", "PIPPIT_CLI_PPE_ENV=ppe_safe", "OTHER_TOKEN=unrelated"} {
+	for _, wanted := range []string{"PATH=/usr/bin", "PIPPIT_CLI_MODE=desktop", "OTHER_TOKEN=unrelated"} {
 		if !strings.Contains(joined, wanted) {
 			t.Fatalf("browser env removed %s", wanted)
 		}

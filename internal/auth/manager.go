@@ -51,9 +51,8 @@ func withClockForTest(now func() time.Time) ManagerOption {
 	}
 }
 
-// NewManager always uses the canonical production login page. cfg.BaseURL and
-// cfg.PPEEnv intentionally do not affect browser login; PPE routing applies
-// only to business requests after the page has returned an Access Key.
+// NewManager always uses the canonical production login page. Runtime business
+// API configuration does not affect the browser identity origin.
 func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {
 	serviceName := config.DefaultAuthStoreServiceName
 	authBaseURL, _ := url.Parse(config.DefaultBaseURL)

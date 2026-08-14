@@ -18,10 +18,9 @@ import (
 
 const maxApplyRequestBytes = 64 << 20
 
-// NewCommand builds the provider-neutral personal Canvas command tree.
-// Register it from cmd/root.go with:
-//
-//	root.AddCommand(canvas.NewCommand(stdout, stderr, runner))
+// NewCommand builds the provider-neutral personal Canvas command tree. The
+// public root must not register it until the server-side production rollout
+// and idempotency gates are complete.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "canvas",

@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
-	"github.com/spf13/cobra"
 )
 
 func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
 	received := make([]string, 0, 2)
+	routingHeaders := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		received = append(received, request.Header.Get("Authorization"))
+		routingHeaders = append(routingHeaders, request.Header.Get("x-use-ppe")+request.Header.Get("x-tt-env"))
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"ok":true}`))
 	}))
@@ -39,79 +39,29 @@ func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
 	if got, want := strings.Join(received, ","), "Bearer first-key,Bearer second-key"; got != want {
 		t.Fatalf("Authorization headers = %q, want %q", got, want)
 	}
-}
-
-func TestPPEEnvFlagOverridesEnvironment(t *testing.T) {
-	t.Setenv(config.EnvPPEEnv, "ppe_from_env")
-	cfg, root, ran := newPPEFlagTestRoot(t)
-	root.SetArgs([]string{"ppe-probe", "--ppe-env", "ppe_from_flag"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if !*ran {
-		t.Fatal("probe command did not run")
-	}
-	if cfg.PPEEnv != "ppe_from_flag" {
-		t.Fatalf("PPEEnv = %q, want flag value", cfg.PPEEnv)
+	if got := strings.Join(routingHeaders, ","); got != "," {
+		t.Fatalf("general command client leaked internal routing headers: %q", got)
 	}
 }
 
-func TestPPEEnvUsesEnvironmentByDefault(t *testing.T) {
-	t.Setenv(config.EnvPPEEnv, " ppe_from_env ")
-	cfg, root, ran := newPPEFlagTestRoot(t)
-	root.SetArgs([]string{"ppe-probe"})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if !*ran {
-		t.Fatal("probe command did not run")
-	}
-	if cfg.PPEEnv != "ppe_from_env" {
-		t.Fatalf("PPEEnv = %q, want environment value", cfg.PPEEnv)
-	}
-}
-
-func TestPPEEnvCanBeExplicitlyDisabledByFlag(t *testing.T) {
-	t.Setenv(config.EnvPPEEnv, "ppe_from_env")
-	cfg, root, ran := newPPEFlagTestRoot(t)
-	root.SetArgs([]string{"ppe-probe", "--ppe-env", ""})
-
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if !*ran {
-		t.Fatal("probe command did not run")
-	}
-	if cfg.PPEEnv != "" {
-		t.Fatalf("PPEEnv = %q, want production", cfg.PPEEnv)
-	}
-}
-
-func TestPPEEnvRejectsInvalidValueBeforeCommand(t *testing.T) {
-	t.Setenv(config.EnvPPEEnv, "production")
-	_, root, ran := newPPEFlagTestRoot(t)
-	root.SetArgs([]string{"ppe-probe"})
-
-	err := root.Execute()
-	if err == nil || !strings.Contains(err.Error(), "PPE 环境") {
-		t.Fatalf("Execute() error = %v, want invalid PPE error", err)
-	}
-	if *ran {
-		t.Fatal("probe command ran with invalid PPE environment")
-	}
-}
-
-func TestRootHelpIncludesPPEFlag(t *testing.T) {
+func TestRootHelpDoesNotExposePPEControl(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	root.SetArgs([]string{"--help"})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if !strings.Contains(stdout.String(), "--ppe-env") {
-		t.Fatalf("help does not include --ppe-env:\n%s", stdout.String())
+	if strings.Contains(strings.ToLower(stdout.String()), "ppe") {
+		t.Fatalf("public help exposes internal routing controls:\n%s", stdout.String())
+	}
+}
+
+func TestRootDoesNotRegisterCanvasBeforeProductionGA(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	command, _, err := root.Find([]string{"canvas"})
+	if err == nil && command != nil && command.Name() == "canvas" {
+		t.Fatal("public root registered Canvas before the production rollout gate")
 	}
 }
 
@@ -124,19 +74,4 @@ func TestRootRegistersTopLevelBrowserAuthCommands(t *testing.T) {
 			t.Fatalf("root.Find(%q) = %#v, %v", name, command, err)
 		}
 	}
-}
-
-func newPPEFlagTestRoot(t *testing.T) (*config.Config, *cobra.Command, *bool) {
-	t.Helper()
-	cfg := config.Load()
-	runner := common.NewRunner(cfg, nil)
-	root := newRootCommand(&bytes.Buffer{}, &bytes.Buffer{}, runner)
-	ran := false
-	root.AddCommand(&cobra.Command{
-		Use: "ppe-probe",
-		Run: func(_ *cobra.Command, _ []string) {
-			ran = true
-		},
-	})
-	return cfg, root, &ran
 }

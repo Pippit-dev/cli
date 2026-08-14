@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
 )
 
@@ -23,7 +22,6 @@ const (
 	ppeUseHeader         = "x-use-ppe"
 	ppeEnvHeader         = "x-tt-env"
 	ppeScheduleVDCHeader = "x-schedule-vdc"
-	defaultPPEVDC        = "sinfonlinea"
 )
 
 type Client interface {
@@ -48,26 +46,17 @@ type httpClient struct {
 	httpClient *http.Client
 	headers    http.Header
 	authorizer RequestAuthorizer
-	ppeEnv     func() string
 }
 
 func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
-	return newHTTPClient(baseURL, timeout, authorizer, nil)
+	return newHTTPClient(baseURL, timeout, authorizer)
 }
 
-// NewHTTPClientWithPPEEnv creates a client whose PPE lane is resolved for each
-// request. The provider allows Cobra's global --ppe-env flag to override the
-// environment after command construction but before the request is sent.
-func NewHTTPClientWithPPEEnv(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, ppeEnv func() string) Client {
-	return newHTTPClient(baseURL, timeout, authorizer, ppeEnv)
-}
-
-func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, ppeEnv func() string) Client {
+func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
 	client := &httpClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		headers:    make(http.Header),
 		authorizer: authorizer,
-		ppeEnv:     ppeEnv,
 	}
 	client.httpClient = &http.Client{
 		Timeout:       timeout,
@@ -230,20 +219,10 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 		return err
 	}
 
-	var ppeEnv string
-	if trusted {
-		if c.ppeEnv != nil {
-			ppeEnv, err = config.NormalizePPEEnv(c.ppeEnv())
-			if err != nil {
-				return err
-			}
-		}
-	}
-
 	c.injectHeaders(req, headers)
-	// Authentication and PPE routing are protected headers. Neither the
-	// client's generic headers nor a caller-provided map may set or override
-	// them; rebuild them below only for the configured API origin.
+	// Authentication and internal routing headers are protected. Neither the
+	// client's generic headers nor a caller-provided map may set them; only
+	// Authorization is rebuilt below for the configured API origin.
 	req.Header.Del("Authorization")
 	req.Header.Del(ppeUseHeader)
 	req.Header.Del(ppeEnvHeader)
@@ -258,11 +237,6 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 	}
 	if err := c.authorizer.Inject(ctx, req); err != nil {
 		return fmt.Errorf("写入认证请求头失败: %w", err)
-	}
-	if ppeEnv != "" {
-		req.Header.Set(ppeUseHeader, "1")
-		req.Header.Set(ppeEnvHeader, ppeEnv)
-		req.Header.Set(ppeScheduleVDCHeader, defaultPPEVDC)
 	}
 	return nil
 }
