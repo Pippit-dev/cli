@@ -222,6 +222,25 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 短剧命令的错误日志会追加写入本地每日日志文件：`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`。日志路径会基于当前用户主目录和系统路径分隔符生成，因此可在 macOS、Linux 和 Windows 上使用。
 
+## Canvas 原子命令
+
+CLI 提供个人漫剧画布的通用原子命令，不包含特定来源的导入或转换逻辑：
+
+```bash
+# 首次使用时打开小云雀网页授权
+pippit-tool-cli login
+pippit-tool-cli status
+
+# 创建、分配资产 ID、查询、上传与提交单个画布 transaction
+pippit-tool-cli canvas create --title "CLI Canvas" --wait
+pippit-tool-cli canvas allocate --count 3
+pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
+pippit-tool-cli canvas upload --path ./reference.png
+pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
+```
+
+五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
+
 ## 生图 CLI
 
 `generate-image` 会上传本地参考图片，然后向综合 Nest Agent 提交生图请求：

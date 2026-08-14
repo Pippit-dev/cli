@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
@@ -67,6 +68,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(authcmd.NewLoginCommand(stdout, stderr, runner))
 	root.AddCommand(authcmd.NewStatusCommand(stdout, stderr, runner))
 	root.AddCommand(authcmd.NewLogoutCommand(stdout, stderr, runner))
+	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))

@@ -21,6 +21,22 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
+func withRandomReaderForTest(reader io.Reader) ManagerOption {
+	return func(manager *Manager) {
+		if reader != nil {
+			manager.random = reader
+		}
+	}
+}
+
+func withClockForTest(now func() time.Time) ManagerOption {
+	return func(manager *Manager) {
+		if now != nil {
+			manager.now = now
+		}
+	}
+}
+
 type memoryCredentialStore struct {
 	mu         sync.Mutex
 	credential *Credential

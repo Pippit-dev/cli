@@ -35,22 +35,6 @@ func WithCredentialStore(store CredentialStore) ManagerOption {
 	}
 }
 
-func withRandomReaderForTest(reader io.Reader) ManagerOption {
-	return func(manager *Manager) {
-		if reader != nil {
-			manager.random = reader
-		}
-	}
-}
-
-func withClockForTest(now func() time.Time) ManagerOption {
-	return func(manager *Manager) {
-		if now != nil {
-			manager.now = now
-		}
-	}
-}
-
 // NewManager always uses the canonical production login page. Runtime business
 // API configuration does not affect the browser identity origin.
 func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {

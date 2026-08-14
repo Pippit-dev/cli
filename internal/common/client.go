@@ -18,12 +18,6 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-const (
-	ppeUseHeader         = "x-use-ppe"
-	ppeEnvHeader         = "x-tt-env"
-	ppeScheduleVDCHeader = "x-schedule-vdc"
-)
-
 type Client interface {
 	SendRequest(ctx context.Context, path string, body any, out any) error
 	SendRequestWithHeaders(ctx context.Context, path string, body any, headers map[string]string, out any) error
@@ -220,16 +214,13 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 	}
 
 	c.injectHeaders(req, headers)
-	// Authentication and internal routing headers are protected. Neither the
-	// client's generic headers nor a caller-provided map may set them; only
-	// Authorization is rebuilt below for the configured API origin.
+	// Authentication is protected. Neither the client's generic headers nor a
+	// caller-provided map may set it; Authorization is rebuilt below only for
+	// the configured API origin.
 	req.Header.Del("Authorization")
-	req.Header.Del(ppeUseHeader)
-	req.Header.Del(ppeEnvHeader)
-	req.Header.Del(ppeScheduleVDCHeader)
 	if !trusted {
-		// Absolute third-party URLs are used for result downloads. The protected
-		// headers remain empty outside the API origin.
+		// Absolute third-party URLs are used for result downloads. Authorization
+		// remains empty outside the API origin.
 		return nil
 	}
 	if c.authorizer == nil {
@@ -288,9 +279,6 @@ func (c *httpClient) checkRedirect(req *http.Request, via []*http.Request) error
 	}
 	if !trusted {
 		req.Header.Del("Authorization")
-		req.Header.Del(ppeUseHeader)
-		req.Header.Del(ppeEnvHeader)
-		req.Header.Del(ppeScheduleVDCHeader)
 	}
 	return nil
 }

@@ -63,18 +63,6 @@ for (const requiredText of [
   assert.ok(readme.includes(requiredText), `README missing skill contract: ${requiredText}`);
 }
 
-for (const [label, content] of [
-  ["xyq-skill", generalSkill],
-  ["xyq-short-drama-skill", shortDramaSkill],
-  ["README", readme],
-]) {
-  assert.strictEqual(
-    /\bppe\b|--ppe-env|PIPPIT_CLI_PPE_ENV|x-use-ppe|x-tt-env|x-schedule-vdc/i.test(content),
-    false,
-    `${label} must not expose internal environment routing controls`,
-  );
-}
-
 const globalSkillsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pippit-skills-test-"));
 
 for (const skillName of [

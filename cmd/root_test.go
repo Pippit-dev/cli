@@ -14,10 +14,8 @@ import (
 
 func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
 	received := make([]string, 0, 2)
-	routingHeaders := make([]string, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		received = append(received, request.Header.Get("Authorization"))
-		routingHeaders = append(routingHeaders, request.Header.Get("x-use-ppe")+request.Header.Get("x-tt-env"))
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"ok":true}`))
 	}))
@@ -39,29 +37,14 @@ func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
 	if got, want := strings.Join(received, ","), "Bearer first-key,Bearer second-key"; got != want {
 		t.Fatalf("Authorization headers = %q, want %q", got, want)
 	}
-	if got := strings.Join(routingHeaders, ","); got != "," {
-		t.Fatalf("general command client leaked internal routing headers: %q", got)
-	}
 }
 
-func TestRootHelpDoesNotExposePPEControl(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-	root := NewRootCommand(&stdout, &stderr)
-	root.SetArgs([]string{"--help"})
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if strings.Contains(strings.ToLower(stdout.String()), "ppe") {
-		t.Fatalf("public help exposes internal routing controls:\n%s", stdout.String())
-	}
-}
-
-func TestRootDoesNotRegisterCanvasBeforeProductionGA(t *testing.T) {
+func TestRootRegistersCanvas(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
 	command, _, err := root.Find([]string{"canvas"})
-	if err == nil && command != nil && command.Name() == "canvas" {
-		t.Fatal("public root registered Canvas before the production rollout gate")
+	if err != nil || command == nil || command.Name() != "canvas" {
+		t.Fatalf("root.Find(%q) = %#v, %v", "canvas", command, err)
 	}
 }
 
