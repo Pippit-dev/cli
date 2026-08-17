@@ -205,7 +205,7 @@ python3 skills/xyq-nest-skill/scripts/download_results.py \
 
 ```bash
 npx @pippit-dev/cli@latest install
-export XYQ_ACCESS_KEY="<access-key>"
+pippit-tool-cli login
 pippit-tool-cli --version
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-tool-cli short-drama +upload-file --path ./reference.doc
@@ -221,6 +221,25 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 `download-result`: 会把结果 URL 下载到 `--output-path` 指定的文件路径；传入 `--updated-at` 后，如果本地文件早于该时间戳会覆盖更新，否则跳过。
 
 短剧命令的错误日志会追加写入本地每日日志文件：`~/.pippit_tool_cli/logs/yyyy-mm-dd.log`。日志路径会基于当前用户主目录和系统路径分隔符生成，因此可在 macOS、Linux 和 Windows 上使用。
+
+## Canvas 原子命令
+
+CLI 提供个人漫剧画布的通用原子命令，不包含特定来源的导入或转换逻辑：
+
+```bash
+# 首次使用时打开小云雀网页授权
+pippit-tool-cli login
+pippit-tool-cli status
+
+# 创建、分配资产 ID、查询、上传与提交单个画布 transaction
+pippit-tool-cli canvas create --title "CLI Canvas" --wait
+pippit-tool-cli canvas allocate --count 3
+pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
+pippit-tool-cli canvas upload --path ./reference.png
+pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
+```
+
+五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
 
 ## 生图 CLI
 
@@ -333,4 +352,6 @@ pippit-tool-cli query-result \
 
 ## 鉴权
 
-`short-drama +submit-run`、`get-thread`、`list-thread-file`、`short-drama +upload-file` 以及 `xyq-skill` Python 脚本都使用 `Authorization: Bearer <XYQ_ACCESS_KEY>` 鉴权。OAuth 命令代码仍保留在仓库中，但短剧运行时请求不使用 OAuth。
+原生 CLI 命令通过 `pippit-tool-cli login` 打开小云雀网页授权，并把本机设备专属凭证保存到系统安全凭证库；Access Key 不会显示在终端。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机登录。
+
+CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。`skills/xyq-nest-skill/scripts` 下的独立 Python 脚本尚未接入原生 CLI 凭证库，当前仍需要该环境变量。

@@ -86,13 +86,13 @@ metadata:
 npx @pippit-dev/cli@latest install
 ```
 
-部分功能需要先配置 `XYQ_ACCESS_KEY`。缺失时 CLI 会直接提示用户先创建 Access Key，此时请等待用户给与Access Key后再继续运行。
-
-Access Key 创建地址：https://xyq.jianying.com/home?tab_name=home
+首次使用原生 CLI 时运行网页登录；CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库，不要求用户复制 Access Key：
 
 ```bash
-export XYQ_ACCESS_KEY="<access-key>"
+pippit-tool-cli login
 ```
+
+`XYQ_ACCESS_KEY` 仅保留给 CI、Agent 等非交互环境作为显式覆盖。若该环境变量已设置但无效，CLI 不会静默改用个人网页登录凭证；应先修正或取消该环境变量。
 
 ## 小云雀界面打开契约
 

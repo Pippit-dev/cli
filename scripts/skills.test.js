@@ -35,6 +35,9 @@ assert.ok(
 for (const requiredText of [
   "pippit-tool-cli generate-video",
   "pippit-tool-cli query-result",
+  "pippit-tool-cli login",
+  "XYQ_ACCESS_KEY",
+  "submit_run.py",
   "web_thread_link",
   "request_user_input",
   "ask_user_question",

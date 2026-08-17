@@ -1,17 +1,20 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
-	// authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
+	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
 	"github.com/Pippit-dev/pippit-cli/cmd/video_tool"
+	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
@@ -25,9 +28,28 @@ func Execute() error {
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
 	cfg := config.Load()
-	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
-	runner := common.NewRunner(cfg, client)
+	runner := newRootRunner(cfg)
 	return newRootCommand(stdout, stderr, runner)
+}
+
+func newRootRunner(cfg *config.Config) *common.Runner {
+	runner := common.NewRunner(cfg, nil)
+	runner.Auth = internal_auth.NewManager(cfg)
+	runner.Client = common.NewHTTPClient(
+		cfg.BaseURL,
+		cfg.HTTPTimeout,
+		newRunnerAuthorizer(runner),
+	)
+	return runner
+}
+
+func newRunnerAuthorizer(runner *common.Runner) common.RequestAuthorizer {
+	return common.NewAccessKeyContextProviderAuthorizer(func(ctx context.Context) (string, error) {
+		if runner.Auth == nil {
+			return "", nil
+		}
+		return runner.Auth.ResolveAccessKey(ctx)
+	})
 }
 
 func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
@@ -43,7 +65,10 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	// root.AddCommand(authcmd.NewCommand(stdout, stderr, runner)) // temporarily disabled; auth is via access key injection
+	root.AddCommand(authcmd.NewLoginCommand(stdout, stderr, runner))
+	root.AddCommand(authcmd.NewStatusCommand(stdout, stderr, runner))
+	root.AddCommand(authcmd.NewLogoutCommand(stdout, stderr, runner))
+	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))

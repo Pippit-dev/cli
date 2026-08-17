@@ -166,6 +166,16 @@ pippit-tool-cli query-result \
 
 ## 前置要求
 
+图片/视频模型直出和视频处理（路由 A/B/C）使用原生 CLI。首次使用时运行网页登录，CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库：
+
+```bash
+pippit-tool-cli login
+```
+
+`XYQ_ACCESS_KEY` 仅作为原生 CLI 在 CI、Agent 等非交互环境中的显式覆盖。如果该环境变量已经设置但无效，CLI 不会静默改用网页登录凭证，应先修正或取消该环境变量。
+
+默认的后端 Agent 编排（路由 D）仍由独立 Python 脚本 `submit_run.py`、`get_thread.py` 和 `upload_file.py` 执行。这些脚本尚未接入 CLI 的系统安全凭证库，使用前必须配置：
+
 ```bash
 export XYQ_ACCESS_KEY="your-access-key"
 ```
@@ -411,7 +421,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 ## 注意事项
 
-- 鉴权方式为请求头 `Authorization: Bearer <XYQ_ACCESS_KEY>`
+- 独立 Python 会话 API 脚本的鉴权方式为请求头 `Authorization: Bearer <XYQ_ACCESS_KEY>`
 - 创建会话时 `message` 是用户的指令要求，不能为空
 - 查询会话时可用 --after-seq 做增量拉取，便于轮询新消息（含 assistant 回复与生图/生视频结果）
 - 上传文件仅支持图片（image/*）、视频（video/*）和 `.mp3/.wav` 音频文件，其他类型会被拒绝，文件大小须在 200MB 以下

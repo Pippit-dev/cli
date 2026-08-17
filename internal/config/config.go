@@ -10,8 +10,6 @@ const (
 	DefaultBaseURL              = "https://xyq.jianying.com"
 	DefaultHTTPTimeout          = 30 * time.Minute
 	DefaultAuthTTL              = 30 * time.Second
-	DefaultOAuthClientKey       = "mock-cli"
-	DefaultOAuthBaseURL         = "https://passport.bytedance.com"
 	DefaultAuthStoreServiceName = "pippit-cli"
 	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
 	GetThreadPath               = "/api/biz/v1/skill/get_thread"
@@ -27,15 +25,7 @@ type Config struct {
 	HTTPTimeout time.Duration
 	AuthTTL     time.Duration
 	AccessKey   string
-	OAuth       *OAuth
 	Paths       *Paths
-}
-
-type OAuth struct {
-	ClientKey        string
-	BaseURL          string
-	StoreServiceName string
-	Scopes           []string
 }
 
 type Paths struct {
@@ -52,21 +42,11 @@ func Load() *Config {
 		HTTPTimeout: DefaultHTTPTimeout,
 		AuthTTL:     DefaultAuthTTL,
 		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
-		OAuth:       resolveOAuth(),
 		Paths: &Paths{
 			SubmitRun:      SubmitRunPath,
 			GetThread:      GetThreadPath,
 			UploadFile:     UploadFilePath,
 			ListThreadFile: ListThreadFilePath,
 		},
-	}
-}
-
-func resolveOAuth() *OAuth {
-	return &OAuth{
-		ClientKey:        DefaultOAuthClientKey,
-		BaseURL:          DefaultOAuthBaseURL,
-		StoreServiceName: DefaultAuthStoreServiceName,
-		Scopes:           []string{"user_info", "aigc_generate"},
 	}
 }

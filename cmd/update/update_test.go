@@ -171,3 +171,87 @@ func TestStripPrereleaseVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestRunInheritEnvSanitizesPippitCredentials(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses a POSIX shell script to capture the child environment")
+	}
+
+	binDir := t.TempDir()
+	capturePath := filepath.Join(t.TempDir(), "environment.txt")
+	commandPath := filepath.Join(binDir, "capture-update-environment")
+	script := "#!/bin/sh\n/usr/bin/env > \"$CAPTURE_ENV\"\n"
+	if err := os.WriteFile(commandPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	basePath := binDir + string(os.PathListSeparator) + "/base/path"
+	overriddenPath := binDir + string(os.PathListSeparator) + "/overridden/path"
+	t.Setenv("PATH", basePath)
+	t.Setenv("CAPTURE_ENV", capturePath)
+	t.Setenv("SAFE_INHERITED", "kept")
+	t.Setenv("XYQ_ACCESS_KEY", "xyq-secret")
+	t.Setenv("PIPPIT_ACCESS_KEY", "pippit-secret")
+	t.Setenv("PIPPIT_AK", "legacy-secret")
+	t.Setenv("PIPPIT_CLI_TOKEN", "pippit-token")
+	t.Setenv("XYQ_CLIENT_SECRET", "xyq-client-secret")
+	t.Setenv("NPM_TOKEN", "npm-secret")
+	t.Setenv("NODE_AUTH_TOKEN", "registry-secret")
+
+	var stderr bytes.Buffer
+	err := runInheritEnv(&stderr, []string{
+		"PATH=" + overriddenPath,
+		"SAFE_INHERITED=overridden",
+		"SAFE_EXPLICIT=kept",
+		"PIPPIT_CLI_SKIP_SKILLS=1",
+		"XYQ_ACCESS_KEY=override-must-not-leak",
+		"PIPPIT_OVERRIDE_SECRET=override-must-not-leak",
+		"REGISTRY_TOKEN=explicit-registry-secret",
+	}, "capture-update-environment")
+	if err != nil {
+		t.Fatalf("runInheritEnv() error = %v, stderr = %s", err, stderr.String())
+	}
+
+	captured, err := os.ReadFile(capturePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := parseEnvironment(string(captured))
+	for _, forbidden := range []string{
+		"XYQ_ACCESS_KEY",
+		"PIPPIT_ACCESS_KEY",
+		"PIPPIT_AK",
+		"PIPPIT_CLI_TOKEN",
+		"XYQ_CLIENT_SECRET",
+		"PIPPIT_OVERRIDE_SECRET",
+	} {
+		if value, exists := got[forbidden]; exists {
+			t.Fatalf("child environment retained %s=%q", forbidden, value)
+		}
+	}
+	for name, want := range map[string]string{
+		"PATH":                   overriddenPath,
+		"CAPTURE_ENV":            capturePath,
+		"SAFE_INHERITED":         "overridden",
+		"SAFE_EXPLICIT":          "kept",
+		"PIPPIT_CLI_SKIP_SKILLS": "1",
+		"NPM_TOKEN":              "npm-secret",
+		"NODE_AUTH_TOKEN":        "registry-secret",
+		"REGISTRY_TOKEN":         "explicit-registry-secret",
+	} {
+		if value := got[name]; value != want {
+			t.Fatalf("child environment %s = %q, want %q", name, value, want)
+		}
+	}
+}
+
+func parseEnvironment(environment string) map[string]string {
+	result := make(map[string]string)
+	for _, entry := range strings.Split(environment, "\n") {
+		name, value, found := strings.Cut(entry, "=")
+		if found {
+			result[name] = value
+		}
+	}
+	return result
+}

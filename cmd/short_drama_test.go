@@ -140,7 +140,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 			t.Fatalf("help output = %q, want %q", got, want)
 		}
 	}
-	for _, unwanted := range []string{"completion", "version     "} {
+	for _, unwanted := range []string{"completion", "\n  version "} {
 		if strings.Contains(got, unwanted) {
 			t.Fatalf("help output = %q, should not contain %q", got, unwanted)
 		}
@@ -971,14 +971,11 @@ func assertAccessKeyGuidance(t *testing.T, err error) {
 		t.Fatal("error = nil, want access key guidance")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "XYQ_ACCESS_KEY 缺失") {
+	if !strings.Contains(msg, "pippit-tool-cli login") {
 		t.Fatalf("error = %q, want access key guidance", err)
 	}
-	if !strings.Contains(msg, "https://xyq.jianying.com/home?tab_name=home") {
-		t.Fatalf("error = %q, want access key settings URL", err)
-	}
-	if !strings.Contains(msg, `export XYQ_ACCESS_KEY="<your-access-key>"`) {
-		t.Fatalf("error = %q, want setup command guidance", err)
+	if !strings.Contains(msg, "XYQ_ACCESS_KEY") {
+		t.Fatalf("error = %q, want CI override guidance", err)
 	}
 }
 
