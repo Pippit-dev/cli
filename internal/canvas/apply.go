@@ -13,8 +13,9 @@ import (
 var decimalIDPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type ApplyOptions struct {
-	ProjectID string
-	Request   ApplyRequest
+	ProjectID                   string
+	Request                     ApplyRequest
+	AllowNonAcknowledgedResults bool
 }
 
 type ApplyRequest struct {
@@ -47,6 +48,8 @@ type ApplyResult struct {
 	BatchID string                   `json:"batch_id"`
 	Results []PatchTransactionResult `json:"results"`
 	LogID   string                   `json:"log_id,omitempty"`
+
+	rawResults []json.RawMessage
 }
 
 type PatchTransactionResult struct {
@@ -58,7 +61,29 @@ type PatchTransactionResult struct {
 }
 
 type applyData struct {
-	Results []PatchTransactionResult `json:"results"`
+	Results []json.RawMessage `json:"results"`
+}
+
+type decodedPatchTransactionResult struct {
+	result PatchTransactionResult
+	raw    json.RawMessage
+}
+
+func (result ApplyResult) MarshalJSON() ([]byte, error) {
+	type applyResultJSON struct {
+		BatchID string `json:"batch_id"`
+		Results any    `json:"results"`
+		LogID   string `json:"log_id,omitempty"`
+	}
+	results := any(result.Results)
+	if len(result.rawResults) > 0 {
+		results = result.rawResults
+	}
+	return json.Marshal(applyResultJSON{
+		BatchID: result.BatchID,
+		Results: results,
+		LogID:   result.LogID,
+	})
 }
 
 func Apply(ctx context.Context, opts ApplyOptions, runner *common.Runner) (*ApplyResult, error) {
@@ -90,18 +115,33 @@ func Apply(ctx context.Context, opts ApplyOptions, runner *common.Runner) (*Appl
 			envelope.LogID,
 		)
 	}
-	ordered, err := validateApplyResults(request.Transactions, data.Results)
+	decodedResults, err := decodeApplyResults(data.Results)
+	if err != nil {
+		return nil, common.NewLogIDError(
+			fmt.Sprintf("canvas apply returned invalid data: %v; query affected assets before retrying because outcome cannot be confirmed", err),
+			envelope.LogID,
+		)
+	}
+	ordered, rawResults, _, err := validateApplyResults(
+		request.Transactions,
+		decodedResults,
+		opts.AllowNonAcknowledgedResults,
+	)
 	if err != nil {
 		return nil, common.NewLogIDError(
 			fmt.Sprintf("%s; query affected assets before retrying because outcome cannot be confirmed", err),
 			envelope.LogID,
 		)
 	}
-	return &ApplyResult{
+	result := &ApplyResult{
 		BatchID: request.BatchID,
 		Results: ordered,
 		LogID:   strings.TrimSpace(envelope.LogID),
-	}, nil
+	}
+	if opts.AllowNonAcknowledgedResults {
+		result.rawResults = rawResults
+	}
+	return result, nil
 }
 
 func validateApplyRequest(request *ApplyRequest) error {
@@ -161,43 +201,79 @@ func validateApplyRequest(request *ApplyRequest) error {
 	return nil
 }
 
-func validateApplyResults(expected []PatchTransaction, actual []PatchTransactionResult) ([]PatchTransactionResult, error) {
-	byID := make(map[string]PatchTransactionResult, len(actual))
-	for _, result := range actual {
+func decodeApplyResults(rawResults []json.RawMessage) ([]decodedPatchTransactionResult, error) {
+	results := make([]decodedPatchTransactionResult, 0, len(rawResults))
+	for index, rawResult := range rawResults {
+		var result PatchTransactionResult
+		if err := json.Unmarshal(rawResult, &result); err != nil {
+			return nil, fmt.Errorf("decode transaction result[%d]: %w", index, err)
+		}
+		results = append(results, decodedPatchTransactionResult{result: result, raw: rawResult})
+	}
+	return results, nil
+}
+
+func validateApplyResults(
+	expected []PatchTransaction,
+	actual []decodedPatchTransactionResult,
+	allowNonAcknowledgedResults bool,
+) ([]PatchTransactionResult, []json.RawMessage, bool, error) {
+	byID := make(map[string]decodedPatchTransactionResult, len(actual))
+	for _, decoded := range actual {
+		result := decoded.result
 		result.TransactionID = strings.TrimSpace(result.TransactionID)
 		if result.TransactionID == "" {
-			return nil, fmt.Errorf("canvas apply returned a result without transaction_id")
+			return nil, nil, false, fmt.Errorf("canvas apply returned a result without transaction_id")
 		}
 		if _, duplicate := byID[result.TransactionID]; duplicate {
-			return nil, fmt.Errorf("canvas apply returned duplicate result for transaction %q", result.TransactionID)
+			return nil, nil, false, fmt.Errorf("canvas apply returned duplicate result for transaction %q", result.TransactionID)
 		}
-		byID[result.TransactionID] = result
+		decoded.result = result
+		byID[result.TransactionID] = decoded
 	}
 	if len(byID) != len(expected) {
-		return nil, fmt.Errorf("canvas apply returned %d transaction results, want %d", len(byID), len(expected))
+		return nil, nil, false, fmt.Errorf("canvas apply returned %d transaction results, want %d", len(byID), len(expected))
 	}
 	ordered := make([]PatchTransactionResult, 0, len(expected))
+	orderedRaw := make([]json.RawMessage, 0, len(expected))
+	hasNonAcknowledgedResult := false
 	for _, transaction := range expected {
-		result, ok := byID[transaction.TransactionID]
+		decoded, ok := byID[transaction.TransactionID]
 		if !ok {
-			return nil, fmt.Errorf("canvas apply omitted transaction result %q", transaction.TransactionID)
+			return nil, nil, false, fmt.Errorf("canvas apply omitted transaction result %q", transaction.TransactionID)
 		}
-		if strings.ToLower(strings.TrimSpace(result.Status)) != "ack" {
-			return nil, fmt.Errorf(
-				"canvas apply transaction %q was not acknowledged: status=%q blocked_by=%q error=%q",
-				transaction.TransactionID, result.Status, result.BlockedByTransaction, result.Error,
+		result := decoded.result
+		status := strings.ToLower(strings.TrimSpace(result.Status))
+		switch status {
+		case "ack":
+			for _, patch := range transaction.Patches {
+				version, ok := result.AssetVersions[patch.AssetID]
+				if !ok {
+					if allowNonAcknowledgedResults && patch.Op == "add" && patch.Path == "" {
+						continue
+					}
+					return nil, nil, false, fmt.Errorf("canvas apply transaction %q omitted version for asset %q", transaction.TransactionID, patch.AssetID)
+				}
+				if version < 0 {
+					return nil, nil, false, fmt.Errorf("canvas apply transaction %q returned negative version for asset %q", transaction.TransactionID, patch.AssetID)
+				}
+			}
+		case "reject", "blocked", "skipped":
+			if !allowNonAcknowledgedResults {
+				return nil, nil, false, fmt.Errorf(
+					"canvas apply transaction %q was not acknowledged: status=%q blocked_by=%q error=%q",
+					transaction.TransactionID, result.Status, result.BlockedByTransaction, result.Error,
+				)
+			}
+			hasNonAcknowledgedResult = true
+		default:
+			return nil, nil, false, fmt.Errorf(
+				"canvas apply transaction %q returned invalid status %q",
+				transaction.TransactionID, result.Status,
 			)
 		}
-		for _, patch := range transaction.Patches {
-			version, ok := result.AssetVersions[patch.AssetID]
-			if !ok {
-				return nil, fmt.Errorf("canvas apply transaction %q omitted version for asset %q", transaction.TransactionID, patch.AssetID)
-			}
-			if version < 0 {
-				return nil, fmt.Errorf("canvas apply transaction %q returned negative version for asset %q", transaction.TransactionID, patch.AssetID)
-			}
-		}
 		ordered = append(ordered, result)
+		orderedRaw = append(orderedRaw, decoded.raw)
 	}
-	return ordered, nil
+	return ordered, orderedRaw, hasNonAcknowledgedResult, nil
 }
