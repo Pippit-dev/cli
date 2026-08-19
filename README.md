@@ -241,6 +241,21 @@ pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 
 五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
 
+通过 npm 安装的 CLI 还提供基于同一 Canvas SDK 的语义命令目录：
+
+```bash
+# 查看全部公开命令及其参数说明
+pippit-tool-cli canvas command list
+pippit-tool-cli canvas command describe create_biz_node
+
+# 由 SDK 业务工厂创建角色节点；修改会通过现有 canvas apply 原子提交
+pippit-tool-cli canvas command run create_biz_node \
+  --canvas-id PIPPIT_CANVAS_ASSET_ID \
+  --input '{"nodeKind":"role","initialData":{"nodeName":"测试角色"}}'
+```
+
+`canvas command` 由 npm 包内固定的 Canvas SDK 运行时提供，复用网页登录、`canvas get`、`canvas allocate` 和 `canvas apply`；不会读取或打印 Access Key，也不直接选择服务端地址。公开目录只包含已登记的 mutation 和业务命令，不开放任意内部 command 调用。
+
 ## 生图 CLI
 
 `generate-image` 会上传本地参考图片，然后向综合 Nest Agent 提交生图请求：

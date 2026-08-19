@@ -1,0 +1,3 @@
+release-artifacts/canvas-runtime/xyq-canvas-command-runtime.cjs -text
+release-artifacts/canvas-runtime/xyq-canvas-command-runtime.cjs.LEGAL.txt -text
+release-artifacts/canvas-runtime/xyq-canvas-command-runtime.cjs.sha256 text eol=lf
