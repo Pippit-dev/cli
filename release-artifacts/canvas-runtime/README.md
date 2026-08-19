@@ -19,7 +19,7 @@
 
 ## 当前产物来源
 
-- pippit-cn commit: `d7f72f9c60a00ab42549456e7d517c8658924ed9`
+- Canvas SDK source commit: `d7f72f9c60a00ab42549456e7d517c8658924ed9`
 - `infra/pnpm-lock.yaml` blob: `c732ee2aaab43c267ae512045fa51f8f5e0722f4`
 - runtime SHA-256: `1d08b2fbb688b15d93d0d264658158d64ba4138592991f5efcf829e7ea7344ea`
 - LEGAL SHA-256: `52f130dead7e8eba4b1a277c6ed5c8a9778590f9b7e15d3214775bbee8304e78`
