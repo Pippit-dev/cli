@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
+	"github.com/spf13/cobra"
 )
 
 type commandFakeClient struct {
@@ -122,5 +123,60 @@ func TestApplyRequestRejectsTeamOrImportExtensions(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unknown field") {
 			t.Fatalf("readApplyRequest(%s) error = %v, want unknown field rejection", field, err)
 		}
+	}
+}
+
+func TestApplyTransportResultFlagIsHiddenAndPrintsExplicitReject(t *testing.T) {
+	client := &commandFakeClient{response: `{"ret":"0","log_id":"transport-log","data":{"results":[{"transaction_id":"tx-1","status":"reject","message":"version conflict","current_asset_versions":{"asset-1":9},"server_detail":{"reason":"conflict"}}]}}`}
+	var stdout, stderr bytes.Buffer
+	cmd := NewCommand(&stdout, &stderr, &common.Runner{Client: client})
+	var applyCommand *cobra.Command
+	for _, child := range cmd.Commands() {
+		if child.Name() == "apply" {
+			applyCommand = child
+			break
+		}
+	}
+	if applyCommand == nil {
+		t.Fatal("apply command not found")
+	}
+	flag := applyCommand.Flags().Lookup("transport-result")
+	if flag == nil || !flag.Hidden {
+		t.Fatalf("transport-result flag = %#v, want hidden flag", flag)
+	}
+
+	request := `{"batch_id":"batch-1","client_id":"client-1","transactions":[{"transaction_id":"tx-1","patches":[{"asset_id":"asset-1","op":"replace","path":"","value":{}}]}]}`
+	cmd.SetIn(strings.NewReader(request))
+	cmd.SetArgs([]string{"apply", "--file", "-", "--transport-result"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
+		t.Fatalf("stdout = %q, want JSON: %v", stdout.String(), err)
+	}
+	result := output["results"].([]any)[0].(map[string]any)
+	if result["status"] != "reject" || result["message"] != "version conflict" || result["server_detail"] == nil {
+		t.Fatalf("result = %#v, want complete explicit reject", result)
+	}
+}
+
+func TestApplyTransportResultPrintsRootCreateAckWithoutVersion(t *testing.T) {
+	client := &commandFakeClient{response: `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"ack","server_detail":{"created":true}}]}}`}
+	var stdout, stderr bytes.Buffer
+	cmd := NewCommand(&stdout, &stderr, &common.Runner{Client: client})
+	request := `{"batch_id":"batch-1","client_id":"client-1","transactions":[{"transaction_id":"tx-1","patches":[{"asset_id":"asset-new","op":"add","path":"","value":{}}]}]}`
+	cmd.SetIn(strings.NewReader(request))
+	cmd.SetArgs([]string{"apply", "--file", "-", "--transport-result"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &output); err != nil {
+		t.Fatalf("stdout = %q, want JSON: %v", stdout.String(), err)
+	}
+	result := output["results"].([]any)[0].(map[string]any)
+	if result["status"] != "ack" || result["asset_versions"] != nil || result["server_detail"] == nil {
+		t.Fatalf("result = %#v, want unchanged root-create ACK", result)
 	}
 }
