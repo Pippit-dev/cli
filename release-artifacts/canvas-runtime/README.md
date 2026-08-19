@@ -19,7 +19,7 @@
 
 ## 当前产物来源
 
-- Canvas SDK source commit: `353ede76463384b174253c7953b9ac95bf1b25c5`
+- Canvas SDK source commit: `8c1c09e455b3ce1271a1a75520c28ba100b1ddcf`
 - `infra/pnpm-lock.yaml` blob: `c732ee2aaab43c267ae512045fa51f8f5e0722f4`
 - runtime SHA-256: `b41829890fa1b85e111d5d9a347662329252d45745458350296152973895e92f`
-- LEGAL SHA-256: `52f130dead7e8eba4b1a277c6ed5c8a9778590f9b7e15d3214775bbee8304e78`
+- LEGAL SHA-256: `66987d59c420a3ee807363b8e936fa0dbad7d08ea4e1adf8d0fc9bcbe0eb685f`

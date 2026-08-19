@@ -1,7 +1,7 @@
 XYQ Canvas Command Runtime - Bundled Software Notices
 
 Generated from the exact esbuild input graph. No build paths or timestamps are included.
-7 Pippit first-party modules are bundled and are not listed by internal package name.
+10 Pippit first-party modules are bundled and are not listed by internal package name.
 
 ===== @babel/runtime@7.29.2 =====
 License metadata: MIT
@@ -71,18 +71,6 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-===== @ies/intl-icu-plugin@1.2.3 =====
-License metadata: ISC
-License/notice file: Not present in the installed package
-
-===== @ies/intl-incontext-plugin@1.0.7 =====
-License metadata: ISC
-License/notice file: Not present in the installed package
-
-===== @ies/starling_intl@1.5.4 =====
-License metadata: ISC
-License/notice file: Not present in the installed package
 
 ===== @microsoft/fetch-event-source@2.0.1 =====
 License metadata: MIT
@@ -578,7 +566,7 @@ PERFORMANCE OF THIS SOFTWARE.
 ===== Legal comments retained by esbuild =====
 Bundled license information:
 
-@ies/intl-icu-plugin/lib/intl-icu-plugin.esm.js:
+Pippit first-party module/lib/intl-icu-plugin.esm.js:
   /*! *****************************************************************************
   Copyright (c) Microsoft Corporation.
 
@@ -594,7 +582,7 @@ Bundled license information:
   PERFORMANCE OF THIS SOFTWARE.
   ***************************************************************************** */
 
-@ies/intl-incontext-plugin/dist/intl-incontext-plugin.esm.js:
+Pippit first-party module/dist/intl-incontext-plugin.esm.js:
   /*! *****************************************************************************
   Copyright (c) Microsoft Corporation.
 
