@@ -341,7 +341,7 @@ async function main() {
   fs.writeFileSync(nativePath, String.raw`
 const fs = require("fs");
 const args = process.argv.slice(2);
-const input = fs.readFileSync(0, "utf8");
+const input = args[1] === "apply" ? fs.readFileSync(0, "utf8") : "";
 fs.appendFileSync(process.env.FAKE_COMMAND_LOG, JSON.stringify({ args, input }) + "\n");
 const out = (value) => process.stdout.write(JSON.stringify(value) + "\n");
 if (args[0] === "status") out({
