@@ -7,7 +7,10 @@
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
-    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && go test ./... && go vet ./..."
+    "prepack": "node scripts/prepare-canvas-runtime.js",
+    "prepare:canvas-runtime": "node scripts/prepare-canvas-runtime.js",
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && node scripts/canvas-command.test.js && node scripts/prepare-canvas-runtime.test.js && go test ./... && go vet ./...",
+    "verify:canvas-runtime": "node scripts/prepare-canvas-runtime.js --check-only"
   },
   "os": [
     "darwin",
@@ -32,11 +35,15 @@
     "skills",
     "scripts/install.js",
     "scripts/install-wizard.js",
+    "scripts/canvas-command.js",
     "scripts/platform.js",
     "scripts/run.js",
     "scripts/skills.js",
     "scripts/telemetry.js",
     "scripts/version-check.js",
+    "dist/xyq-canvas-command-runtime.cjs",
+    "dist/xyq-canvas-command-runtime.cjs.LEGAL.txt",
+    "dist/xyq-canvas-command-runtime.cjs.sha256",
     "checksums.txt",
     "README.md",
     "LICENSE"

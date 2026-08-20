@@ -118,6 +118,7 @@ func newGetCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comma
 func newApplyCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var filePath string
 	var projectID string
+	var transportResult bool
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply one Canvas patch transaction",
@@ -128,8 +129,9 @@ func newApplyCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 				return err
 			}
 			result, err := canvascore.Apply(cmd.Context(), canvascore.ApplyOptions{
-				ProjectID: projectID,
-				Request:   request,
+				ProjectID:                   projectID,
+				Request:                     request,
+				AllowNonAcknowledgedResults: transportResult,
 			}, runner)
 			if err != nil {
 				logCanvasError("canvas apply", err, map[string]string{
@@ -147,6 +149,10 @@ func newApplyCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	flags := cmd.Flags()
 	flags.StringVar(&filePath, "file", "-", "BatchPatch JSON request file, or - for stdin")
 	flags.StringVar(&projectID, "project-id", "", "personal novel project ID as a decimal string")
+	flags.BoolVar(&transportResult, "transport-result", false, "return explicit transaction outcomes for transport decoding")
+	if err := flags.MarkHidden("transport-result"); err != nil {
+		panic(err)
+	}
 	return cmd
 }
 

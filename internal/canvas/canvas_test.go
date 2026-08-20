@@ -336,6 +336,119 @@ func TestApplyRequiresAcknowledgementAndEveryAssetVersion(t *testing.T) {
 	}
 }
 
+func TestApplyAllowsExplicitTransportOutcomesWithoutHidingServerResultFields(t *testing.T) {
+	request := ApplyRequest{
+		BatchID: "batch-1", ClientID: "client-1",
+		Transactions: []PatchTransaction{{TransactionID: "tx-1", Patches: []PatchEntry{{
+			AssetID: "asset-1", Op: "replace", Path: "", Value: json.RawMessage(`{}`),
+		}}}},
+	}
+	for _, status := range []string{"reject", "blocked", "skipped"} {
+		t.Run(status, func(t *testing.T) {
+			client := &fakeClient{send: func(_ context.Context, _ string, _ any, out any) error {
+				response := fmt.Sprintf(
+					`{"ret":"0","log_id":"transport-log","data":{"results":[{"transaction_id":"tx-1","status":%q,"blocked_by":"tx-0","message":"server detail","current_asset_versions":{"asset-1":7},"server_detail":{"reason":"conflict"}}]}}`,
+					status,
+				)
+				return decodeInto(out, response)
+			}}
+			result, err := Apply(context.Background(), ApplyOptions{
+				Request:                     request,
+				AllowNonAcknowledgedResults: true,
+			}, runnerWithClient(client))
+			if err != nil || result.Results[0].Status != status {
+				t.Fatalf("Apply() = (%#v, %v), want structured %s result", result, err, status)
+			}
+			payload, err := json.Marshal(result)
+			if err != nil {
+				t.Fatalf("Marshal() error = %v", err)
+			}
+			var output map[string]any
+			if err := json.Unmarshal(payload, &output); err != nil {
+				t.Fatalf("Unmarshal() error = %v", err)
+			}
+			entry := output["results"].([]any)[0].(map[string]any)
+			if entry["message"] != "server detail" || entry["server_detail"] == nil || entry["current_asset_versions"] == nil {
+				t.Fatalf("result = %#v, want complete server transaction result", entry)
+			}
+		})
+	}
+}
+
+func TestApplyTransportResultAllowsRootAssetCreateAckWithoutVersion(t *testing.T) {
+	request := ApplyRequest{
+		BatchID: "batch-1", ClientID: "client-1",
+		Transactions: []PatchTransaction{{TransactionID: "tx-1", Patches: []PatchEntry{{
+			AssetID: "asset-new", Op: "add", Path: "", Value: json.RawMessage(`{"nodes":[]}`),
+		}}}},
+	}
+	client := &fakeClient{send: func(_ context.Context, _ string, _ any, out any) error {
+		return decodeInto(out, `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"ack","server_detail":{"created":true}}]}}`)
+	}}
+	result, err := Apply(context.Background(), ApplyOptions{
+		Request:                     request,
+		AllowNonAcknowledgedResults: true,
+	}, runnerWithClient(client))
+	if err != nil || result.Results[0].Status != "ack" {
+		t.Fatalf("Apply() = (%#v, %v), want transport ACK", result, err)
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var output map[string]any
+	if err := json.Unmarshal(payload, &output); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	entry := output["results"].([]any)[0].(map[string]any)
+	if entry["asset_versions"] != nil || entry["server_detail"] == nil {
+		t.Fatalf("result = %#v, want unchanged ACK for SDK decoder", entry)
+	}
+}
+
+func TestApplyTransportResultStillRequiresVersionsForNonCreatePatches(t *testing.T) {
+	for _, patch := range []PatchEntry{
+		{AssetID: "asset-1", Op: "replace", Path: "", Value: json.RawMessage(`{}`)},
+		{AssetID: "asset-1", Op: "add", Path: "/nodes/0", Value: json.RawMessage(`{}`)},
+	} {
+		t.Run(patch.Op+patch.Path, func(t *testing.T) {
+			request := ApplyRequest{
+				BatchID: "batch-1", ClientID: "client-1",
+				Transactions: []PatchTransaction{{TransactionID: "tx-1", Patches: []PatchEntry{patch}}},
+			}
+			client := &fakeClient{send: func(_ context.Context, _ string, _ any, out any) error {
+				return decodeInto(out, `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"ack"}]}}`)
+			}}
+			_, err := Apply(context.Background(), ApplyOptions{
+				Request:                     request,
+				AllowNonAcknowledgedResults: true,
+			}, runnerWithClient(client))
+			if err == nil || !strings.Contains(err.Error(), "omitted version") {
+				t.Fatalf("Apply() error = %v, want missing version rejection", err)
+			}
+		})
+	}
+}
+
+func TestApplyTransportResultModeStillRejectsInvalidStatus(t *testing.T) {
+	request := ApplyRequest{
+		BatchID: "batch-1", ClientID: "client-1",
+		Transactions: []PatchTransaction{{TransactionID: "tx-1", Patches: []PatchEntry{{
+			AssetID: "asset-1", Op: "replace", Path: "", Value: json.RawMessage(`{}`),
+		}}}},
+	}
+	client := &fakeClient{send: func(_ context.Context, _ string, _ any, out any) error {
+		return decodeInto(out, `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"pending"}]}}`)
+	}}
+	_, err := Apply(context.Background(), ApplyOptions{
+		Request:                     request,
+		AllowNonAcknowledgedResults: true,
+	}, runnerWithClient(client))
+	if err == nil || !strings.Contains(err.Error(), "invalid status") {
+		t.Fatalf("Apply() error = %v, want invalid response rejection", err)
+	}
+}
+
 func TestApplyBetaRejectsMultipleTransactionsBeforeRequest(t *testing.T) {
 	requestCalls := 0
 	client := &fakeClient{send: func(context.Context, string, any, any) error {

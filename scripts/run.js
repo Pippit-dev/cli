@@ -3,6 +3,10 @@
 const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const {
+  isCanvasCommand,
+  runCanvasCommand,
+} = require("./canvas-command");
 const { maybeWarnNewVersion } = require("./version-check");
 
 const ext = process.platform === "win32" ? ".exe" : "";
@@ -57,9 +61,22 @@ if (args[0] === "install") {
     }
   }
 
-  try {
-    execFileSync(bin, args, { stdio: "inherit" });
-  } catch (e) {
-    process.exit(e.status || 1);
+  if (isCanvasCommand(args)) {
+    runCanvasCommand(args, {
+      nativeInvocation: { command: bin },
+    })
+      .then((exitCode) => {
+        if (exitCode) process.exitCode = exitCode;
+      })
+      .catch((error) => {
+        console.error(error && error.message ? error.message : String(error));
+        process.exitCode = 1;
+      });
+  } else {
+    try {
+      execFileSync(bin, args, { stdio: "inherit" });
+    } catch (e) {
+      process.exit(e.status || 1);
+    }
   }
 }
