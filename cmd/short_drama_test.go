@@ -128,6 +128,7 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 		"erase-video-subtitle",
 		"generate-video",
 		"download-result",
+		"get-credit-balance",
 		"get-thread",
 		"list-thread-file",
 		"query-result",

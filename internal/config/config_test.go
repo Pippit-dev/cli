@@ -20,6 +20,9 @@ func TestLoadUsesDefaultConfig(t *testing.T) {
 	if cfg.Paths.SubmitRun != SubmitRunPath {
 		t.Fatalf("SubmitRun path = %q, want %q", cfg.Paths.SubmitRun, SubmitRunPath)
 	}
+	if cfg.Paths.GetCreditBalance != GetCreditBalancePath {
+		t.Fatalf("GetCreditBalance path = %q, want %q", cfg.Paths.GetCreditBalance, GetCreditBalancePath)
+	}
 }
 
 func TestLoadReadsAccessKey(t *testing.T) {

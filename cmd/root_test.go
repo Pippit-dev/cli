@@ -48,6 +48,15 @@ func TestRootRegistersCanvas(t *testing.T) {
 	}
 }
 
+func TestRootRegistersGetCreditBalance(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	root := NewRootCommand(&stdout, &stderr)
+	command, _, err := root.Find([]string{"get-credit-balance"})
+	if err != nil || command == nil || command.Name() != "get-credit-balance" {
+		t.Fatalf("root.Find(%q) = %#v, %v", "get-credit-balance", command, err)
+	}
+}
+
 func TestRootRegistersTopLevelBrowserAuthCommands(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	root := NewRootCommand(&stdout, &stderr)
