@@ -56,7 +56,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root := &cobra.Command{
 		Use:           "pippit-tool-cli",
 		Short:         "Pippit CLI",
-		Long:          "Pippit CLI generates and processes videos and images, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
+		Long:          "Pippit CLI generates and processes videos and images, queries credit balances, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.",
 		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -70,6 +70,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(authcmd.NewLogoutCommand(stdout, stderr, runner))
 	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
+	root.AddCommand(newGetCreditBalanceCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
 	root.AddCommand(generate_image.NewCommand(stdout, stderr, runner))
