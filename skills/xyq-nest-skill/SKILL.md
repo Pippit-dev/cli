@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video；用户要求视频超分、提升视频清晰度、擦字幕或去字幕时，使用 video-super-resolution / erase-video-subtitle。覆盖文生图、文生视频、图生视频、首尾帧生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度时也应触发。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
+description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video；用户要求视频超分、提升视频清晰度、擦字幕或去字幕时，使用 video-super-resolution / erase-video-subtitle。覆盖文生图、文生视频、图生视频、首尾帧生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度，或查询小云雀积分余额、剩余积分、credits 时也应触发；积分查询使用 pippit-tool-cli get-credit-balance。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
 user-invocable: true
 metadata:
   {
@@ -17,9 +17,9 @@ metadata:
   }
 ---
 
-# 小云雀创作、图片/视频模型直出与视频处理
+# 小云雀创作、图片/视频模型直出、视频处理与积分查询
 
-通过 小云雀的API 创建会话、发送消息（生图、生视频、编辑视频等）、上传图片/视频/mp3或wav音频文件，并查询会话消息进展。
+通过 小云雀的API 创建会话、发送消息（生图、生视频、编辑视频等）、上传图片/视频/mp3或wav音频文件，并查询会话消息进展；通过 CLI 查询个人有效积分余额。
 
 小云雀是一个 AI 综合创作平台，同时为人类创作者和 Agent 设计。Agent 通过 Skill 入口理解任务、调用模型并自动编排工作流。
 
@@ -32,6 +32,8 @@ metadata:
 除“图片/视频模型直出”和“视频超分/擦字幕”外，创作和编辑需求通过发送自然语言消息来完成，后端 Agent 会自主编排工作流。复杂任务耗时较长，需耐心轮询。
 
 ## 执行路由（必须先判断）
+
+积分余额查询优先走路由 F，不进入创作、视频处理或短剧工作流。
 
 ### 路由 A：图片模型直出
 
@@ -134,11 +136,36 @@ pippit-tool-cli query-result \
 
 ### 路由 D：小云雀后端 Agent 编排
 
-需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出时，继续使用本技能内置的 `submit_run.py` / `get_thread.py` 会话工作流；明确的首尾帧请求走路由 B，明确的视频超分和擦字幕请求走路由 C。
+需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出的创作需求，继续使用本技能内置的 `submit_run.py` / `get_thread.py` 会话工作流；明确的首尾帧请求走路由 B，明确的视频超分和擦字幕请求走路由 C；积分余额查询走路由 F。
 
 ### 路由 E：短剧工作流
 
 用户要求短剧生成、续写、改写、剧情扩展、人物设定、分集草稿或短剧会话文件处理时，停止本技能流程并转交 `xyq-short-drama-skill`，不要用 `submit_run.py`、`generate-image` 或 `generate-video` 假装执行完整短剧流程。
+
+### 路由 F：积分余额查询
+
+用户询问小云雀“积分余额”、“还剩多少积分”、“剩余 credits”或要求查询个人有效积分时，直接使用 `pippit-tool-cli get-credit-balance`。
+
+执行原则：
+
+1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用或版本不支持该命令时报告阻塞，不要改走 `submit_run.py`。
+2. 使用当前 CLI 登录凭证或显式配置的 `XYQ_ACCESS_KEY` 查询凭证所属用户的个人有效积分余额；无需传入用户 ID、`thread_id` 或 `run_id`。鉴权要求见“前置要求”。
+3. 这是只读查询，不需要积分消耗确认；不创建会话，不提交生成任务，也不调用 `get_thread.py` 或 `query-result` 轮询。
+4. 成功时读取 JSON 中字符串类型的 `total_remain_amount`，向用户展示当前有效积分余额；`"0"` 是有效的零余额。查询失败或缺少余额字段时报告错误，不得当作零余额。
+5. 需要排查请求时可添加 `--with-log-id`，同时保留返回的 `log_id`。该命令只返回总余额，不提供积分明细、到期时间或生成任务的费用预估。
+
+```bash
+pippit-tool-cli get-credit-balance
+
+# 排查请求时同时返回 log_id
+pippit-tool-cli get-credit-balance --with-log-id
+```
+
+默认输出示例：
+
+```json
+{"total_remain_amount":"123"}
+```
 
 ## 用户确认与反问
 
@@ -148,7 +175,7 @@ pippit-tool-cli query-result \
    - **Codex**：准确工具名是 `request_user_input`。仅在工具已暴露且当前模式允许时调用；不可用时退回普通聊天提问。不要在 Codex 中调用 `ask_user_question`。
    - **WorkBuddy**：准确工具名是 `ask_user_question`（Ask User Question）。需要用户补充、选择或确认时优先调用；工具未暴露时才退回普通聊天提问。
    - **Trae 及其他宿主**：先查看当前宿主实际暴露的工具，再使用同类结构化提问、确认或表单工具；不要臆造具体工具名。没有同类工具时退回普通聊天提问。
-2. 涉及 credits、真实生成、外部提交或不可逆操作时，必须等待用户明确答复；不要默认同意或超时后继续。
+2. 涉及 credits 消耗、真实生成、外部提交或不可逆操作时，必须等待用户明确答复；不要默认同意或超时后继续。路由 F 的只读积分余额查询不需要额外确认。
 3. 后端已经给出问题或选项时，保持原意传给用户，不要代替用户回答。
 4. 当前宿主没有结构化提问工具，或当前模式不允许调用时，使用一条简洁的普通聊天问题并暂停。
 5. 收到回复后，把用户答案原样发回同一 `thread_id`，获取新的 `run_id`，再继续轮询；不要新开会话。
@@ -162,11 +189,12 @@ pippit-tool-cli query-result \
 5. **图片模型直出** - 使用 `pippit-tool-cli generate-image` 直接调用图片模型，使用 `query-result` 查询并下载图片结果。
 6. **视频模型直出** - 使用 `pippit-tool-cli generate-video` 直接调用视频模型，使用 `query-result` 查询并下载视频结果。
 7. **视频处理** - 使用 `pippit-tool-cli video-super-resolution` 或 `erase-video-subtitle` 处理本地视频，使用 `query-result` 查询并下载视频结果。
+8. **积分余额查询** - 使用 `pippit-tool-cli get-credit-balance` 查询当前凭证所属用户的个人有效积分余额，直接展示 `total_remain_amount`。
 
 
 ## 前置要求
 
-图片/视频模型直出和视频处理（路由 A/B/C）使用原生 CLI。首次使用时运行网页登录，CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库：
+图片/视频模型直出、视频处理和积分余额查询（路由 A/B/C/F）使用原生 CLI。首次使用时运行网页登录，CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库：
 
 ```bash
 pippit-tool-cli login
@@ -182,7 +210,7 @@ export XYQ_ACCESS_KEY="your-access-key"
 
 可选：`XYQ_OPENAPI_BASE` 或 `XYQ_BASE_URL`，默认 `https://xyq.jianying.com`。
 
-会话 API 路由无需安装额外依赖，仅使用 Python 标准库。图片/视频模型直出和视频处理路由额外要求 `pippit-tool-cli` 在 `PATH` 中可用。
+会话 API 路由无需安装额外依赖，仅使用 Python 标准库。图片/视频模型直出、视频处理和积分余额查询路由要求 `pippit-tool-cli` 在 `PATH` 中可用。
 
 ## 使用方法
 
@@ -385,10 +413,10 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 
 ## 核心原则：用户侧不做创作，只做传话
 
-你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出和视频处理路由把用户原始参数传给 CLI。你要做的是：
+你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出和视频处理路由把用户原始参数传给 CLI。积分余额查询按路由 F 直接查询并展示余额；以下步骤适用于创作和视频处理任务：
 
 1. **准备素材**：会话 API 路由用 `upload_file.py` 把本地文件转为 asset_id；图片/视频模型直出和视频处理路由把本地路径直接交给对应 CLI；首尾帧任务固定传 `--generate-type 1` 并保持首帧、尾帧顺序
-2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，视频超分和擦字幕调用对应的视频处理命令，其余任务把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
+2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，视频超分和擦字幕调用对应的视频处理命令，其余通用创作任务把用户的原始描述 + asset_id 原封不动发给 `submit_run.py`
 3. **传话**：根据 `get_thread.py` 返回的消息列表，展示过程中的意图询问、创作信息等
 4. **取件**：会话 API 路由用 `get_thread.py` 轮询，图片/视频模型直出和视频处理路由用 `query-result` 轮询 → 检查结果 → 下载产物 → 结果展示给用户
 
