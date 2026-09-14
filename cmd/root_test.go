@@ -67,3 +67,41 @@ func TestRootRegistersTopLevelBrowserAuthCommands(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpDiscoversNpmCanvasCommands(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"canvas", "--help"}, {"canvas", "command", "--help"}, {"canvas", "command"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			root := NewRootCommand(&stdout, &stderr)
+			root.SetArgs(args)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			for _, action := range []string{"list", "describe", "schema", "guide", "run"} {
+				if !strings.Contains(stdout.String(), "canvas command "+action) {
+					t.Fatalf("help does not expose %s: %s", action, stdout.String())
+				}
+			}
+			if !strings.Contains(stdout.String(), "npm launcher") {
+				t.Fatalf("help does not explain launcher boundary: %s", stdout.String())
+			}
+		})
+	}
+}
+
+func TestNativeCanvasCommandsRequireNpmLauncher(t *testing.T) {
+	for _, action := range []string{"list", "describe", "schema", "guide", "run", "unknown-action"} {
+		t.Run(action, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			root := NewRootCommand(&stdout, &stderr)
+			root.SetArgs([]string{"canvas", "command", action, "--category", "example"})
+			err := root.Execute()
+			if err == nil || !strings.Contains(err.Error(), "npm launcher") {
+				t.Fatalf("Execute() error = %v, want launcher guidance", err)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, must not claim execution success", stdout.String())
+			}
+		})
+	}
+}

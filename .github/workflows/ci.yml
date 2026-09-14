@@ -28,11 +28,27 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test launcher help without installation side effects
+        run: node scripts/run-help.test.js
+
       - name: Test canvas command
         run: node scripts/canvas-command.test.js
 
+      - name: Test command discovery and guides
+        run: node scripts/canvas-command-schema.test.js && node scripts/canvas-command-guides.test.js
+
       - name: Test runtime artifact assembly
         run: node scripts/prepare-canvas-runtime.test.js
+
+      - name: Test assembled runtime capabilities and output budgets
+        run: node scripts/canvas-command-runtime.test.js
+
+      - name: Test Canvas, Scene3D and Timeline operations
+        run: npm run test:canvas-operations
 
   go:
     name: Go tests
