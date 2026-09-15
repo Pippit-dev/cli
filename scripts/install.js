@@ -115,7 +115,7 @@ function extractArchive(archivePath, destDir) {
   run("tar", ["-xzf", archivePath, "-C", destDir]);
 }
 
-function install() {
+function install({ cliOnly = false } = {}) {
   if (!platform || !arch) {
     throw new Error(`Unsupported platform: ${process.platform}-${process.arch}`);
   }
@@ -133,11 +133,13 @@ function install() {
     fs.copyFileSync(extracted, dest);
     fs.chmodSync(dest, 0o755);
 
-    if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
-      installSkillsFromRoot(ROOT);
-      reportBundledSkillTelemetry("install", "npm_install");
-    } else {
-      cleanupLegacyGlobalSkills();
+    if (!cliOnly) {
+      if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
+        installSkillsFromRoot(ROOT);
+        reportBundledSkillTelemetry("install", "npm_install");
+      } else {
+        cleanupLegacyGlobalSkills();
+      }
     }
     console.log(`${NAME} v${VERSION} installed successfully`);
   } finally {

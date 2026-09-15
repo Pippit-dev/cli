@@ -39,53 +39,58 @@
 
 - 生成：文生图、文生视频、图生视频、视频续写。
 - 编辑：局部修改、元素替换、镜头调整、风格迁移。
-- 复杂创作：一句话生成短剧、复刻视频/TVC/宣传片、音乐 MV 生成、产品展示片制作。
+- 复杂创作：复刻视频/TVC/宣传片、音乐 MV 生成、产品展示片制作。
 
 ### 配置
 
-所有 `xyq-skill` 脚本都使用 Bearer 令牌鉴权：
+单独上传 `xyq-skill` ZIP 时，保留 Skill 内的 `scripts/ensure-cli.js`。每次开始执行 Skill 任务先运行：
+
+```bash
+node /path/to/xyq-skill/scripts/ensure-cli.js
+```
+
+环境需要 Node.js 16+ 和 Python 3；首次安装或自动升级时需要 npm、`curl`、系统解压工具（macOS/Linux 的 `tar`，Windows 的 PowerShell）及访问 npm 源和 GitHub Release 的网络。脚本优先复用 PATH 或自身缓存中命令齐全的 CLI；均不存在或缺少必需命令时获取 `@pippit-dev/cli@latest`，安装到 `~/.cache/pippit-tool-cli/xyq-skill/<平台>-<架构>/current`，返回 `{ "cli_path": "CLI绝对路径", "version": "实际安装版本" }`。后续示例中的 `pippit-tool-cli` 替换为该绝对路径；同一任务内复用，不在轮询时重复安装。已有 CLI 缺少关键命令时自动升级；升级后的缓存可被后续任务复用，避免 PATH 旧版本触发重复下载。每次调用最多下载安装一次，升级失败保留原安装；最新版本仍缺少必需命令时报告阻塞。
+
+新入口 `node scripts/install-cli.js` 只安装 npm 包对应版本的 CLI 二进制，不安装或清理全局 Skill。ZIP 安装脚本先以 `--ignore-scripts` 获取 npm 包，再调用这个入口。发布包含新入口的 npm 包及对应 GitHub Release 后，ZIP 的最新版本安装流程才能完整使用。
+
+`submit-run` 和 `upload-file` 使用原生 CLI 登录凭证（`pippit-tool-cli login`），也可通过 `XYQ_ACCESS_KEY` 显式覆盖。保留的查询脚本 `get_thread.py` 仍需配置同一用户的 Bearer 凭证：
 
 ```bash
 export XYQ_ACCESS_KEY="<access-key>"
 ```
 
-可选 API 地址：
-
-```bash
-export XYQ_OPENAPI_BASE="https://xyq.jianying.com"
-# 或
-export XYQ_BASE_URL="https://xyq.jianying.com"
-```
+CLI 和 Python 脚本携带用户密钥的 API 请求地址固定为 `https://xyq.jianying.com`，不接受 `XYQ_OPENAPI_BASE` / `XYQ_BASE_URL` 覆盖。CLI 拒绝 API 跨域重定向，Python API 脚本禁止自动重定向。上传只在 Authorization 请求头携带密钥。
 
 ### 创建会话 / 发送消息
 
 ```bash
 # 创建新会话
-python3 skills/xyq-nest-skill/scripts/submit_run.py --message "生一个动漫视频"
+pippit-tool-cli submit-run --message "生一个动漫视频"
 
 # 向已有会话发送消息
-python3 skills/xyq-nest-skill/scripts/submit_run.py \
+pippit-tool-cli submit-run \
   --message "再生成一个故事视频" \
   --thread-id THREAD_ID
 
 # 携带参考文件发送
-python3 skills/xyq-nest-skill/scripts/submit_run.py \
+pippit-tool-cli submit-run \
   --message "参考这个视频做修改" \
-  --asset-ids asset_id1 asset_id2
+  --asset-ids asset_id1 --asset-ids asset_id2
 ```
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--message` | 是 | 创作指令内容。 |
+| `--message` | 是 | 非空白的创作指令，原样发送。 |
 | `--thread-id` | 否 | 已有会话 ID，不传则创建新会话。 |
-| `--asset-ids` | 否 | 资产 ID 列表，支持多个。 |
+| `--asset-ids` | 否 | 每次传一个资产 ID；多个素材重复该参数。 |
 
 返回示例：
 
 ```json
 {
   "thread_id": "90f05e0c-...",
-  "run_id": "abc123-..."
+  "run_id": "abc123-...",
+  "web_thread_link": "https://xyq.jianying.com/..."
 }
 ```
 
@@ -108,18 +113,20 @@ python3 skills/xyq-nest-skill/scripts/get_thread.py \
 
 ### 上传文件
 
+使用顶层 `upload-file --path`，每次上传一个本地图片、视频或 MP3/WAV 音频文件，文件须小于 500 MB（500000000 字节）。成功返回 `{"asset_id":"..."}`，可直接传给 `submit-run --asset-ids`。
+
 ```bash
 # 上传图片
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/image.png
+pippit-tool-cli upload-file --path /path/to/image.png
 
 # 上传视频
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/video.mp4
+pippit-tool-cli upload-file --path /path/to/video.mp4
 
 # 上传音频
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/audio.mp3
+pippit-tool-cli upload-file --path /path/to/audio.mp3
 ```
 
-仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 200 MB。
+仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 500 MB。
 
 返回示例：
 
@@ -131,65 +138,71 @@ python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/audio.mp3
 
 ### 下载结果
 
+每个产物 URL 调用一次 CLI，`--output-path` 必须包含文件名：
+
 ```bash
-python3 skills/xyq-nest-skill/scripts/download_results.py \
-  --urls URL1 URL2 URL3 \
-  --output-dir ./xyq_output \
-  --prefix "storyboard" \
-  --workers 5
+pippit-tool-cli download-result \
+  --url "URL1" \
+  --output-path "./xyq_output/storyboard_01.png"
 ```
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--urls` | 是 | 要下载的 URL 列表。 |
-| `--output-dir` | 否 | 输出目录，默认 `./xyq_output`。 |
-| `--prefix` | 否 | 文件名前缀，例如 `storyboard_01.png`。 |
-| `--workers` | 否 | 并行下载线程数，默认 `5`。 |
+| `--url` | 是 | 单个产物的下载 URL。 |
+| `--output-path` | 是 | 包含文件名的本地目标路径。 |
+| `--updated-at` | 否 | 远端文件真实更新时间（Unix 秒），用于判断是否覆盖已有文件。 |
+| `--workers` | 否 | 下载 worker 数，默认 `5`；当前单 URL 调用实际只使用一个 worker。 |
 
-返回示例：
+Skill 沿用用户指定的输出目录，未指定时使用 `./xyq_output`，按 URL 列表顺序从 `01` 编号，组成 `前缀_01.ext`（无前缀时为 `01.ext`）。扩展名优先取 URL 查询参数 `filename`，其次取 URL 路径，无法取得时使用 `.bin`。多文件逐项调用，可最多并行执行 5 个命令；重试保持原目标路径。
+
+下载成功返回示例：
 
 ```json
 {
-  "output_dir": "./xyq_output",
-  "downloaded": ["./xyq_output/storyboard_01.png"],
-  "total": 1
+  "output_path": "./xyq_output/storyboard_01.png",
+  "downloaded": ["./xyq_output/storyboard_01.png"]
 }
 ```
+
+未传 `--updated-at` 时，CLI 默认跳过已有文件，返回 `already_exist`，此时 `downloaded` 为 `null`；传入真实更新时间后，仅当本地文件修改时间早于该时间时覆盖更新。跳过不代表已校验本地内容与远端一致。
+
+下载失败时命令以非零退出码返回错误，不保证输出 JSON。Skill 汇总各次调用的下载成功、已存在跳过和失败项，只对失败项重试一次；仍有失败时明确报告未完整交付。
 
 ### 典型示例
 
 文生视频：
 
 ```text
-1. submit_run.py --message "生成一个赛博朋克风格的城市夜景视频"
+1. pippit-tool-cli submit-run --message "生成一个赛博朋克风格的城市夜景视频"
 2. 每 10 秒轮询：
    get_thread.py --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
 3. 拿到产物 URL 后下载：
-   download_results.py --urls URL1 URL2 --output-dir ./output --prefix "cyberpunk"
+   pippit-tool-cli download-result --url "URL1" --output-path "./output/cyberpunk_01.mp4"
+   pippit-tool-cli download-result --url "URL2" --output-path "./output/cyberpunk_02.mp4"
 ```
 
 编辑已有视频：
 
 ```text
-1. upload_file.py /path/to/video.mp4
-2. submit_run.py --message "把背景换成星空" --asset-ids asset_id
+1. pippit-tool-cli upload-file --path /path/to/video.mp4
+2. pippit-tool-cli submit-run --message "把背景换成星空" --asset-ids asset_id
 3. 按文生视频流程轮询和下载。
 ```
 
 多参考图/视频生成：
 
 ```text
-1. upload_file.py /path/to/ref1.png
-2. upload_file.py /path/to/ref2.png
-3. upload_file.py /path/to/ref3.mp4
-4. submit_run.py --message "根据参考图和视频生成科普故事视频" --asset-ids asset_id1 asset_id2 asset_id3
+1. pippit-tool-cli upload-file --path /path/to/ref1.png
+2. pippit-tool-cli upload-file --path /path/to/ref2.png
+3. pippit-tool-cli upload-file --path /path/to/ref3.mp4
+4. pippit-tool-cli submit-run --message "根据参考图和视频生成科普故事视频" --asset-ids asset_id1 --asset-ids asset_id2 --asset-ids asset_id3
 5. 按文生视频流程轮询和下载。
 ```
 
 在已有会话中追加需求：
 
 ```text
-1. submit_run.py --message "把刚才的视频加个片头" --thread-id EXISTING_THREAD_ID
+1. pippit-tool-cli submit-run --message "把刚才的视频加个片头" --thread-id EXISTING_THREAD_ID
 2. 使用新的 run_id 轮询和下载。
 ```
 

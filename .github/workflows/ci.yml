@@ -50,6 +50,9 @@ jobs:
       - name: Test Canvas, Scene3D and Timeline operations
         run: npm run test:canvas-operations
 
+      - name: Test CLI-only installation and Skill bootstrap
+        run: node scripts/install-cli.test.js
+
   go:
     name: Go tests
     runs-on: ubuntu-22.04
