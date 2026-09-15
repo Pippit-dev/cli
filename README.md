@@ -128,30 +128,35 @@ pippit-tool-cli upload-file --path /path/to/audio.mp3
 
 ### 下载结果
 
+每个产物 URL 调用一次 CLI，`--output-path` 必须包含文件名：
+
 ```bash
-python3 skills/xyq-nest-skill/scripts/download_results.py \
-  --urls URL1 URL2 URL3 \
-  --output-dir ./xyq_output \
-  --prefix "storyboard" \
-  --workers 5
+pippit-tool-cli download-result \
+  --url "URL1" \
+  --output-path "./xyq_output/storyboard_01.png"
 ```
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--urls` | 是 | 要下载的 URL 列表。 |
-| `--output-dir` | 否 | 输出目录，默认 `./xyq_output`。 |
-| `--prefix` | 否 | 文件名前缀，例如 `storyboard_01.png`。 |
-| `--workers` | 否 | 并行下载线程数，默认 `5`。 |
+| `--url` | 是 | 单个产物的下载 URL。 |
+| `--output-path` | 是 | 包含文件名的本地目标路径。 |
+| `--updated-at` | 否 | 远端文件真实更新时间（Unix 秒），用于判断是否覆盖已有文件。 |
+| `--workers` | 否 | 下载 worker 数，默认 `5`；当前单 URL 调用实际只使用一个 worker。 |
 
-返回示例：
+Skill 沿用用户指定的输出目录，未指定时使用 `./xyq_output`，按 URL 列表顺序从 `01` 编号，组成 `前缀_01.ext`（无前缀时为 `01.ext`）。扩展名优先取 URL 查询参数 `filename`，其次取 URL 路径，无法取得时使用 `.bin`。多文件逐项调用，可最多并行执行 5 个命令；重试保持原目标路径。
+
+下载成功返回示例：
 
 ```json
 {
-  "output_dir": "./xyq_output",
-  "downloaded": ["./xyq_output/storyboard_01.png"],
-  "total": 1
+  "output_path": "./xyq_output/storyboard_01.png",
+  "downloaded": ["./xyq_output/storyboard_01.png"]
 }
 ```
+
+未传 `--updated-at` 时，CLI 默认跳过已有文件，返回 `already_exist`，此时 `downloaded` 为 `null`；传入真实更新时间后，仅当本地文件修改时间早于该时间时覆盖更新。跳过不代表已校验本地内容与远端一致。
+
+下载失败时命令以非零退出码返回错误，不保证输出 JSON。Skill 汇总各次调用的下载成功、已存在跳过和失败项，只对失败项重试一次；仍有失败时明确报告未完整交付。
 
 ### 典型示例
 
@@ -162,7 +167,8 @@ python3 skills/xyq-nest-skill/scripts/download_results.py \
 2. 每 10 秒轮询：
    get_thread.py --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
 3. 拿到产物 URL 后下载：
-   download_results.py --urls URL1 URL2 --output-dir ./output --prefix "cyberpunk"
+   pippit-tool-cli download-result --url "URL1" --output-path "./output/cyberpunk_01.mp4"
+   pippit-tool-cli download-result --url "URL2" --output-path "./output/cyberpunk_02.mp4"
 ```
 
 编辑已有视频：

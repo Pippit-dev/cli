@@ -64,7 +64,7 @@ for (const requiredText of [
   assert.ok(readme.includes(requiredText), `README missing skill contract: ${requiredText}`);
 }
 
-for (const script of ["submit_run.py", "upload_file.py"]) {
+for (const script of ["submit_run.py", "upload_file.py", "download_results.py"]) {
   assert.ok(!generalSkill.includes(script), `xyq-skill must migrate ${script} to CLI`);
   assert.ok(!readme.includes(script), `README must migrate ${script} to CLI`);
   assert.strictEqual(

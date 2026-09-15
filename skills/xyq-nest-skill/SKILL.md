@@ -260,12 +260,21 @@ pippit-tool-cli upload-file --path /path/to/audio.mp3
 
 ### 4. 下载结果
 
-任务完成后，可以将会话中的所有产物批量下载到本地。
+会话 API 路由从 `get_thread.py` 返回的 `messages` 中提取产物 URL，逐文件调用 `pippit-tool-cli download-result` 下载到本地。
+
+- 输出目录沿用用户指定的目录，未指定时使用 `./xyq_output`。
+- 保留原有命名规则：按产物 URL 列表顺序从 `01` 开始编号，有前缀时为 `前缀_01.ext`，无前缀时为 `01.ext`。扩展名优先取 URL 查询参数 `filename` 中的扩展名，其次取 URL 路径的扩展名，无法取得时使用 `.bin`。
+- 将目录和文件名拼成完整的 `--output-path`；每个 URL 调用一次，可最多并行执行 5 个下载命令。重试时保持 URL 与目标路径的对应关系。
 
 ```bash
-# 指定 URL 列表，指定输出目录，指定文件名前缀（如 artifact_01.png, artifact_02.png ...）进行下载
-python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir ./xyq_output --prefix "artifact"
+# 示例：输出目录 ./xyq_output，前缀 artifact，两个 URL 的扩展名分别为 .png 和 .mp4
+pippit-tool-cli download-result --url "URL1" --output-path "./xyq_output/artifact_01.png"
+pippit-tool-cli download-result --url "URL2" --output-path "./xyq_output/artifact_02.mp4"
 ```
+
+CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源提供真实的文件更新时间时传入 `--updated-at`（Unix 秒），让 CLI 根据本地文件修改时间决定是否重新下载；不要用当前时间代替远端更新时间。跳过不代表已校验本地内容与远端一致，不能将已知属于其他产物的同名文件当作本次结果。
+
+逐项收集下载结果；单项失败不阻断其他文件，只对失败项重试一次，仍失败则记录该产物、目标路径及 CLI 返回的错误。
 
 ## 典型工作流
 
@@ -287,8 +296,8 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
       → 回到步骤 2 继续轮询（可能多轮，直到不再意图确认）
     - 如果 content 中包含产物 URL：
       → 信息展示 → 下载产物 → 结果展示
-5. 自动下载：download_results.py --urls URL1 URL2 URL3 --output-dir 输出目录 --prefix 有意义的前缀
-6. 向用户展示：过程中的创作信息，以及下载后的本地文件列表
+5. 自动下载：按“下载结果”的目录、前缀和编号规则，为每个产物 URL 调用 pippit-tool-cli download-result --url URL --output-path 完整文件路径
+6. 汇总每次调用的下载成功、已存在跳过和失败结果，向用户展示产物链接及对应的本地文件
 ```
 
 ### 场景 2：用户明确要求图片模型直出
@@ -401,14 +410,30 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
 }
 ```
 
-**download_results** 返回：
+**pippit-tool-cli download-result** 每次下载一个文件，成功返回：
 ```json
 {
-  "output_dir": "./xyq_output",
-  "downloaded": ["./xyq_output/01.png", "..."],
-  "total": 10
+  "output_path": "./xyq_output/artifact_01.png",
+  "downloaded": ["./xyq_output/artifact_01.png"]
 }
 ```
+
+目标文件已存在而跳过时返回：
+```json
+{
+  "output_path": "./xyq_output/artifact_01.png",
+  "downloaded": null,
+  "already_exist": ["./xyq_output/artifact_01.png"]
+}
+```
+
+单文件下载失败时，命令以非零退出码返回错误，不保证输出 JSON；不能只检查 JSON 中是否有 `errors` 来判断成功。由用户侧 Agent 汇总各次调用的 `downloaded`、`already_exist` 和失败项，不再依赖批量返回的 `output_dir`、`total`。
+
+## 会话 API 路由的下载完成标准
+
+- run 结束后，先处理意图确认或流程中断；收到产物 URL 后才进入下载交付。
+- 每个待交付产物都要有对应结果：本次下载成功、已存在而跳过，或下载失败。只有所有产物均已下载或明确复用已有文件时，才能报告本地交付完成。
+- 已存在跳过的文件须单独说明，不能计为本次新下载；仍有失败项时报告“生成已完成，部分产物下载失败”，列出失败项和原始产物链接，不宣称全部下载完成。
 
 ## 向用户展示内容
 
@@ -417,8 +442,7 @@ python3 {baseDir}/scripts/download_results.py --urls URL1 URL2 URL3 --output-dir
   - 展示过程中的创作信息等，继续轮询
 - 任务完成（run 结束）：
   - 若涉及意图确认/流程中断（如"请回答以下问题"）→ 按“用户确认与反问”规则优先调用结构化提问工具 → 等待用户回复 → 使用同一 `thread_id` 重新提交任务 → 继续轮询（可能多轮）
-  - 若 content 中包含产物 URL：
-  - 结果地址：来自 `get_thread` 返回的 `messages` 中，任务创作完成会包含产物 URL，将产物链接、下载的本地文件等信息告知用户。
+  - 若 content 中包含产物 URL：展示来自 `get_thread` 返回的 `messages` 的产物链接，以及对应本地文件的可点击绝对路径；区分本次下载、已存在跳过和下载失败，并按上述完成标准说明交付状态。
 
 ## 核心原则：用户侧不做创作，只做传话
 
