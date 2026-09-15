@@ -17,7 +17,7 @@ def main():
         epilog="""
 环境变量:
   XYQ_ACCESS_KEY  必填，Bearer 鉴权
-  XYQ_OPENAPI_BASE 或 XYQ_BASE_URL  可选，默认 https://xyq.jianying.com
+  API 地址固定为 https://xyq.jianying.com，不支持环境变量覆盖
 
 示例:
   python3 get_thread.py --thread-id abc123 --run-id def456 --after-seq 0

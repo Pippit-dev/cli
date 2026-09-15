@@ -1,23 +1,43 @@
-"""小云雀 agent-im OpenAPI 公共模块：创建会话、查询会话（鉴权为 Authorization: Bearer <access_key>）"""
+"""小云雀 agent-im OpenAPI 公共模块：查询会话（鉴权为 Authorization: Bearer <access_key>）"""
 
 import json
 import os
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 
-XYQ_BASE = os.environ.get("XYQ_OPENAPI_BASE", os.environ.get("XYQ_BASE_URL", "https://xyq.jianying.com"))
+# Credentials may only be sent to the fixed production HTTPS origin.
+XYQ_BASE = "https://xyq.jianying.com"
 ACCESS_KEY = os.environ.get("XYQ_ACCESS_KEY", "")
 
 # API 路径常量
-SUBMIT_RUN_PATH = "/api/biz/v1/skill/submit_run"
 GET_THREAD_PATH = "/api/biz/v1/skill/get_thread"
-UPLOAD_FILE_PATH = "/api/biz/v1/skill/upload_file"
 HTTP_TIMEOUT_SECONDS = 30 * 60
 
 if not ACCESS_KEY:
     print("错误：请设置 XYQ_ACCESS_KEY 环境变量", file=sys.stderr)
     sys.exit(1)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward credentials or request bodies through a redirect.
+        raise urllib.error.HTTPError(req.full_url, code, "API 重定向已拒绝", headers, fp)
+
+
+def authenticated_open(req):
+    target = urllib.parse.urlsplit(req.full_url)
+    if (target.scheme != "https" or target.hostname != "xyq.jianying.com"
+            or target.port not in (None, 443) or target.username is not None
+            or target.password is not None):
+        raise urllib.error.URLError("仅允许小云雀生产 HTTPS 地址")
+    return urllib.request.build_opener(_NoRedirect()).open(req, timeout=HTTP_TIMEOUT_SECONDS)
+
+
+def redact_error(value):
+    text = str(value)
+    return text.replace(ACCESS_KEY, "[REDACTED]") if ACCESS_KEY else text
 
 
 def _headers():
@@ -38,14 +58,14 @@ def api_post(path: str, body: dict) -> dict:
         headers=_headers(),
     )
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
+        with authenticated_open(req) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"API 错误 {e.code}: {err_body}", file=sys.stderr)
+        print(f"API 错误 {e.code}: {redact_error(err_body)}", file=sys.stderr)
         sys.exit(1)
     except urllib.error.URLError as e:
-        print(f"网络错误: {e.reason}", file=sys.stderr)
+        print(f"网络错误: {redact_error(e.reason)}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -54,14 +74,14 @@ def api_get(path: str) -> dict:
     url = f"{XYQ_BASE.rstrip('/')}{path}"
     req = urllib.request.Request(url, method="GET", headers=_headers())
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_SECONDS) as resp:
+        with authenticated_open(req) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         err_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"API 错误 {e.code}: {err_body}", file=sys.stderr)
+        print(f"API 错误 {e.code}: {redact_error(err_body)}", file=sys.stderr)
         sys.exit(1)
     except urllib.error.URLError as e:
-        print(f"网络错误: {e.reason}", file=sys.stderr)
+        print(f"网络错误: {redact_error(e.reason)}", file=sys.stderr)
         sys.exit(1)
 
 
@@ -74,25 +94,9 @@ def parse_response(resp: dict) -> dict:
     ret = resp.get("ret", "")
     if ret != "0":
         errmsg = resp.get("errmsg", "未知错误")
-        print(f"错误码: {ret}, 错误信息: {errmsg}", file=sys.stderr)
+        print(f"错误码: {redact_error(ret)}, 错误信息: {redact_error(errmsg)}", file=sys.stderr)
         sys.exit(1)
     return resp.get("data", {})
-
-
-def submit_run(thread_id: str = "", message: str = "", asset_ids: list = None) -> dict:
-    """
-    创建会话或向已有会话发消息。
-    返回 data: { projectUuid, sessionId }。
-    """
-    body = {}
-    if thread_id:
-        body["thread_id"] = thread_id
-    if message:
-        body["message"] = message
-    if asset_ids:
-        body["asset_ids"] = asset_ids
-    resp = api_post(SUBMIT_RUN_PATH, body)
-    return parse_response(resp)
 
 
 def get_thread(thread_id: str, run_id: str = "", after_seq: int = 0) -> dict:
@@ -124,7 +128,7 @@ def get_thread(thread_id: str, run_id: str = "", after_seq: int = 0) -> dict:
     elif run_state == 4:
         # 失败
         fail_reason = run.get("fail_reason", "未知失败原因")
-        print(f"错误：{fail_reason}", file=sys.stderr)
+        print(f"错误：{redact_error(fail_reason)}", file=sys.stderr)
         sys.exit(1)
     elif run_state == 5:
         # 取消

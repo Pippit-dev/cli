@@ -43,49 +43,44 @@
 
 ### 配置
 
-所有 `xyq-skill` 脚本都使用 Bearer 令牌鉴权：
+`submit-run` 和 `upload-file` 使用原生 CLI 登录凭证（`pippit-tool-cli login`），也可通过 `XYQ_ACCESS_KEY` 显式覆盖。保留的查询脚本 `get_thread.py` 仍需配置同一用户的 Bearer 凭证：
 
 ```bash
 export XYQ_ACCESS_KEY="<access-key>"
 ```
 
-可选 API 地址：
-
-```bash
-export XYQ_OPENAPI_BASE="https://xyq.jianying.com"
-# 或
-export XYQ_BASE_URL="https://xyq.jianying.com"
-```
+CLI 和 Python 脚本携带用户密钥的 API 请求地址固定为 `https://xyq.jianying.com`，不接受 `XYQ_OPENAPI_BASE` / `XYQ_BASE_URL` 覆盖。CLI 拒绝 API 跨域重定向，Python API 脚本禁止自动重定向。上传只在 Authorization 请求头携带密钥。
 
 ### 创建会话 / 发送消息
 
 ```bash
 # 创建新会话
-python3 skills/xyq-nest-skill/scripts/submit_run.py --message "生一个动漫视频"
+pippit-tool-cli submit-run --message "生一个动漫视频"
 
 # 向已有会话发送消息
-python3 skills/xyq-nest-skill/scripts/submit_run.py \
+pippit-tool-cli submit-run \
   --message "再生成一个故事视频" \
   --thread-id THREAD_ID
 
 # 携带参考文件发送
-python3 skills/xyq-nest-skill/scripts/submit_run.py \
+pippit-tool-cli submit-run \
   --message "参考这个视频做修改" \
-  --asset-ids asset_id1 asset_id2
+  --asset-ids asset_id1 --asset-ids asset_id2
 ```
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
-| `--message` | 是 | 创作指令内容。 |
+| `--message` | 是 | 非空白的创作指令，原样发送。 |
 | `--thread-id` | 否 | 已有会话 ID，不传则创建新会话。 |
-| `--asset-ids` | 否 | 资产 ID 列表，支持多个。 |
+| `--asset-ids` | 否 | 每次传一个资产 ID；多个素材重复该参数。 |
 
 返回示例：
 
 ```json
 {
   "thread_id": "90f05e0c-...",
-  "run_id": "abc123-..."
+  "run_id": "abc123-...",
+  "web_thread_link": "https://xyq.jianying.com/..."
 }
 ```
 
@@ -108,18 +103,20 @@ python3 skills/xyq-nest-skill/scripts/get_thread.py \
 
 ### 上传文件
 
+使用顶层 `upload-file --path`，每次上传一个本地图片、视频或 MP3/WAV 音频文件，文件须小于 500 MB（500000000 字节）。成功返回 `{"asset_id":"..."}`，可直接传给 `submit-run --asset-ids`。
+
 ```bash
 # 上传图片
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/image.png
+pippit-tool-cli upload-file --path /path/to/image.png
 
 # 上传视频
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/video.mp4
+pippit-tool-cli upload-file --path /path/to/video.mp4
 
 # 上传音频
-python3 skills/xyq-nest-skill/scripts/upload_file.py /path/to/audio.mp3
+pippit-tool-cli upload-file --path /path/to/audio.mp3
 ```
 
-仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 200 MB。
+仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 500 MB。
 
 返回示例：
 
@@ -161,7 +158,7 @@ python3 skills/xyq-nest-skill/scripts/download_results.py \
 文生视频：
 
 ```text
-1. submit_run.py --message "生成一个赛博朋克风格的城市夜景视频"
+1. pippit-tool-cli submit-run --message "生成一个赛博朋克风格的城市夜景视频"
 2. 每 10 秒轮询：
    get_thread.py --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
 3. 拿到产物 URL 后下载：
@@ -171,25 +168,25 @@ python3 skills/xyq-nest-skill/scripts/download_results.py \
 编辑已有视频：
 
 ```text
-1. upload_file.py /path/to/video.mp4
-2. submit_run.py --message "把背景换成星空" --asset-ids asset_id
+1. pippit-tool-cli upload-file --path /path/to/video.mp4
+2. pippit-tool-cli submit-run --message "把背景换成星空" --asset-ids asset_id
 3. 按文生视频流程轮询和下载。
 ```
 
 多参考图/视频生成：
 
 ```text
-1. upload_file.py /path/to/ref1.png
-2. upload_file.py /path/to/ref2.png
-3. upload_file.py /path/to/ref3.mp4
-4. submit_run.py --message "根据参考图和视频生成科普故事视频" --asset-ids asset_id1 asset_id2 asset_id3
+1. pippit-tool-cli upload-file --path /path/to/ref1.png
+2. pippit-tool-cli upload-file --path /path/to/ref2.png
+3. pippit-tool-cli upload-file --path /path/to/ref3.mp4
+4. pippit-tool-cli submit-run --message "根据参考图和视频生成科普故事视频" --asset-ids asset_id1 --asset-ids asset_id2 --asset-ids asset_id3
 5. 按文生视频流程轮询和下载。
 ```
 
 在已有会话中追加需求：
 
 ```text
-1. submit_run.py --message "把刚才的视频加个片头" --thread-id EXISTING_THREAD_ID
+1. pippit-tool-cli submit-run --message "把刚才的视频加个片头" --thread-id EXISTING_THREAD_ID
 2. 使用新的 run_id 轮询和下载。
 ```
 

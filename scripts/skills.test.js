@@ -37,7 +37,8 @@ for (const requiredText of [
   "pippit-tool-cli query-result",
   "pippit-tool-cli login",
   "XYQ_ACCESS_KEY",
-  "submit_run.py",
+  "pippit-tool-cli submit-run",
+  "pippit-tool-cli upload-file",
   "web_thread_link",
   "request_user_input",
   "ask_user_question",
@@ -61,6 +62,16 @@ for (const requiredText of [
   "ask_user_question",
 ]) {
   assert.ok(readme.includes(requiredText), `README missing skill contract: ${requiredText}`);
+}
+
+for (const script of ["submit_run.py", "upload_file.py"]) {
+  assert.ok(!generalSkill.includes(script), `xyq-skill must migrate ${script} to CLI`);
+  assert.ok(!readme.includes(script), `README must migrate ${script} to CLI`);
+  assert.strictEqual(
+    fs.existsSync(path.join(repoRoot, "skills", "xyq-nest-skill", "scripts", script)),
+    false,
+    `legacy ${script} must be removed`,
+  );
 }
 
 const globalSkillsDir = fs.mkdtempSync(path.join(os.tmpdir(), "pippit-skills-test-"));

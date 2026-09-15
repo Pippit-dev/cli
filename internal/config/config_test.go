@@ -32,3 +32,13 @@ func TestLoadReadsAccessKey(t *testing.T) {
 		t.Fatalf("AccessKey = %q, want trimmed token", cfg.AccessKey)
 	}
 }
+
+func TestLoadIgnoresUntrustedBaseURLEnvironment(t *testing.T) {
+	for _, name := range []string{"XYQ_OPENAPI_BASE", "XYQ_BASE_URL"} {
+		t.Setenv(name, "https://untrusted.example")
+	}
+	cfg := Load()
+	if cfg.BaseURL != "https://xyq.jianying.com" {
+		t.Fatalf("BaseURL must remain the production HTTPS origin")
+	}
+}
