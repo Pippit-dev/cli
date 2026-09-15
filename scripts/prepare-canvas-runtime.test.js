@@ -157,7 +157,7 @@ async function run() {
     stdout: { write: (chunk) => { listOutput += String(chunk); } },
   });
   const catalog = JSON.parse(listOutput).commands;
-  assert.strictEqual(catalog.length, 42);
+  assert.strictEqual(catalog.length, 47);
   assert(catalog.some(({ name }) => name === "create_biz_node"));
   assert(!catalog.some(({ name }) => name === "invoke_command"));
 

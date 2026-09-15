@@ -183,7 +183,8 @@ function createFakeSdk() {
       };
       return { canvas, commands: { marker: "commands" }, runtime: canvas.runtime, store };
     },
-    createXyqCanvasOpencodeToolDefinitions({ allocateNodeId, runtime, schema }) {
+    createXyqCanvasOpencodeToolDefinitions({ allocateAssetId, allocateNodeId, runtime, schema }) {
+      assert.strictEqual(allocateAssetId, allocateNodeId);
       return {
         apply_mutations: {
           args: { intent: schema.string(), mutations: schema.array(schema.unknown()) },
@@ -296,9 +297,10 @@ async function main() {
   assert.strictEqual(await runCanvasCommand(["canvas", "command", "list"], { sdk, stdout: listOut }), 0);
   const listed = JSON.parse(listOut.value);
   assert.deepStrictEqual(listed.commands.slice(0, 2).map((command) => command.name), ["apply_mutations", "invoke_command"]);
-  assert.strictEqual(listed.commands[0].description, "SDK apply mutations description");
-  assert.strictEqual(listed.commands[0].mutation_definitions[0].kind, "create_biz_node");
-  assert.strictEqual(listed.commands[0].registered_commands[0].name, "role.update");
+  assert.strictEqual(listed.commands[0].summary, "SDK apply mutations description");
+  assert.strictEqual(listed.commands[0].input_schema, undefined);
+  assert.strictEqual(listed.commands[0].mutation_definitions, undefined);
+  assert.strictEqual(listed.commands[0].registered_commands, undefined);
   assert.ok(listed.commands.some((command) => command.name === "create_biz_node"));
   assert.ok(listed.commands.some((command) => command.name === "role.update"));
 
@@ -306,10 +308,10 @@ async function main() {
   await runCanvasCommand(["canvas", "command", "describe", "apply_mutations"], { sdk, stdout: describeOut });
   const described = JSON.parse(describeOut.value);
   assert.deepStrictEqual(described.input_schema.required, ["intent", "mutations"]);
-  assert.strictEqual(described.mutation_definitions[0].input, "{nodeKind}");
+  assert(described.related_commands.includes("create_biz_node"));
   const invokeOut = outputBuffer();
   await runCanvasCommand(["canvas", "command", "describe", "invoke_command"], { sdk, stdout: invokeOut });
-  assert.strictEqual(JSON.parse(invokeOut.value).registered_commands[0].description, "更新角色");
+  assert(JSON.parse(invokeOut.value).related_commands.includes("role.update"));
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pippit command test "));
   assert.throws(() => createFilePersistence({ canvasId: "canvas_1", credentialScope: "" }), /credential_scope/);

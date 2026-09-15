@@ -40,8 +40,8 @@ func TestCommandExposesOnlyProviderNeutralPublicVerbs(t *testing.T) {
 	for _, child := range cmd.Commands() {
 		got = append(got, child.Name())
 	}
-	if strings.Join(got, ",") != "allocate,apply,create,get,upload" {
-		t.Fatalf("commands = %v, want allocate/apply/create/get/upload", got)
+	if strings.Join(got, ",") != "allocate,apply,command,create,get,upload" {
+		t.Fatalf("commands = %v, want allocate/apply/command/create/get/upload", got)
 	}
 	for _, forbidden := range []string{"import", "bind", "team"} {
 		if strings.Contains(strings.ToLower(cmd.CommandPath()+" "+cmd.Short+" "+strings.Join(got, " ")), forbidden) {

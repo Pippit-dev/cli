@@ -23,6 +23,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:   "canvas",
 		Short: "Create and operate personal novel canvases",
+		Long:  "Create and operate personal novel canvases.\n\n" + CommandDiscoveryHelp,
 		Args:  cobra.NoArgs,
 	}
 	cmd.SetOut(stdout)
@@ -32,6 +33,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.AddCommand(newAllocateCommand(stdout, stderr, runner))
 	cmd.AddCommand(newApplyCommand(stdout, stderr, runner))
 	cmd.AddCommand(newUploadCommand(stdout, stderr, runner))
+	cmd.AddCommand(newCommandHelp())
 	return cmd
 }
 
