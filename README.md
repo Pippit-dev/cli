@@ -39,9 +39,19 @@
 
 - 生成：文生图、文生视频、图生视频、视频续写。
 - 编辑：局部修改、元素替换、镜头调整、风格迁移。
-- 复杂创作：一句话生成短剧、复刻视频/TVC/宣传片、音乐 MV 生成、产品展示片制作。
+- 复杂创作：复刻视频/TVC/宣传片、音乐 MV 生成、产品展示片制作。
 
 ### 配置
+
+单独上传 `xyq-skill` ZIP 时，保留 Skill 内的 `scripts/ensure-cli.js`。每次开始执行 Skill 任务先运行：
+
+```bash
+node /path/to/xyq-skill/scripts/ensure-cli.js
+```
+
+环境需要 Node.js 16+ 和 Python 3；首次安装或自动升级时需要 npm、`curl`、系统解压工具（macOS/Linux 的 `tar`，Windows 的 PowerShell）及访问 npm 源和 GitHub Release 的网络。脚本优先复用 PATH 或自身缓存中命令齐全的 CLI；均不存在或缺少必需命令时获取 `@pippit-dev/cli@latest`，安装到 `~/.cache/pippit-tool-cli/xyq-skill/<平台>-<架构>/current`，返回 `{ "cli_path": "CLI绝对路径", "version": "实际安装版本" }`。后续示例中的 `pippit-tool-cli` 替换为该绝对路径；同一任务内复用，不在轮询时重复安装。已有 CLI 缺少关键命令时自动升级；升级后的缓存可被后续任务复用，避免 PATH 旧版本触发重复下载。每次调用最多下载安装一次，升级失败保留原安装；最新版本仍缺少必需命令时报告阻塞。
+
+新入口 `node scripts/install-cli.js` 只安装 npm 包对应版本的 CLI 二进制，不安装或清理全局 Skill。ZIP 安装脚本先以 `--ignore-scripts` 获取 npm 包，再调用这个入口。发布包含新入口的 npm 包及对应 GitHub Release 后，ZIP 的最新版本安装流程才能完整使用。
 
 `submit-run` 和 `upload-file` 使用原生 CLI 登录凭证（`pippit-tool-cli login`），也可通过 `XYQ_ACCESS_KEY` 显式覆盖。保留的查询脚本 `get_thread.py` 仍需配置同一用户的 Bearer 凭证：
 

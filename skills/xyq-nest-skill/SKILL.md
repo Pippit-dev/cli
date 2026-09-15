@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video；用户要求视频超分、提升视频清晰度、擦字幕或去字幕时，使用 video-super-resolution / erase-video-subtitle。覆盖文生图、文生视频、图生视频、首尾帧生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度，或查询小云雀积分余额、剩余积分、credits 时也应触发；积分查询使用 pippit-tool-cli get-credit-balance。短剧生成、续写、改写、人物设定和分集创作应使用 xyq-short-drama-skill，不在本技能中执行。
+description: 通过小云雀的 AI 能力进行综合创作，支持生成和编辑图片/视频，并在用户明确要求图片或视频模型直出、指定图片或视频模型或直接调用 CLI 时使用 pippit-tool-cli generate-image / generate-video；用户要求视频超分、提升视频清晰度、擦字幕或去字幕时，使用 video-super-resolution / erase-video-subtitle。覆盖文生图、文生视频、图生视频、首尾帧生视频、视频编辑、风格转换、视频续写、视频复刻、TVC、宣传片、音乐 MV、产品广告、分镜和教育短视频等场景。当用户提到小云雀、xyq、上传参考图/视频/mp3或wav音频、查看生成进度，或查询小云雀积分余额、剩余积分、credits 时也应触发；积分查询使用 pippit-tool-cli get-credit-balance。
 user-invocable: true
 metadata:
   {
@@ -9,7 +9,7 @@ metadata:
         "emoji": "💬",
         "requires":
           {
-            "bins": ["python3", "pippit-tool-cli"],
+            "bins": ["python3", "node"],
             "env": ["XYQ_ACCESS_KEY"]
           },
         "primaryEnv": "XYQ_ACCESS_KEY"
@@ -23,6 +23,8 @@ metadata:
 
 小云雀是一个 AI 综合创作平台，同时为人类创作者和 Agent 设计。Agent 通过 Skill 入口理解任务、调用模型并自动编排工作流。
 
+每次开始执行本技能任务时，先按“前置要求”运行 `scripts/ensure-cli.js`，检查已有 CLI，不存在或缺少必需命令时获取最新版本。本文命令中的 `pippit-tool-cli` 均代表该脚本返回的 `cli_path`；实际执行时替换为带引号的绝对路径。
+
 **平台核心能力：**
 - **生成**：文生图、文生视频、图生视频、视频续写
 - **编辑**：局部修改、元素替换、镜头调整、风格迁移
@@ -33,7 +35,7 @@ metadata:
 
 ## 执行路由（必须先判断）
 
-积分余额查询优先走路由 F，不进入创作、视频处理或短剧工作流。
+积分余额查询优先走路由 E，不进入创作或视频处理工作流。
 
 ### 路由 A：图片模型直出
 
@@ -45,7 +47,7 @@ metadata:
 
 执行原则：
 
-1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用时报告阻塞，不要悄悄降级到会话 API。
+1. 执行前完成“前置要求”的CLI 安装检查，使用返回的 `cli_path`；失败时报告阻塞，不要悄悄降级到会话 API。
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认生成，按“用户确认与反问”规则征得明确确认后再运行。
 3. 保留用户原始 prompt，不要自行扩写、润色、翻译或增加风格词。
 4. `--model` 必填；用户未提供图片模型时，先询问使用哪个模型。只添加用户已经给出的 `--ratio`、`--resolution`、`--generate-image-count`、`--image` 参数，不补默认值。
@@ -79,7 +81,7 @@ pippit-tool-cli query-result \
 
 执行原则：
 
-1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用时报告阻塞，不要悄悄降级到会话 API。
+1. 执行前完成“前置要求”的CLI 安装检查，使用返回的 `cli_path`；失败时报告阻塞，不要悄悄降级到会话 API。
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认生成，按“用户确认与反问”规则征得明确确认后再运行。
 3. 保留用户原始 prompt，不要自行扩写、润色、翻译或增加风格词。
 4. 只添加用户已经给出的 `--model`、`--duration`、`--ratio`、`--resolution`、`--image`、`--video`、`--audio`、`--generate-type` 参数；未给参数交给 CLI 默认值。
@@ -114,7 +116,7 @@ pippit-tool-cli query-result \
 
 执行原则：
 
-1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用时报告阻塞，不要悄悄降级到会话 API。
+1. 执行前完成“前置要求”的CLI 安装检查，使用返回的 `cli_path`；失败时报告阻塞，不要悄悄降级到会话 API。
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认处理，按“用户确认与反问”规则征得明确确认后再运行。
 3. 把用户提供的本地视频路径和处理参数直接交给对应 CLI；缺少必填输入时先询问用户。
 4. 命令返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
@@ -136,21 +138,17 @@ pippit-tool-cli query-result \
 
 ### 路由 D：小云雀后端 Agent 编排
 
-需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出的创作需求，使用 `pippit-tool-cli submit-run` 提交消息，再用 `get_thread.py` 查询会话进展；明确的首尾帧请求走路由 B，明确的视频超分和擦字幕请求走路由 C；积分余额查询走路由 F。
+需要意图确认、脚本/分镜拆解、MV、TVC、局部编辑、复杂参考素材编排，或者用户未明确要求模型直出的创作需求，使用 `pippit-tool-cli submit-run` 提交消息，再用 `get_thread.py` 查询会话进展；明确的首尾帧请求走路由 B，明确的视频超分和擦字幕请求走路由 C；积分余额查询走路由 E。
 
-提交前运行 `command -v pippit-tool-cli` 和 `pippit-tool-cli submit-run --help` 确认 CLI 及命令可用；不可用时报告版本或安装阻塞。
+提交前完成“前置要求”的CLI 安装检查，使用返回的 `cli_path` 调用 `submit-run`；失败时报告版本或安装阻塞。
 
-### 路由 E：短剧工作流
-
-用户要求短剧生成、续写、改写、剧情扩展、人物设定、分集草稿或短剧会话文件处理时，停止本技能流程并转交 `xyq-short-drama-skill`，不要用 `pippit-tool-cli submit-run`、`generate-image` 或 `generate-video` 假装执行完整短剧流程。
-
-### 路由 F：积分余额查询
+### 路由 E：积分余额查询
 
 用户询问小云雀“积分余额”、“还剩多少积分”、“剩余 credits”或要求查询个人有效积分时，直接使用 `pippit-tool-cli get-credit-balance`。
 
 执行原则：
 
-1. 执行前用 `command -v pippit-tool-cli` 确认 CLI 可用；不可用或版本不支持该命令时报告阻塞，不要改走 `pippit-tool-cli submit-run`。
+1. 执行前完成“前置要求”的CLI 安装检查，使用返回的 `cli_path`；不可用或版本不支持该命令时报告阻塞，不要改走 `pippit-tool-cli submit-run`。
 2. 使用当前 CLI 登录凭证或显式配置的 `XYQ_ACCESS_KEY` 查询凭证所属用户的个人有效积分余额；无需传入用户 ID、`thread_id` 或 `run_id`。鉴权要求见“前置要求”。
 3. 这是只读查询，不需要积分消耗确认；不创建会话，不提交生成任务，也不调用 `get_thread.py` 或 `query-result` 轮询。
 4. 成功时读取 JSON 中字符串类型的 `total_remain_amount`，向用户展示当前有效积分余额；`"0"` 是有效的零余额。查询失败或缺少余额字段时报告错误，不得当作零余额。
@@ -177,7 +175,7 @@ pippit-tool-cli get-credit-balance --with-log-id
    - **Codex**：准确工具名是 `request_user_input`。仅在工具已暴露且当前模式允许时调用；不可用时退回普通聊天提问。不要在 Codex 中调用 `ask_user_question`。
    - **WorkBuddy**：准确工具名是 `ask_user_question`（Ask User Question）。需要用户补充、选择或确认时优先调用；工具未暴露时才退回普通聊天提问。
    - **Trae 及其他宿主**：先查看当前宿主实际暴露的工具，再使用同类结构化提问、确认或表单工具；不要臆造具体工具名。没有同类工具时退回普通聊天提问。
-2. 涉及 credits 消耗、真实生成、外部提交或不可逆操作时，必须等待用户明确答复；不要默认同意或超时后继续。路由 F 的只读积分余额查询不需要额外确认。
+2. 涉及 credits 消耗、真实生成、外部提交或不可逆操作时，必须等待用户明确答复；不要默认同意或超时后继续。路由 E 的只读积分余额查询不需要额外确认。
 3. 后端已经给出问题或选项时，保持原意传给用户，不要代替用户回答。
 4. 当前宿主没有结构化提问工具，或当前模式不允许调用时，使用一条简洁的普通聊天问题并暂停。
 5. 收到回复后，把用户答案原样发回同一 `thread_id`，获取新的 `run_id`，再继续轮询；不要新开会话。
@@ -196,7 +194,29 @@ pippit-tool-cli get-credit-balance --with-log-id
 
 ## 前置要求
 
-创建会话/发送消息、媒体上传、图片/视频模型直出、视频处理和积分余额查询（路由 A/B/C/D/F）使用原生 CLI。首次使用时运行网页登录，CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库：
+### 检查并按需安装 CLI
+
+运行环境需要 Python 3、Node.js 16+，支持执行本地程序。首次安装或自动升级 CLI 时需要 npm、可写的用户缓存目录、访问 npm 源及 GitHub Release 的网络、`curl` 和解压工具（macOS/Linux 的 `tar`，Windows 的 PowerShell）。复用已有 CLI 不需要 npm 或下载网络；安装或升级缺少这些能力时，报告具体安装阻塞。
+
+开始执行本技能任务时运行以下脚本。它先检查 PATH 中的 CLI，再检查自身的安装缓存；找到命令齐全的 CLI 就复用，不访问 npm 或下载二进制。两处均不存在 CLI，或已有 CLI 的必需命令帮助检查返回非零退出码时，获取 npm `latest` 并安装或升级。PATH 中的旧版本缺少命令但缓存可用时，直接复用缓存，不重复升级。同一任务内的提交、轮询、上传和下载复用返回路径。
+
+```bash
+node "{baseDir}/scripts/ensure-cli.js"
+```
+
+需要安装或升级时，脚本跳过 npm 生命周期脚本获取 `@pippit-dev/cli@latest`，再调用包内的 `scripts/install-cli.js` 只安装 CLI。新版本通过全部检查后保存在 `~/.cache/pippit-tool-cli/xyq-skill/<平台>-<架构>/current`，供后续任务复用。它不会安装、清理全局 Skill，也不要求全局 npm 写入权限。安装与检查日志写入 stderr，成功时 stdout 返回 JSON：
+
+```json
+{"cli_path":"/absolute/cache/path/current/node_modules/@pippit-dev/cli/bin/pippit-tool-cli","version":"实际安装版本"}
+```
+
+保存 `cli_path`，后续用它替换所有示例中的 `pippit-tool-cli`。不要依赖上一次 shell 调用中的临时环境变量；Windows PowerShell 用 `& "绝对路径" 参数` 调用。保留安装缓存以便后续任务复用；如果路径已被清理，重新运行安装脚本。
+
+脚本验证 CLI 版本命令，以及 `login`、`submit-run`、`upload-file`、`download-result`、`query-result`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`get-credit-balance` 的 `--help`。检查不发送创作请求，也不需要凭据。已有 CLI 缺少必需命令时自动升级；版本命令无法运行或检查超时时报告运行错误。单次调用最多下载安装一次，最新版本仍不支持必需命令时停止并报告，不反复升级。升级成功前保留原安装；下载失败或最新包缺少只安装 CLI 的入口时，报告安装阻塞。
+
+### 配置凭据
+
+创建会话/发送消息、媒体上传、图片/视频模型直出、视频处理和积分余额查询（路由 A/B/C/D/E）使用原生 CLI。首次使用时运行网页登录，CLI 会自动申请或复用本机专属凭证，并保存到系统安全凭证库：
 
 ```bash
 pippit-tool-cli login
@@ -212,7 +232,7 @@ export XYQ_ACCESS_KEY="your-access-key"
 
 原生 CLI 和保留的 Python 脚本携带用户密钥的 API 请求固定发往 `https://xyq.jianying.com`，不接受 `XYQ_OPENAPI_BASE` 或 `XYQ_BASE_URL` 覆盖。CLI 拒绝 API 跨域重定向，Python API 脚本禁止自动重定向；上传只通过 Authorization 请求头携带密钥。
 
-所有 CLI 路由要求 `pippit-tool-cli` 在 `PATH` 中可用且支持对应命令。保留的 Python 脚本仅使用标准库。
+所有 CLI 路由使用本次安装检查返回的 `cli_path`。保留的 Python 脚本仅使用标准库；安装检查脚本仅使用 Node.js 内置模块。
 
 ## 使用方法
 
@@ -242,7 +262,7 @@ python3 {baseDir}/scripts/get_thread.py --thread-id THREAD_ID --run-id RUN_ID --
 
 ### 3. 上传文件
 
-先用 `pippit-tool-cli upload-file --help` 确认当前 CLI 支持此命令；缺少命令时报告版本或安装阻塞。该命令使用 CLI 登录凭证或显式设置的 `XYQ_ACCESS_KEY`，成功输出 `{"asset_id":"..."}`。
+先完成“前置要求”的CLI 安装检查，再使用返回的 `cli_path` 调用 `upload-file`；缺少命令时报告版本或安装阻塞。该命令使用 CLI 登录凭证或显式设置的 `XYQ_ACCESS_KEY`，成功输出 `{"asset_id":"..."}`。
 
 - 当用户提供了参考的文件地址时，先进行文件上传，仅支持图片、视频、`.mp3/.wav` 音频。
 - 单次指令执行仅支持单个文件，多个文件可并行调用，单个文件必须小于 500 MB（500000000 字节，达到上限会拒绝上传）。
@@ -303,7 +323,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 ### 场景 2：用户明确要求图片模型直出
 
 ```
-1. command -v pippit-tool-cli  →  确认 CLI 可用
+1. 按“前置要求”检查并按需安装 CLI，后续使用返回的 cli_path
 2. 检查图片模型：用户未提供时先询问，不要自行选择
 3. pippit-tool-cli generate-image --prompt "用户原始描述" --model IMAGE_MODEL [仅添加用户已给出的其他参数]
 4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
@@ -314,7 +334,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 ### 场景 3：用户明确要求视频模型直出（含首尾帧）
 
 ```
-1. command -v pippit-tool-cli  →  确认 CLI 可用
+1. 按“前置要求”检查并按需安装 CLI，后续使用返回的 cli_path
 2. 普通视频模型直出：pippit-tool-cli generate-video --prompt "用户原始描述" [仅添加用户已给出的其他参数]
 3. 首尾帧直出：确认两张图片的首帧/尾帧角色，按顺序执行 generate-video --image FIRST_FRAME_PATH --image LAST_FRAME_PATH --generate-type 1
 4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
@@ -354,7 +374,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 ### 场景 7：用户要求视频超分或擦字幕
 
 ```
-1. command -v pippit-tool-cli  →  确认 CLI 可用
+1. 按“前置要求”检查并按需安装 CLI，后续使用返回的 cli_path
 2. 根据用户意图调用 video-super-resolution 或 erase-video-subtitle，并传入用户提供的本地视频路径和处理参数
 3. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
 4. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
@@ -446,7 +466,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 
 ## 核心原则：用户侧不做创作，只做传话
 
-你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出和视频处理路由把用户原始参数传给 CLI。积分余额查询按路由 F 直接查询并展示余额；以下步骤适用于创作和视频处理任务：
+你（用户侧 Agent）的职责是**搬运工**，不是创作者。会话 API 路由由后端 Agent 负责理解需求、拆解分镜、编排工作流、选模型、写 prompt；图片/视频模型直出和视频处理路由把用户原始参数传给 CLI。积分余额查询按路由 E 直接查询并展示余额；以下步骤适用于创作和视频处理任务：
 
 1. **准备素材**：会话 API 路由用 `pippit-tool-cli upload-file` 把本地文件转为 asset_id；图片/视频模型直出和视频处理路由把本地路径直接交给对应 CLI；首尾帧任务固定传 `--generate-type 1` 并保持首帧、尾帧顺序
 2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，视频超分和擦字幕调用对应的视频处理命令，其余通用创作任务把用户的原始描述 + asset_id 原封不动发给 `pippit-tool-cli submit-run`

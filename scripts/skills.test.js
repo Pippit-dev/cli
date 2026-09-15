@@ -42,10 +42,11 @@ for (const requiredText of [
   "web_thread_link",
   "request_user_input",
   "ask_user_question",
-  "xyq-short-drama-skill",
 ]) {
   assert.ok(generalSkill.includes(requiredText), `xyq-skill missing contract: ${requiredText}`);
 }
+
+assert.ok(!generalSkill.includes("xyq-short-drama-skill"), "xyq-skill must not depend on the short-drama Skill");
 
 for (const requiredText of ["request_user_input", "ask_user_question", "credits"]) {
   assert.ok(

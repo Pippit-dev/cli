@@ -34,6 +34,9 @@ jobs:
       - name: Test runtime artifact assembly
         run: node scripts/prepare-canvas-runtime.test.js
 
+      - name: Test CLI-only installation and Skill bootstrap
+        run: node scripts/install-cli.test.js
+
   go:
     name: Go tests
     runs-on: ubuntu-22.04
