@@ -15,10 +15,6 @@ ACCESS_KEY = os.environ.get("XYQ_ACCESS_KEY", "")
 GET_THREAD_PATH = "/api/biz/v1/skill/get_thread"
 HTTP_TIMEOUT_SECONDS = 30 * 60
 
-if not ACCESS_KEY:
-    print("错误：请设置 XYQ_ACCESS_KEY 环境变量", file=sys.stderr)
-    sys.exit(1)
-
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -41,6 +37,9 @@ def redact_error(value):
 
 
 def _headers():
+    if not ACCESS_KEY:
+        print("错误：请设置 XYQ_ACCESS_KEY 环境变量", file=sys.stderr)
+        sys.exit(1)
     return {
         "Authorization": f"Bearer {ACCESS_KEY}",
         "Content-Type": "application/json",

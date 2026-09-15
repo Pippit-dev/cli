@@ -5,6 +5,7 @@ import importlib
 import io
 import os
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 from unittest import mock
@@ -25,6 +26,37 @@ with mock.patch.dict(os.environ, {
 
 
 class SecurityTests(unittest.TestCase):
+    def test_help_and_argument_validation_without_credentials(self):
+        env = os.environ.copy()
+        env.pop("XYQ_ACCESS_KEY", None)
+        for args, exit_code, expected in (
+            (["--help"], 0, "--thread-id"),
+            ([], 2, "--thread-id"),
+            (["--thread-id", "thread_test", "--after-seq", "invalid"], 2, "--after-seq"),
+        ):
+            with self.subTest(args=args):
+                result = subprocess.run(
+                    [sys.executable, "-B", str(SCRIPT_DIR / "get_thread.py"), *args],
+                    env=env, capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, exit_code, result.stderr)
+                self.assertIn(expected, result.stdout + result.stderr)
+                self.assertNotIn("错误：请设置 XYQ_ACCESS_KEY", result.stderr)
+
+    def test_missing_credentials_block_requests_before_network(self):
+        for method in ("GET", "POST"):
+            stderr = io.StringIO()
+            with self.subTest(method=method), mock.patch.object(common, "ACCESS_KEY", ""):
+                with mock.patch.object(common, "authenticated_open") as send:
+                    with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+                        if method == "GET":
+                            common.api_get(common.GET_THREAD_PATH)
+                        else:
+                            common.get_thread("thread_test")
+                    self.assertEqual(raised.exception.code, 1)
+                    send.assert_not_called()
+                self.assertIn("请设置 XYQ_ACCESS_KEY", stderr.getvalue())
+
     def test_environment_cannot_change_authenticated_origin(self):
         self.assertEqual(common.XYQ_BASE, "https://xyq.jianying.com")
         with mock.patch.object(common, "authenticated_open", return_value=io.BytesIO(b'{}')) as send:
