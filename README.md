@@ -9,210 +9,50 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 通用创作技能，支持 NestAgent 图片/视频生成与编辑、个人积分余额查询，并在视频模型直出时调用 `pippit-tool-cli generate-video`。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
 
 ### 技能路由
 
-- 小云雀积分余额、剩余积分或 credits 查询由 `xyq-skill` 调用 `pippit-tool-cli get-credit-balance`，直接展示个人有效积分余额，无需创建会话或轮询。
-- 通用图片/视频生成、编辑和复杂参考素材编排使用 `xyq-skill`。
-- 用户明确要求视频模型直出、指定视频模型或直接调用 CLI 时，由 `xyq-skill` 调用 `pippit-tool-cli generate-video`，再用 `query-result` 查询和下载结果。
-- 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`，不要与通用创作流程混用。
+- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
+- 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
 
-两份技能需要用户补充、选择或确认时，优先调用宿主的结构化提问工具：Codex 使用 `request_user_input`，WorkBuddy 使用 `ask_user_question`，Trae 和其他宿主使用实际暴露的同类工具；没有同类工具时退回普通聊天提问。
+需要补充、选择或确认时，使用宿主实际暴露且当前模式允许的工具：Codex 的 `request_user_input` / `request_user_input_async`、WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。
 
-## 通用 NestAgent 技能
+## 小云雀图片、视频与媒体处理技能
 
-`xyq-skill` 通过接入小云雀 NestAgent 的综合创作能力，实现 AI 图片/视频生成、编辑、风格转换、图片/视频/mp3或wav音频文件上传、进度查询和结果下载；视频模型直出请求直接使用 `pippit-tool-cli generate-video`。
+入口：[skills/xyq-nest-skill/SKILL.md](skills/xyq-nest-skill/SKILL.md)。普通生成请求也直接使用对应 CLI；素材路径交给命令内部上传，异步查询自动下载，最后通过宿主交付真实媒体附件。
 
-### 功能特性
+| 操作 | CLI | 文档 |
+| --- | --- | --- |
+| 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
+| 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
+| 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
+| 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
+| 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
+| 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
+| 查询并下载结果 | `query-result` | [查询](skills/xyq-nest-skill/commands/query-result.md) |
+| 查积分 | `get-credit-balance` | [积分](skills/xyq-nest-skill/commands/get-credit-balance.md) |
 
-| 功能 | 说明 |
-|------|------|
-| 创建会话 / 发送消息 | 向小云雀发送自然语言指令，生成图片或视频。 |
-| 查询会话进展 | 增量拉取会话消息，轮询创作进度和产物结果。 |
-| 积分余额查询 | 调用 `get-credit-balance`，读取 `total_remain_amount` 并展示个人有效积分余额。 |
-| 上传文件 | 上传图片/视频/mp3或wav音频到小云雀资产库，获取 `asset_id` 用于编辑和参考。 |
-| 下载结果 | 批量下载生成的图片/视频到本地，支持并行下载。 |
-| 视频模型直出 | 调用 `generate-video` 提交请求，展示 `web_thread_link`，再用 `query-result` 查询并下载视频。 |
-
-小云雀平台能力覆盖：
-
-- 生成：文生图、文生视频、图生视频、视频续写。
-- 编辑：局部修改、元素替换、镜头调整、风格迁移。
-- 复杂创作：复刻视频/TVC/宣传片、音乐 MV 生成、产品展示片制作。
-
-### 配置
-
-单独上传 `xyq-skill` ZIP 时，保留 Skill 内的 `scripts/ensure-cli.js`。每次开始执行 Skill 任务先运行：
+### 安装与执行
 
 ```bash
 node /path/to/xyq-skill/scripts/ensure-cli.js
 ```
 
-环境需要 Node.js 16+ 和 Python 3；首次安装或自动升级时需要 npm、`curl`、系统解压工具（macOS/Linux 的 `tar`，Windows 的 PowerShell）及访问 npm 源和 GitHub Release 的网络。脚本优先复用 PATH 或自身缓存中命令齐全的 CLI；均不存在或缺少必需命令时获取 `@pippit-dev/cli@latest`，安装到 `~/.cache/pippit-tool-cli/xyq-skill/<平台>-<架构>/current`，返回 `{ "cli_path": "CLI绝对路径", "version": "实际安装版本" }`。后续示例中的 `pippit-tool-cli` 替换为该绝对路径；同一任务内复用，不在轮询时重复安装。已有 CLI 缺少关键命令时自动升级；升级后的缓存可被后续任务复用，避免 PATH 旧版本触发重复下载。每次调用最多下载安装一次，升级失败保留原安装；最新版本仍缺少必需命令时报告阻塞。
+保存返回的 `cli_path`，后续用带引号的绝对路径替换示例中的命令名。同一任务复用路径；已有命令齐全的 CLI 不下载，缺少必需命令时自动升级。ZIP 应包含整个 Skill 目录，具体环境条件与故障处理见 [安装说明](skills/xyq-nest-skill/scripts/install.md)。`node scripts/install-cli.js` 是 npm 包内仅安装 CLI 的入口，不安装或清理全局 Skill。
 
-新入口 `node scripts/install-cli.js` 只安装 npm 包对应版本的 CLI 二进制，不安装或清理全局 Skill。ZIP 安装脚本先以 `--ignore-scripts` 获取 npm 包，再调用这个入口。发布包含新入口的 npm 包及对应 GitHub Release 后，ZIP 的最新版本安装流程才能完整使用。
+Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原生资产命令使用 `cli_path`，语义命令通过 `node "CANVAS_ENTRY" canvas command ...` 执行。检查会真实加载 npm 内的离线命令目录，避免把原生帮助误当作运行时已就绪。画布编辑使用独立的 [查询、编辑与回读流程](skills/xyq-nest-skill/workflows/canvas-edit.md)，不套用媒体轮询。
 
-`submit-run` 和 `upload-file` 使用原生 CLI 登录凭证（`pippit-tool-cli login`），也可通过 `XYQ_ACCESS_KEY` 显式覆盖。保留的查询脚本 `get_thread.py` 仍需配置同一用户的 Bearer 凭证：
+登录后选择生成或处理命令，统一接入 [异步结果与媒体交付](skills/xyq-nest-skill/workflows/async-delivery.md)。完整基础案例见 [生成一张图并交付](skills/xyq-nest-skill/examples/generate-and-deliver.md)，组合案例由入口按需引导。
 
-```bash
-export XYQ_ACCESS_KEY="<access-key>"
-```
+### 模块维护
 
-CLI 和 Python 脚本携带用户密钥的 API 请求地址固定为 `https://xyq.jianying.com`，不接受 `XYQ_OPENAPI_BASE` / `XYQ_BASE_URL` 覆盖。CLI 拒绝 API 跨域重定向，Python API 脚本禁止自动重定向。上传只在 Authorization 请求头携带密钥。
-
-### 创建会话 / 发送消息
-
-```bash
-# 创建新会话
-pippit-tool-cli submit-run --message "生一个动漫视频"
-
-# 向已有会话发送消息
-pippit-tool-cli submit-run \
-  --message "再生成一个故事视频" \
-  --thread-id THREAD_ID
-
-# 携带参考文件发送
-pippit-tool-cli submit-run \
-  --message "参考这个视频做修改" \
-  --asset-ids asset_id1 --asset-ids asset_id2
-```
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--message` | 是 | 非空白的创作指令，原样发送。 |
-| `--thread-id` | 否 | 已有会话 ID，不传则创建新会话。 |
-| `--asset-ids` | 否 | 每次传一个资产 ID；多个素材重复该参数。 |
-
-返回示例：
-
-```json
-{
-  "thread_id": "90f05e0c-...",
-  "run_id": "abc123-...",
-  "web_thread_link": "https://xyq.jianying.com/..."
-}
-```
-
-### 查询会话进展
-
-```bash
-python3 skills/xyq-nest-skill/scripts/get_thread.py \
-  --thread-id THREAD_ID \
-  --run-id RUN_ID \
-  --after-seq 0
-```
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--thread-id` | 是 | 会话 ID。 |
-| `--run-id` | 否 | 运行 ID。 |
-| `--after-seq` | 否 | 增量拉取起始序号，默认 `0`。 |
-
-脚本会返回会话消息和产物条目。后续轮询时，根据已获取消息更新 `after_seq`。
-
-### 上传文件
-
-使用顶层 `upload-file --path`，每次上传一个本地图片、视频或 MP3/WAV 音频文件，文件须小于 500 MB（500000000 字节）。成功返回 `{"asset_id":"..."}`，可直接传给 `submit-run --asset-ids`。
-
-```bash
-# 上传图片
-pippit-tool-cli upload-file --path /path/to/image.png
-
-# 上传视频
-pippit-tool-cli upload-file --path /path/to/video.mp4
-
-# 上传音频
-pippit-tool-cli upload-file --path /path/to/audio.mp3
-```
-
-仅支持 `image/*`、`video/*` 和 `.mp3/.wav` 音频文件，单文件大小限制 500 MB。
-
-返回示例：
-
-```json
-{
-  "asset_id": "asset_xxx"
-}
-```
-
-### 下载结果
-
-每个产物 URL 调用一次 CLI，`--output-path` 必须包含文件名：
-
-```bash
-pippit-tool-cli download-result \
-  --url "URL1" \
-  --output-path "./xyq_output/storyboard_01.png"
-```
-
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--url` | 是 | 单个产物的下载 URL。 |
-| `--output-path` | 是 | 包含文件名的本地目标路径。 |
-| `--updated-at` | 否 | 远端文件真实更新时间（Unix 秒），用于判断是否覆盖已有文件。 |
-| `--workers` | 否 | 下载 worker 数，默认 `5`；当前单 URL 调用实际只使用一个 worker。 |
-
-Skill 沿用用户指定的输出目录，未指定时使用 `./xyq_output`，按 URL 列表顺序从 `01` 编号，组成 `前缀_01.ext`（无前缀时为 `01.ext`）。扩展名优先取 URL 查询参数 `filename`，其次取 URL 路径，无法取得时使用 `.bin`。多文件逐项调用，可最多并行执行 5 个命令；重试保持原目标路径。
-
-下载成功返回示例：
-
-```json
-{
-  "output_path": "./xyq_output/storyboard_01.png",
-  "downloaded": ["./xyq_output/storyboard_01.png"]
-}
-```
-
-未传 `--updated-at` 时，CLI 默认跳过已有文件，返回 `already_exist`，此时 `downloaded` 为 `null`；传入真实更新时间后，仅当本地文件修改时间早于该时间时覆盖更新。跳过不代表已校验本地内容与远端一致。
-
-下载失败时命令以非零退出码返回错误，不保证输出 JSON。Skill 汇总各次调用的下载成功、已存在跳过和失败项，只对失败项重试一次；仍有失败时明确报告未完整交付。
-
-### 典型示例
-
-文生视频：
-
-```text
-1. pippit-tool-cli submit-run --message "生成一个赛博朋克风格的城市夜景视频"
-2. 每 10 秒轮询：
-   get_thread.py --thread-id THREAD_ID --run-id RUN_ID --after-seq SEQUENCE
-3. 拿到产物 URL 后下载：
-   pippit-tool-cli download-result --url "URL1" --output-path "./output/cyberpunk_01.mp4"
-   pippit-tool-cli download-result --url "URL2" --output-path "./output/cyberpunk_02.mp4"
-```
-
-编辑已有视频：
-
-```text
-1. pippit-tool-cli upload-file --path /path/to/video.mp4
-2. pippit-tool-cli submit-run --message "把背景换成星空" --asset-ids asset_id
-3. 按文生视频流程轮询和下载。
-```
-
-多参考图/视频生成：
-
-```text
-1. pippit-tool-cli upload-file --path /path/to/ref1.png
-2. pippit-tool-cli upload-file --path /path/to/ref2.png
-3. pippit-tool-cli upload-file --path /path/to/ref3.mp4
-4. pippit-tool-cli submit-run --message "根据参考图和视频生成科普故事视频" --asset-ids asset_id1 --asset-ids asset_id2 --asset-ids asset_id3
-5. 按文生视频流程轮询和下载。
-```
-
-在已有会话中追加需求：
-
-```text
-1. pippit-tool-cli submit-run --message "把刚才的视频加个片头" --thread-id EXISTING_THREAD_ID
-2. 使用新的 run_id 轮询和下载。
-```
-
-轮询策略：
-
-- 间隔：每 10 秒查询一次。
-- 增量拉取：首次 `--after-seq 0`，后续根据已获取消息数更新 seq。
-- 意图确认：如果智能体追问用户，先展示问题，再用同一个 `thread_id` 提交用户回复。
-- 超时：连续轮询 48 小时无结果则停止。
-- 错误重试：单次失败可重试 1 次，连续 3 次失败则停止。
+- `SKILL.md` 维护能力边界、意图到命令的路由及必要执行规则。
+- `commands/` 每个模块维护适用场景、必填与可选参数、最小调用、真实返回契约及失败处理；授权相关命令合并在同一文档。
+- `workflows/` 维护共用轮询与媒体交付规则；`examples/` 展示基础完整流程及易混淆的组合场景，引用规则，不复制参数手册。
+- 新增 CLI 时补命令文档、入口路由、`ensure-cli.js` 必需命令集合和安装测试；声明是同步结果还是异步任务，是否需要附加运行时及其检查方式，按需接入交付流程，补正常、缺输入和易混淆场景用例。
+- 文档使用 Skill 内相对链接，打包时保留结构。规范副本位于 `skills/xyq-nest-skill/`，项目发现入口 `.agents/skills/xyq-skill` 指向该目录。
+- 修改后运行 `node scripts/skills.test.js` 与 `node scripts/install-cli.test.js`，检查引用完整、保留命令与安装检查一致及缺命令升级/缓存复用；Agent 行为用例见 [测试场景](skills/xyq-nest-skill/tests/agent_test_cases.md)。这些检查不代表真实生成已验证。
 
 ## 短剧工作流技能
 
@@ -451,4 +291,4 @@ pippit-tool-cli query-result \
 
 原生 CLI 命令通过 `pippit-tool-cli login` 打开小云雀网页授权，并把本机设备专属凭证保存到系统安全凭证库；Access Key 不会显示在终端。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机登录。
 
-CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。`skills/xyq-nest-skill/scripts` 下的独立 Python 脚本尚未接入原生 CLI 凭证库，当前仍需要该环境变量。
+CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。会话提交和查询共享上述凭据。
