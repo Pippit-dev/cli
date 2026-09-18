@@ -53,7 +53,7 @@ metadata:
 4. `--model` 必填；用户未提供图片模型时，先询问使用哪个模型。只添加用户已经给出的 `--ratio`、`--resolution`、`--generate-image-count`、`--image` 参数，不补默认值。
 5. `--resolution` 的使用说明是：仅 `seedream_5.0_pro` 支持 `1K`、`2K`、`4K`。不要在 skill 侧维护额外 allowlist 或自行改写用户值，实际合法性由服务端决定。
 6. `generate-image` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
-7. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `images[].output_path`。
+7. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功后按“媒体交付完成标准”逐项交付 `images[].output_path` 对应的图片文件。
 
 ```bash
 pippit-tool-cli generate-image \
@@ -88,7 +88,7 @@ pippit-tool-cli query-result \
 5. 普通用户支持模型 `Seedance_2.0_mini_lite`；VIP 专属模型包括 `seedance2.0_vision`、`seedance2.0_fast_vision`、`Seedance_2.0_mini` 和 `Seedance_2.5`。该列表仅用于指导用户选择和传入准确的 `--model` 值，不要在 skill 侧增加模型枚举校验，实际合法性由服务端决定。
 6. 首尾帧请求固定传 `--generate-type 1`，并按首帧、尾帧顺序传入两次 `--image`，不得重排。用户未明确两张图片的角色或缺少任一张时，先询问用户；不要在 skill 侧维护额外的 `generate_type` 枚举 allowlist，其他值原样交给服务端处理。
 7. `generate-video` 返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
-8. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
+8. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功后按“媒体交付完成标准”逐项交付 `videos[].output_path` 对应的视频文件。
 
 ```bash
 pippit-tool-cli generate-video --prompt "用户原始描述" --model "Seedance_2.5"
@@ -120,7 +120,7 @@ pippit-tool-cli query-result \
 2. 真实提交会消耗 credits；如果用户本轮尚未明确确认处理，按“用户确认与反问”规则征得明确确认后再运行。
 3. 把用户提供的本地视频路径和处理参数直接交给对应 CLI；缺少必填输入时先询问用户。
 4. 命令返回后，保存 `thread_id`、`run_id`，并立即向用户展示 `web_thread_link`。
-5. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功时展示并下载 `videos[].output_path`。
+5. 每隔 10 秒调用 `query-result`，直到 `completed=true`。出现 `error_message` 时停止并报告；成功后按“媒体交付完成标准”逐项交付 `videos[].output_path` 对应的视频文件。
 
 ```bash
 pippit-tool-cli video-super-resolution \
@@ -296,6 +296,8 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 
 逐项收集下载结果；单项失败不阻断其他文件，只对失败项重试一次，仍失败则记录该产物、目标路径及 CLI 返回的错误。
 
+下载成功或复用已有文件后，按“媒体交付完成标准”将真实图片/视频作为附件或可预览媒体逐项展示给用户；只下载到本地不代表已完成交付。
+
 ## 典型工作流
 
 理解这些工作流，才能正确组合上面的 CLI 和脚本完成用户需求。
@@ -315,9 +317,9 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
       → 使用 `thread_id` 重新提交任务（保持同一会话，产生新的 run_id）
       → 回到步骤 2 继续轮询（可能多轮，直到不再意图确认）
     - 如果 content 中包含产物 URL：
-      → 信息展示 → 下载产物 → 结果展示
+      → 信息展示 → 下载产物 → 逐项交付媒体附件
 5. 自动下载：按“下载结果”的目录、前缀和编号规则，为每个产物 URL 调用 pippit-tool-cli download-result --url URL --output-path 完整文件路径
-6. 汇总每次调用的下载成功、已存在跳过和失败结果，向用户展示产物链接及对应的本地文件
+6. 按“媒体交付完成标准”逐项交付已下载或复用的图片/视频附件，并说明下载或交付失败的项目
 ```
 
 ### 场景 2：用户明确要求图片模型直出
@@ -328,7 +330,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 3. pippit-tool-cli generate-image --prompt "用户原始描述" --model IMAGE_MODEL [仅添加用户已给出的其他参数]
 4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
 5. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
-6. completed=true 后展示并下载 images[].output_path；出现 error_message 时停止并报告
+6. completed=true 后按“媒体交付完成标准”逐项交付 images[].output_path 对应的图片文件；出现 error_message 时停止并报告
 ```
 
 ### 场景 3：用户明确要求视频模型直出（含首尾帧）
@@ -339,7 +341,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 3. 首尾帧直出：确认两张图片的首帧/尾帧角色，按顺序执行 generate-video --image FIRST_FRAME_PATH --image LAST_FRAME_PATH --generate-type 1
 4. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
 5. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
-6. completed=true 后展示并下载 videos[].output_path；出现 error_message 时停止并报告
+6. completed=true 后按“媒体交付完成标准”逐项交付 videos[].output_path 对应的视频文件；出现 error_message 时停止并报告
 ```
 
 ### 场景 4：用户提供图片/视频/音频要求编辑修改或作为参考（如"参考这个视频做一个新的"、"用这首歌做MV"）
@@ -378,7 +380,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 2. 根据用户意图调用 video-super-resolution 或 erase-video-subtitle，并传入用户提供的本地视频路径和处理参数
 3. 拿到 thread_id、run_id 和 web_thread_link，立即展示 web_thread_link
 4. 每隔 10 秒调用 query-result --thread-id THREAD_ID --run-id RUN_ID --download-dir OUTPUT_DIR
-5. completed=true 后展示并下载 videos[].output_path；出现 error_message 时停止并报告
+5. completed=true 后按“媒体交付完成标准”逐项交付 videos[].output_path 对应的视频文件；出现 error_message 时停止并报告
 ```
 
 ### 轮询策略
@@ -449,11 +451,13 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 
 单文件下载失败时，命令以非零退出码返回错误，不保证输出 JSON；不能只检查 JSON 中是否有 `errors` 来判断成功。由用户侧 Agent 汇总各次调用的 `downloaded`、`already_exist` 和失败项，不再依赖批量返回的 `output_dir`、`total`。
 
-## 会话 API 路由的下载完成标准
+## 媒体交付完成标准
 
-- run 结束后，先处理意图确认或流程中断；收到产物 URL 后才进入下载交付。
-- 每个待交付产物都要有对应结果：本次下载成功、已存在而跳过，或下载失败。只有所有产物均已下载或明确复用已有文件时，才能报告本地交付完成。
-- 已存在跳过的文件须单独说明，不能计为本次新下载；仍有失败项时报告“生成已完成，部分产物下载失败”，列出失败项和原始产物链接，不宣称全部下载完成。
+- 本标准适用于会话 API、图片/视频模型直出及视频处理路由。会话 run 结束后，先处理意图确认或流程中断；收到最终产物后再进入下载和交付。
+- 确认每个待交付产物已下载，或可明确复用对应的已有文件；检查本地文件存在且非空。已存在而跳过的文件不能计为本次新下载。
+- 使用当前宿主提供的文件交付工具，将每个真实图片/视频文件作为附件或可预览媒体展示在回复中；宿主通过内置媒体渲染能力交付时，按其规定的方式引用文件。不能只发送 URL、文件路径或文件列表来代替媒体附件。
+- 只有所有待交付媒体均经宿主交付成功后，才能宣称“交付完成”；生成成功、下载成功和附件交付成功须分别判断，不能仅凭下载成功就宣称用户已收到媒体。
+- 下载失败、附件交付失败或宿主不支持媒体交付时，明确说明未交付的项目及原因；仍应交付其他可用媒体。原始产物链接和本地路径可作为补充信息提供，但不能据此宣称全部交付完成。
 
 ## 向用户展示内容
 
@@ -462,7 +466,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
   - 展示过程中的创作信息等，继续轮询
 - 任务完成（run 结束）：
   - 若涉及意图确认/流程中断（如"请回答以下问题"）→ 按“用户确认与反问”规则优先调用结构化提问工具 → 等待用户回复 → 使用同一 `thread_id` 重新提交任务 → 继续轮询（可能多轮）
-  - 若 content 中包含产物 URL：展示来自 `get_thread` 返回的 `messages` 的产物链接，以及对应本地文件的可点击绝对路径；区分本次下载、已存在跳过和下载失败，并按上述完成标准说明交付状态。
+  - 若 content 中包含产物 URL：下载对应文件，并按“媒体交付完成标准”逐项将真实图片/视频作为附件或可预览媒体展示给用户；产物链接和本地路径仅作补充，不能替代附件交付。存在未交付项时明确说明。
 
 ## 核心原则：用户侧不做创作，只做传话
 
@@ -471,7 +475,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 1. **准备素材**：会话 API 路由用 `pippit-tool-cli upload-file` 把本地文件转为 asset_id；图片/视频模型直出和视频处理路由把本地路径直接交给对应 CLI；首尾帧任务固定传 `--generate-type 1` 并保持首帧、尾帧顺序
 2. **提交任务**：先按“执行路由”判断；图片模型直出调用 `pippit-tool-cli generate-image`，视频模型直出调用 `pippit-tool-cli generate-video`，视频超分和擦字幕调用对应的视频处理命令，其余通用创作任务把用户的原始描述 + asset_id 原封不动发给 `pippit-tool-cli submit-run`
 3. **传话**：根据 `get_thread.py` 返回的消息列表，展示过程中的意图询问、创作信息等
-4. **取件**：会话 API 路由用 `get_thread.py` 轮询，图片/视频模型直出和视频处理路由用 `query-result` 轮询 → 检查结果 → 下载产物 → 结果展示给用户
+4. **取件**：会话 API 路由用 `get_thread.py` 轮询，图片/视频模型直出和视频处理路由用 `query-result` 轮询 → 检查结果 → 下载产物 → 通过宿主交付真实媒体附件
 
 **绝对不要做的事：**
 - 不要替用户扩写、润色、翻译 prompt（用户说"帮我推演分镜"，就直接传"帮我推演分镜"，不要自己先写个分镜表再逐条发）
@@ -490,7 +494,7 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 → pippit-tool-cli upload-file --path /path/to/ref3.png →  拿到 asset_id3
 → pippit-tool-cli submit-run --message "根据参考图、视频生成xxx" --asset-ids asset_id1 --asset-ids asset_id2 --asset-ids asset_id3  →  拿到 web_thread_link，立即展示给用户
 → 轮询 ─┬─ 意图确认 → 用户确认 → 使用 thread_id 重新提交 → 继续轮询
-        └─ 无意图确认 → 信息展示 → 下载产物 → 结果展示
+        └─ 无意图确认 → 信息展示 → 下载产物 → 逐项交付媒体附件
 ```
 
 **错误示例：**
@@ -506,5 +510,5 @@ CLI 默认跳过已存在的目标文件，返回 `already_exist`。仅在来源
 - 创建会话时 `message` 是用户的指令要求，不能为空
 - 查询会话时可用 --after-seq 做增量拉取，便于轮询新消息（含 assistant 回复与生图/生视频结果）
 - 上传文件仅支持图片（image/*）、视频（video/*）和 `.mp3/.wav` 音频文件，其他类型会被拒绝，文件必须小于 500 MB（500000000 字节）
-- 生成过程中将过程中的创作信息展示给用户；任务完成后给出**产物结果（图片/视频）URL链接**和下载的**本地文件列表**。
+- 生成过程中将创作信息展示给用户；任务完成后，必须通过宿主的文件交付或媒体渲染能力，将**真实图片/视频作为附件或可预览媒体逐项展示**。不能只回复产物 URL 或本地文件路径；交付失败时如实说明。
 - 图片/视频模型直出和视频处理任务必须保留 CLI 返回的 `thread_id` / `run_id`，并用 `query-result` 取回最终图片或视频。
