@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 
 const REQUIRED_COMMANDS = [
-  "login", "submit-run", "upload-file", "download-result", "query-result",
+  "status", "login", "logout", "query-result",
   "generate-image", "generate-video", "video-super-resolution",
   "erase-video-subtitle", "get-credit-balance",
 ];
@@ -44,7 +44,7 @@ function findCLIOnPath() {
   return null;
 }
 
-function ensureCLI() {
+function ensureCLI({ canvas = false } = {}) {
   if (Number(process.versions.node.split(".")[0]) < 16) {
     throw new Error("需要 Node.js 16+ 和 npm。");
   }
@@ -79,17 +79,40 @@ function ensureCLI() {
     if (expectedVersion && version !== expectedVersion) {
       throw new Error(`CLI 版本 ${version} 与 npm 包版本 ${expectedVersion} 不一致。`);
     }
-    for (const command of REQUIRED_COMMANDS) {
+    const commands = REQUIRED_COMMANDS.map((command) => [command]);
+    if (canvas) {
+      for (const command of ["create", "get", "allocate", "upload", "apply"]) commands.push(["canvas", command]);
+    }
+    for (const command of commands) {
       try {
-        run(cliPath, [command, "--help"], `检查 ${command} 命令`, true);
+        run(cliPath, [...command, "--help"], `检查 ${command.join(" ")} 命令`, true);
       } catch (err) {
         if (Number.isInteger(err.exitStatus) && err.exitStatus !== 0) {
-          err.missingCommand = command;
+          err.missingCommand = command.join(" ");
         }
         throw err;
       }
     }
-    return { cli_path: cliPath, version };
+    const result = { cli_path: cliPath, version };
+    if (canvas) {
+      // Semantic Canvas commands live in the npm package, not the Go binary.
+      const entry = path.resolve(path.dirname(fs.realpathSync(cliPath)), "../scripts/run.js");
+      try {
+        if (!fs.existsSync(entry)) throw new Error("缺少 npm 入口");
+        const catalog = JSON.parse(run(process.execPath, [entry, "canvas", "command", "list"], "检查 Canvas 运行时", true));
+        if (!Array.isArray(catalog.commands) || !["get_snapshot", "create_biz_node"].every(
+          (name) => catalog.commands.some((command) => command.name === name),
+        )) throw new Error("Canvas 命令目录不完整");
+      } catch (err) {
+        // Runtime timeouts are execution failures; do not repeatedly install to mask them.
+        if (err.exitStatus === null) throw err;
+        const failure = new Error("Canvas npm 入口或运行时不可用，请检查 CLI 安装。");
+        failure.missingCommand = "canvas command runtime";
+        throw failure;
+      }
+      result.canvas_entry = entry;
+    }
+    return result;
   }
 
   const candidates = new Set([findCLIOnPath(), fs.existsSync(cachedCLI) ? cachedCLI : null]);
@@ -123,7 +146,10 @@ function ensureCLI() {
     // Preserve the previous installation until the replacement passes all checks.
     fs.rmSync(installedDir, { recursive: true, force: true });
     fs.renameSync(installDir, installedDir);
-    return { ...result, cli_path: cachedCLI };
+    return {
+      ...result, cli_path: cachedCLI,
+      ...(canvas ? { canvas_entry: fs.realpathSync(path.join(installedDir, "node_modules", "@pippit-dev", "cli", "scripts", "run.js")) } : {}),
+    };
   } catch (err) {
     fs.rmSync(installDir, { recursive: true, force: true });
     throw err;
@@ -132,13 +158,13 @@ function ensureCLI() {
 
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === "--help") {
-    console.log("Usage: node ensure-cli.js\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。");
-  } else if (process.argv.length !== 2) {
-    console.error("不支持的参数。用法：node ensure-cli.js");
+    console.log("Usage: node ensure-cli.js [--canvas]\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。--canvas 额外验证画布原生命令和 npm 运行时，并返回 canvas_entry。");
+  } else if (process.argv.length !== 2 && !(process.argv.length === 3 && process.argv[2] === "--canvas")) {
+    console.error("不支持的参数。用法：node ensure-cli.js [--canvas]");
     process.exitCode = 1;
   } else {
     try {
-      console.log(JSON.stringify(ensureCLI()));
+      console.log(JSON.stringify(ensureCLI({ canvas: process.argv[2] === "--canvas" })));
     } catch (err) {
       console.error(err.message);
       process.exitCode = 1;
