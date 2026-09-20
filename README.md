@@ -214,6 +214,8 @@ pippit-tool-cli generate-image \
 
 `generate-audio` 将音频参数交给服务端校验和执行。CLI 不维护模型、输出格式、参考数量或混用规则的白名单，也不会在失败时切换模型。已接入参数不代表所有模型和模式都可用，实际支持范围以服务端为准。
 
+真实用例已验证 `seedaudio_1.0` 的 JSON 生成与下载，以及 `seedaudio_1.5` 的 `reference`、`separate` 和合规视频翻配 `dubbing`；翻配用例返回并下载了音频和视频。1.0 参考图用例仍未成功。具体结果和验证边界见 [音频命令说明](skills/xyq-nest-skill/commands/generate-audio.md#已验证范围)。这些结果不是模型白名单，也不代表所有素材与参数组合均可用；模型到生成服务的映射由服务端配置决定，CLI 不改写 model。
+
 原有便捷 flags 保留；不用 JSON 且没有显式指定 `--model` 时，兼容默认值仍为 `seedaudio_1.0`。显式 model 按原值发送，包括空字符串和空白，不修剪或替换。JSON 输入模式不添加默认模型，由服务端解释缺省值。
 
 ```bash
@@ -242,7 +244,7 @@ JSON 中的已提供字段、未知字段、数值精度、`null`、`0` 和 `fal
 
 本地素材参数接收可读的普通文件路径，不接收远程 URL。CLI 会在开始上传前检查所有本地文件；文件类型、参考组合、speaker 与资产 ID 的兼容性仍由服务端判断。参考图的上传与提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用。
 
-外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载；提交成功不等于生成成功。命令不会自动把音频合成到视频，也不把返回的 duration 当作精确时长控制的保证。
+外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载；提交成功不等于生成成功。结果按模式包含音频或视频，例如 dubbing 请求 `include=["video_url"]` 可返回翻配视频；普通音频生成不会自动把产物配回任意源视频。返回的 duration 也不代表精确时长控制能力。
 
 ## 生视频 CLI
 

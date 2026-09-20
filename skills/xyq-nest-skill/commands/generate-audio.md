@@ -2,7 +2,22 @@
 
 将音频模型参数提交给服务端。模型和参数组合由服务端校验，CLI 不维护模型白名单，不自动切换模型、补充模型专属配置或修改用户原始描述。通用 JSON 能发送一个字段，不代表服务端已经支持它；未定义字段可能被当前服务端协议忽略。
 
-用户想给视频增加背景音乐时，先确定要生成音频素材还是编辑现有视频；本命令仅返回音频任务，不自动合成视频。参考图的上传和提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用；最终以原任务查询结果为准。
+用户想给视频增加背景音乐时，先确定要生成音频素材还是编辑现有视频。结果按模式可包含音频和视频，例如 dubbing 可返回翻配视频；普通音频生成不会自动把产物配回任意源视频。参考图的上传和提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用；最终以原任务查询结果为准。
+
+## 已验证范围
+
+以下为已执行真实用例的结果，不是模型白名单，也不代表全部输入和参数组合均可用。模型到生成服务的映射由服务端配置决定，CLI 原样发送用户的 model。
+
+| 用例 | 实际结果 |
+| --- | --- |
+| `seedaudio_1.0`，JSON 参数 | 成功生成并下载 24 kHz WAV；三个 rate 的显式 0 和 enable_timestamp=false 在下游保留 |
+| `seedaudio_1.5`，`task_type=reference` | 成功生成并下载 24 kHz、3 秒 WAV |
+| `seedaudio_1.5`，`task_type=separate` | 成功生成并下载两份 3 秒 WAV；返回的单轨 duration 均为 6 秒，与文件实际时长不一致 |
+| 未知模型；separate 缺少 prompt | 服务端明确拒绝，CLI 不改模型、不补造 prompt |
+| `seedaudio_1.5`，`task_type=dubbing` | 使用符合模式要求的 6 秒、864×480、24 fps MP4，翻配英语并请求 video_url；成功返回并下载 1 个音频和 1 个视频 |
+| `seedaudio_1.0`，参考图 | 用例失败，尚未取得成功生成结果；不能据此断言所有参考图必然失败 |
+
+reference 和 separate 的文件时长来自实际下载文件，不是精确时长控制承诺。separate 返回的单轨 duration 当前可能使用请求总时长，不能作为可靠的单轨时长；这个已知问题尚未修复，应以实际媒体文件为准。dubbing 早期失败用例的素材不符合目标模式要求；后续合规素材用例成功，不代表任意视频均可翻配。无 prompt 的参数对象能被 CLI 发送，也不等于目标模式允许省略 prompt。
 
 ## 输入与参数
 
@@ -47,10 +62,24 @@ pippit-tool-cli generate-audio --file "./audio-params.json"
 pippit-tool-cli generate-audio --file - < "./audio-params.json"
 ```
 
+`seedaudio_1.5` 的 reference 模式使用 V2 参数，例如：
+
+```bash
+pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.5","task_type":"reference","prompt":"生成约3秒轻柔鸟鸣。","output_format":"wav","audio_config_v2":{"sample_rate":24000,"speech_rate":0,"loudness_rate":0,"pitch_rate":0},"watermark":false}'
+```
+
+英语翻配并请求视频产物，可将 JSON 参数与本地视频组合：
+
+```bash
+pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.5","task_type":"dubbing","dubbing_config":{"target_language":"en"},"include":["video_url"]}' --video "./source.mp4"
+```
+
+当前 `seedaudio_1.5` 视频输入要求：时长 4–360 秒，宽和高均为 300–6000 像素，宽×高为 407696–2086876 像素，宽高比 0.4–2.5，帧率 12–60 fps，格式为 MP4 或 MOV。这些是当前服务模式的素材要求，不是 CLI 硬编码的白名单；CLI 不复制这些限制，也不会修改视频来绕过服务端校验。
+
 已有引用与本地素材组合时，把完整有序 references 写入参数文件，再追加本地素材。只有用户确实要求这些参考，且目标模型/模式支持该组合时才提交。
 
 ## 返回与处理
 
-成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。最终音频位于 `audios[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。请求时间戳不保证查询命令返回独立字幕文件，实际 duration 不等于精确时长控制能力。
+成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。音频位于 `audios[]`，视频位于 `videos[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。请求时间戳不保证查询命令返回独立字幕文件，实际 duration 不等于精确时长控制能力。
 
 模型不支持、引用非法、鉴权或生成失败时说明真实错误，不改成视频请求、不自动切换模型、不重复提交未知结果的任务。查询报错与已确认的失败终态按 [查询契约](query-result.md) 区分。
