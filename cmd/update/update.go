@@ -63,7 +63,7 @@ func runUpdate(stdout, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("准备替换当前可执行文件失败: %w", err)
 	}
-	if err := runInheritEnv(stderr, []string{"PIPPIT_CLI_SKIP_SKILLS=1"}, "npm", "install", "-g", pkg); err != nil {
+	if err := runInheritEnv(stderr, []string{"PIPPIT_CLI_SKIP_SKILLS=1"}, "npm", "install", "-g", "--prefer-online", pkg); err != nil {
 		restore()
 		return fmt.Errorf("更新 pippit-tool-cli 失败: %w", err)
 	}
