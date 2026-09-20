@@ -48,8 +48,8 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios, up to 3")
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
-	flags.StringVar(&opts.Model, "model", "", "video model; normal users: Seedance_2.0_mini_lite; VIP-only: seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini, Seedance_2.5")
-	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
-	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide two --image values in first-frame, last-frame order")
+	flags.StringVar(&opts.Model, "model", "", "supported video models: Seedance_2.0_mini_lite, seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini, Seedance_2.5, MiniMax-H3, MiniMax-H3-Max")
+	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution; MiniMax-H3: 768p/2k; MiniMax-H3-Max: 480p/768p; other models, such as 720p/1080p")
+	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide two --image values in first-frame, last-frame order; MiniMax also accepts a single first-frame image in this mode")
 	return cmd
 }
