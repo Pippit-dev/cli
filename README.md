@@ -27,7 +27,7 @@
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
-| 生成音频、参考音频或图片创作 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
+| 生成音频、参考音频创作；参考图生成尚未验收 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -212,7 +212,9 @@ pippit-tool-cli generate-image \
 
 ## 生音频 CLI
 
-`generate-audio` 使用 Seed Audio 1.0，支持无参考生成、最多 3 个参考音频或 1 张参考图；两类参考不能混用。参考素材由 CLI 上传，成功后返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载。
+`generate-audio` 使用 Seed Audio 1.0，支持无参考生成或最多 3 个参考音频。参考素材由 CLI 上传，任务提交成功后返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载。
+
+单张参考图的上传和任务提交链路已接通，但尚未通过真实音频生成验收，目前不能承诺稳定可用。参考图与参考音频不能混用；提交成功不代表已经生成音频。
 
 ```bash
 pippit-tool-cli generate-audio \
@@ -222,9 +224,11 @@ pippit-tool-cli generate-audio \
   --sample-rate 24000
 ```
 
-`--prompt` 必填，`--model` 默认且仅支持 `seedaudio_1.0`。`--audio` 可以重复，`--image` 至多使用一次。音频文件后缀支持 `.mp3/.wav/.m4a/.aac/.flac/.ogg/.opus`，图片支持 `.jpg/.jpeg/.png/.gif/.bmp/.webp/.svg`；实际素材可用性由服务端检查。
+`--prompt` 必填，`--model` 默认且仅支持 `seedaudio_1.0`，不能切换到其他音频模型。其他模型和模式尚未接入，本命令不代表已覆盖网页端的全部音频能力。`--audio` 可以重复，`--image` 至多使用一次。音频文件后缀支持 `.mp3/.wav/.m4a/.aac/.flac/.ogg/.opus`，图片支持 `.jpg/.jpeg/.png/.gif/.bmp/.webp/.svg`；实际素材可用性由服务端检查。
 
 输出配置均可选：`--format` 支持 `mp3/wav/pcm/ogg_opus`，`--sample-rate` 为正整数，`--speech-rate`、`--loudness-rate`、`--pitch-rate` 为 Seed Audio 1.0 的有限数值，`--enable-timestamp` 请求时间戳。只发送显式指定的配置，具体范围由服务端决定；未设置时使用服务端默认值。当前不提供独立 `--text`、精确时长、分轨或翻配参数。
+
+参数校验尚未与网页端逐项对齐：CLI 没有限定采样率选项和调音参数范围，也未增加按音频模型区分的 prompt 长度、参考文件大小和时长校验。通过本地校验不代表服务端一定接受；不能把这些缺口当作模型支持更宽参数的依据。
 
 请求使用 `agent_name=pippit_audio_part_agent` 与 `audio_part_tool_param`，参考 ID 位于 `references[].pippit_asset_id`，不会混入图片或视频模型设置。
 
