@@ -189,72 +189,74 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	}
 }
 
-func TestGenerateVideoRejectsTooManyImages(t *testing.T) {
+func TestGenerateVideoAcceptsReferencesBeyondFormerLimits(t *testing.T) {
+	cwd := chdirTemp(t)
+	args := []string{"generate-video", "--prompt", "x"}
+	var assetIDs []string
+	for _, media := range []struct {
+		flag  string
+		ext   string
+		count int
+	}{
+		{"image", ".jpg", 10},
+		{"video", ".mp4", 4},
+		{"audio", ".mp3", 4},
+	} {
+		for _, name := range mediaPaths(media.flag, media.ext, media.count) {
+			path := filepath.Join(cwd, name)
+			if err := os.WriteFile(path, []byte("media-data"), 0o644); err != nil {
+				t.Fatalf("WriteFile(%s): %v", path, err)
+			}
+			args = append(args, "--"+media.flag, path)
+			assetIDs = append(assetIDs, name)
+		}
+	}
+
+	uploadIndex := 0
+	submitted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when image count is invalid")
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/upload_file":
+			if uploadIndex >= len(assetIDs) {
+				t.Fatalf("unexpected upload %d", uploadIndex)
+			}
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"pippit_asset_id":"` + assetIDs[uploadIndex] + `"}}`))
+			uploadIndex++
+		case "/api/biz/v1/skill/submit_run":
+			if uploadIndex != len(assetIDs) {
+				t.Fatalf("uploaded %d references, want %d", uploadIndex, len(assetIDs))
+			}
+			data, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("read body: %v", err)
+			}
+			var body map[string]any
+			if err := sonic.Unmarshal(data, &body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			param, ok := body["video_part_tool_param"].(map[string]any)
+			if !ok {
+				t.Fatalf("video_part_tool_param = %#v, want object", body["video_part_tool_param"])
+			}
+			assertAssetRefs(t, param["images"], assetIDs[:10])
+			assertAssetRefs(t, param["videos"], assetIDs[10:14])
+			assertAssetRefs(t, param["audios"], assetIDs[14:])
+			submitted = true
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread_123","run_id":"run_456"}}}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("image", ".jpg", 10) {
-		args = append(args, "--image", path)
-	}
 	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want image count validation")
+	if err := root.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
-	if !strings.Contains(err.Error(), "参考图片最多支持 9 个，当前传入 10 个") {
-		t.Fatalf("error = %q, want image count validation", err)
-	}
-}
-
-func TestGenerateVideoRejectsTooManyVideos(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when video count is invalid")
-	}))
-	defer server.Close()
-
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("video", ".mp4", 4) {
-		args = append(args, "--video", path)
-	}
-	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want video count validation")
-	}
-	if !strings.Contains(err.Error(), "参考视频最多支持 3 个，当前传入 4 个") {
-		t.Fatalf("error = %q, want video count validation", err)
-	}
-}
-
-func TestGenerateVideoRejectsTooManyAudios(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("server should not receive request when audio count is invalid")
-	}))
-	defer server.Close()
-
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	args := []string{"generate-video", "--prompt", "x"}
-	for _, path := range mediaPaths("audio", ".mp3", 4) {
-		args = append(args, "--audio", path)
-	}
-	root.SetArgs(args)
-
-	err := root.Execute()
-	if err == nil {
-		t.Fatal("Execute() error = nil, want audio count validation")
-	}
-	if !strings.Contains(err.Error(), "参考音频最多支持 3 个，当前传入 4 个") {
-		t.Fatalf("error = %q, want audio count validation", err)
+	if !submitted {
+		t.Fatal("generate-video did not submit references")
 	}
 }
 
