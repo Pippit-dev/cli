@@ -182,7 +182,7 @@ function checkBootstrap() {
     assert.strictEqual(result.cli_path, JSON.parse(next.output[0]).cli_path);
     assert.strictEqual(fixture.dirs.length, 1, "Subsequent invocations must reuse the cached CLI");
     for (const command of ["status", "login", "logout", "query-result",
-      "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
+      "generate-image", "generate-audio", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
       assert.strictEqual(fixture.calls.filter((call) => call.args[0] === command).length, 2);
     }
     assert.strictEqual(fixture.calls.filter((call) => call.args[0].endsWith("install-cli.js")).length, 1);
@@ -213,7 +213,7 @@ function checkBootstrap() {
   }
   // Every retained command participates in compatibility checks and cache reuse.
   for (const missingCommand of ["status", "login", "logout", "query-result", "generate-image",
-    "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
+    "generate-audio", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
     fs.writeFileSync(existing, "missing-command");

@@ -9,6 +9,7 @@ import (
 
 	authcmd "github.com/Pippit-dev/pippit-cli/cmd/auth"
 	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
+	"github.com/Pippit-dev/pippit-cli/cmd/generate_audio"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
@@ -56,7 +57,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root := &cobra.Command{
 		Use:   "pippit-tool-cli",
 		Short: "Pippit CLI",
-		Long: "Pippit CLI generates and processes videos and images, queries credit balances, submits creative conversations and short-drama workflows, downloads generated assets, and updates the installed CLI package.\n\n" +
+		Long: "Pippit CLI generates audio, videos and images, processes videos, queries credit balances, submits creative conversations and short-drama workflows, downloads generated assets, and updates the installed CLI package.\n\n" +
 			canvascmd.CommandDiscoveryHelp + "\n\nInstallation help (npm launcher): pippit-tool-cli install --help",
 		Version:       version.Current(),
 		SilenceUsage:  true,
@@ -77,6 +78,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(newUploadFileCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
 	root.AddCommand(generate_image.NewCommand(stdout, stderr, runner))
+	root.AddCommand(generate_audio.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewQueryResultCommand(stdout, stderr, runner))
 	root.AddCommand(video_tool.NewSuperResolutionCommand(stdout, stderr, runner))

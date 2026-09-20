@@ -9,11 +9,11 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 图片生成与参考图编辑、音频和视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
 
 ### 技能路由
 
-- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
+- 图片生成与参考图编辑、音频生成、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
 - 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
 
 需要补充、选择或确认时，使用宿主实际暴露且当前模式允许的工具：Codex 的 `request_user_input` / `request_user_input_async`、WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。
@@ -27,6 +27,7 @@
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
+| 生成音频、参考音频或图片创作 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -209,6 +210,24 @@ pippit-tool-cli generate-image \
 
 图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 整数格式、generate-image-count 非负和文件后缀。
 
+## 生音频 CLI
+
+`generate-audio` 使用 Seed Audio 1.0，支持无参考生成、最多 3 个参考音频或 1 张参考图；两类参考不能混用。参考素材由 CLI 上传，成功后返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载。
+
+```bash
+pippit-tool-cli generate-audio \
+  --prompt "用温暖自然的声音介绍今天的旅行" \
+  --audio ./reference.wav \
+  --format wav \
+  --sample-rate 24000
+```
+
+`--prompt` 必填，`--model` 默认且仅支持 `seedaudio_1.0`。`--audio` 可以重复，`--image` 至多使用一次。音频文件后缀支持 `.mp3/.wav/.m4a/.aac/.flac/.ogg/.opus`，图片支持 `.jpg/.jpeg/.png/.gif/.bmp/.webp/.svg`；实际素材可用性由服务端检查。
+
+输出配置均可选：`--format` 支持 `mp3/wav/pcm/ogg_opus`，`--sample-rate` 为正整数，`--speech-rate`、`--loudness-rate`、`--pitch-rate` 为 Seed Audio 1.0 的有限数值，`--enable-timestamp` 请求时间戳。只发送显式指定的配置，具体范围由服务端决定；未设置时使用服务端默认值。当前不提供独立 `--text`、精确时长、分轨或翻配参数。
+
+请求使用 `agent_name=pippit_audio_part_agent` 与 `audio_part_tool_param`，参考 ID 位于 `references[].pippit_asset_id`，不会混入图片或视频模型设置。
+
 ## 生视频 CLI
 
 `generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
@@ -272,7 +291,7 @@ pippit-tool-cli erase-video-subtitle \
 
 两个命令都输出 `thread_id`、`run_id` 和 `web_thread_link`。拿到任务 ID 后，可继续使用 `query-result` 查询并下载结果。
 
-查询并下载生图/生视频结果：
+查询并下载图片、视频或音频结果：
 
 ```bash
 pippit-tool-cli query-result \
@@ -281,7 +300,9 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
+`query-result` 会查询指定 Run 并输出 JSON。Run 成功后下载视频、图片和音频产物，`completed=true`；`videos`、`images`、`audios` 各项包含 `download_url` 和 `output_path`。音频还保留可用的 `name`、`pippit_asset_id`、`duration`（秒）。音频扩展名从已知格式的元数据、URL 路径或名称中获取；无法判断时使用 `.audio`，不猜测编码。图片格式缺省时仍使用 `.png`。
+
+Run 失败或取消均为终态，`completed=true` 且填充 `error_message`，保留服务端失败原因；尚未结束时 `completed=false`。无论退出码如何，都应先检查 `error_message`；下载失败后继续查询原任务，不重复提交生成。
 
 ## HTTP 客户端
 

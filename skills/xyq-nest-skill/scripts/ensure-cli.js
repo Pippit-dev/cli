@@ -8,7 +8,7 @@ const path = require("path");
 
 const REQUIRED_COMMANDS = [
   "status", "login", "logout", "query-result",
-  "generate-image", "generate-video", "video-super-resolution",
+  "generate-image", "generate-audio", "generate-video", "video-super-resolution",
   "erase-video-subtitle", "get-credit-balance",
 ];
 

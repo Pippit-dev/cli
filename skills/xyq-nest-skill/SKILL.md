@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 使用小云雀 pippit-tool-cli 生成或编辑图片、生成视频、超分和擦字幕，查询结果并交付媒体；操作小云雀个人 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分及管理授权。用户提到小云雀、xyq 并需要这些操作时使用。
+description: 使用小云雀 pippit-tool-cli 生成或编辑图片、生成音频和视频、超分和擦字幕，查询结果并交付媒体；操作小云雀个人 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分及管理授权。用户提到小云雀、xyq 并需要这些操作时使用。
 user-invocable: true
 metadata:
   {"openclaw": {"emoji": "💬", "requires": {"bins": ["node"]}}}
@@ -27,13 +27,14 @@ metadata:
 | 查看登录状态、登录、退出或切换账号 | `status` / `login` / `logout` | [授权](commands/auth.md) |
 | 创建或查询小云雀个人画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
+| 生成音频，使用参考音频或参考图创作音频 | `generate-audio` | [生音频](commands/generate-audio.md) |
 | 生成视频，使用图/视频/音频参考，首尾帧生视频 | `generate-video` | [生视频](commands/generate-video.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
 | 查询个人积分余额、剩余 credits | `get-credit-balance` | [积分](commands/get-credit-balance.md) |
 
-- 普通生图、生视频也走对应生成命令，无需用户额外声明“模型直出”。
+- 普通生图、生音频、生视频也走对应生成命令，无需用户额外声明“模型直出”。
 - 明确要求修改现有画布或其中节点时优先走 Canvas；普通生图、生视频不自动创建画布。“修改节点提示词”只修改配置，不隐含生成；指定节点生成或导出须先确认当前命令目录有对应能力。
 - “参考这个视频生成新的”走生视频；“把这个视频变清晰”走超分。意图不清时先问清。
 - 同时提出多个明确操作时，分别选模块；有输入依赖则顺序执行。仅在用户请求包含多个步骤时组合，不自动增加收费处理。
@@ -46,7 +47,7 @@ metadata:
 - 提问优先使用宿主实际提供且当前模式允许的工具：Codex 的 `request_user_input` 或 `request_user_input_async`，WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。需要答案时等待答复。
 - 素材参数接收本地文件路径，CLI 内部上传。远程链接不能冒充本地路径；缺少可访问文件时先解决素材获取。单文件必须小于 500 MB（500000000 字节）。
 - 提交成功后立即展示真实 `web_thread_link`；未返回链接时如实说明，保留任务 ID。后续查询和下载失败不能触发重复生成。
-- 每个最终图片/视频都通过宿主文件交付或媒体渲染能力展示为真实附件或可预览媒体。URL、路径列表仅作补充；详细完成标准见共用交付流程。
+- 每个最终图片、视频或音频都通过宿主文件交付或媒体渲染能力展示为真实附件或可预览媒体。URL、路径列表仅作补充；详细完成标准见共用交付流程。
 
 ## 按需参考的完整场景
 

@@ -56,6 +56,7 @@ const commandModules = {
   auth: ["status", "login", "logout"],
   canvas: ["canvas"],
   "generate-image": ["generate-image"],
+  "generate-audio": ["generate-audio"],
   "generate-video": ["generate-video"],
   "video-super-resolution": ["video-super-resolution"],
   "erase-video-subtitle": ["erase-video-subtitle"],
