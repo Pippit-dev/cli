@@ -194,6 +194,55 @@ func TestGenerateAudioPreflightsAllLocalFiles(t *testing.T) {
 	}
 }
 
+func TestGenerateAudioStopsAfterSecondUploadFailure(t *testing.T) {
+	args := []string{"generate-audio", "--prompt", "use these references"}
+	for _, name := range []string{"first.wav", "second.wav", "third.wav"} {
+		path := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		args = append(args, "--audio", path)
+	}
+	var calls []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/biz/v1/skill/upload_file" || r.Method != http.MethodPost {
+			calls = append(calls, r.URL.Path)
+			t.Errorf("upload failure must prevent later requests: %s %s", r.Method, r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Error(err)
+			return
+		}
+		defer r.MultipartForm.RemoveAll()
+		files := r.MultipartForm.File["file"]
+		if len(files) != 1 {
+			t.Errorf("uploaded files=%d, want one", len(files))
+			return
+		}
+		calls = append(calls, files[0].Filename)
+		if files[0].Filename == "second.wav" {
+			http.Error(w, "upload unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		io.WriteString(w, `{"ret":"0","data":{"pippit_asset_id":"first_asset"}}`)
+	}))
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs(args)
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "上传音频生成参考素材失败") || !strings.Contains(err.Error(), "HTTP 503") {
+		t.Fatalf("error=%v, want second upload HTTP failure", err)
+	}
+	if got := strings.Join(calls, ","); got != "first.wav,second.wav" {
+		t.Fatalf("requests=%s, want only the first and second uploads", got)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("failed upload must not print a submitted task: %s", stdout.String())
+	}
+}
+
 func rejectAudioBeforeHTTP(t *testing.T, args []string, want string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "readable.wav")

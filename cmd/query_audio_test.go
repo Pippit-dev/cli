@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -147,6 +149,101 @@ func TestQueryResultAudioDownloadErrorsKeepTaskIDs(t *testing.T) {
 				t.Fatalf("audios=%#v", got["audios"])
 			}
 		})
+	}
+}
+
+func TestQueryResultRetriesOnlyFailedAudioDownload(t *testing.T) {
+	var calls []string
+	secondDownloads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.URL.Path)
+		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_thread":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+				return
+			}
+			if r.Method != http.MethodPost || body["thread_id"] != "thread_123" || body["run_id"] != "run_456" {
+				t.Errorf("query must retain the original task: %s %#v", r.Method, body)
+			}
+			var content []any
+			for _, id := range []string{"first", "second"} {
+				content = append(content, map[string]any{
+					"sub_type": "biz/x_data_audio", "data": map[string]any{"audio": map[string]any{
+						"url": serverURL(r) + "/" + id + ".wav", "pippit_asset_id": id,
+					}},
+				})
+			}
+			writeAudioQueryFixture(w, map[string]any{"run_id": "run_456", "state": 3, "entry_list": []any{
+				map[string]any{"artifact": map[string]any{"content": content}},
+			}})
+		case "/first.wav", "/second.wav":
+			if r.Method != http.MethodGet {
+				t.Errorf("download method=%s, want GET", r.Method)
+			}
+			if r.URL.Path == "/second.wav" {
+				secondDownloads++
+				if secondDownloads == 1 {
+					http.Error(w, "download unavailable", http.StatusForbidden)
+					return
+				}
+			}
+			io.WriteString(w, r.URL.Path)
+		default:
+			t.Errorf("query retry must not upload or submit: %s", r.URL.Path)
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	first := runAudioQuery(t, server.URL, dir)
+	if first["completed"] != false || !strings.Contains(first["error_message"].(string), "下载失败") || first["thread_id"] != "thread_123" || first["run_id"] != "run_456" {
+		t.Fatalf("failed download must retain task IDs and report incomplete delivery: %#v", first)
+	}
+	firstPath := filepath.Join(dir, "first.wav")
+	assertFileContent(t, firstPath, "/first.wav")
+	beforeData, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeInfo, err := os.Stat(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeSHA := sha256.Sum256(beforeData)
+	secondPath := filepath.Join(dir, "second.wav")
+	if _, err := os.Stat(secondPath); !os.IsNotExist(err) {
+		t.Fatalf("failed download left a final output: err=%v", err)
+	}
+	second := runAudioQuery(t, server.URL, dir)
+	if second["completed"] != true || second["error_message"] != "" || second["thread_id"] != first["thread_id"] || second["run_id"] != first["run_id"] {
+		t.Fatalf("same task should finish delivery on retry: %#v", second)
+	}
+	audios, ok := second["audios"].([]any)
+	if !ok || len(audios) != 2 {
+		t.Fatalf("audios=%#v, want both downloaded tracks", second["audios"])
+	}
+	for i, path := range []string{firstPath, secondPath} {
+		if got := audios[i].(map[string]any)["output_path"]; got != path {
+			t.Fatalf("audio %d output_path=%v, want %s", i, got, path)
+		}
+	}
+	assertFileContent(t, secondPath, "/second.wav")
+	afterData, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterInfo, err := os.Stat(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha256.Sum256(afterData) != beforeSHA || !afterInfo.ModTime().Equal(beforeInfo.ModTime()) {
+		t.Fatal("retry changed the already downloaded first track's SHA or mtime")
+	}
+	wantCalls := "/api/biz/v1/skill/get_thread,/first.wav,/second.wav,/api/biz/v1/skill/get_thread,/second.wav"
+	if got := strings.Join(calls, ","); got != wantCalls {
+		t.Fatalf("requests=%s, want %s", got, wantCalls)
 	}
 }
 

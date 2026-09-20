@@ -12,9 +12,11 @@
 | --- | --- |
 | `seedaudio_1.0`，JSON 参数 | 成功生成并下载 24 kHz WAV；三个 rate 的显式 0 和 enable_timestamp=false 在下游保留 |
 | `seedaudio_1.5`，`task_type=reference` | 成功生成并下载 24 kHz、3 秒 WAV |
+| `seedaudio_1.5`，MP3 与非默认参数 | 成功生成并下载 48 kHz MP3；语速 10、响度 5、音调 2 和 watermark=true 已确认传至生成服务；未验证调音的听感或水印检测效果 |
 | `seedaudio_1.5`，`task_type=separate` | 成功生成并下载两份 3 秒 WAV；返回的单轨 duration 均为 6 秒，与文件实际时长不一致 |
 | 未知模型；separate 缺少 prompt | 服务端明确拒绝，CLI 不改模型、不补造 prompt |
 | `seedaudio_1.5`，`task_type=dubbing` | 使用符合模式要求的 6 秒、864×480、24 fps MP4，翻配英语并请求 video_url；成功返回并下载 1 个音频和 1 个视频 |
+| `seedaudio_1.5`，翻配词汇表与字幕 | 省略 source_language，传入词汇表及 video_url/subtitles.srt/subtitles_source.srt，成功生成音视频和两份 SRT；源字幕中文、目标英文，本例“你好”对应“Hello”。字幕由服务侧单独核验，CLI 尚不交付独立字幕文件 |
 | `seedaudio_1.0`，参考图 | 用例失败，尚未取得成功生成结果；不能据此断言所有参考图必然失败 |
 
 reference 和 separate 的文件时长来自实际下载文件，不是精确时长控制承诺。separate 返回的单轨 duration 当前可能使用请求总时长，不能作为可靠的单轨时长；这个已知问题尚未修复，应以实际媒体文件为准。dubbing 早期失败用例的素材不符合目标模式要求；后续合规素材用例成功，不代表任意视频均可翻配。无 prompt 的参数对象能被 CLI 发送，也不等于目标模式允许省略 prompt。
@@ -76,10 +78,12 @@ pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.5","task_type":"du
 
 当前 `seedaudio_1.5` 视频输入要求：时长 4–360 秒，宽和高均为 300–6000 像素，宽×高为 407696–2086876 像素，宽高比 0.4–2.5，帧率 12–60 fps，格式为 MP4 或 MOV。这些是当前服务模式的素材要求，不是 CLI 硬编码的白名单；CLI 不复制这些限制，也不会修改视频来绕过服务端校验。
 
+当前翻配示例省略 `source_language`，让服务识别源语言。实测显式传 `source_language=zh` 会被生成服务拒绝；CLI 不会擅自改成其它语言或删除用户指定值，失败时应报告该限制。
+
 已有引用与本地素材组合时，把完整有序 references 写入参数文件，再追加本地素材。只有用户确实要求这些参考，且目标模型/模式支持该组合时才提交。
 
 ## 返回与处理
 
-成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。音频位于 `audios[]`，视频位于 `videos[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。请求时间戳不保证查询命令返回独立字幕文件，实际 duration 不等于精确时长控制能力。
+成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。音频位于 `audios[]`，视频位于 `videos[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。当前 query-result 只交付音频、视频和图片；即使 include 请求并生成了字幕，也不会输出或下载独立字幕文件。实际 duration 不等于精确时长控制能力。
 
 模型不支持、引用非法、鉴权或生成失败时说明真实错误，不改成视频请求、不自动切换模型、不重复提交未知结果的任务。查询报错与已确认的失败终态按 [查询契约](query-result.md) 区分。
