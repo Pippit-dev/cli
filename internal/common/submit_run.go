@@ -2,7 +2,9 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
@@ -37,11 +39,36 @@ type SubmitRunResponseRun struct {
 
 // SubmitRun sends a submit_run request and validates its shared response envelope.
 func SubmitRun(ctx context.Context, command string, body any, runner *Runner) (*SubmitRunResult, error) {
+	return submitRun(ctx, command, SubmitRunPath(runner), body, runner)
+}
+
+// SubmitRunWithBabiParam carries client attribution in the same query field as Web.
+func SubmitRunWithBabiParam(ctx context.Context, command string, body any, runner *Runner, babiParam map[string]string) (*SubmitRunResult, error) {
+	path, err := url.Parse(SubmitRunPath(runner))
+	if err != nil {
+		return nil, fmt.Errorf("解析 submit_run 路径失败: %w", err)
+	}
+	query, err := url.ParseQuery(path.RawQuery)
+	if err != nil {
+		return nil, fmt.Errorf("解析 submit_run 查询参数失败: %w", err)
+	}
+	raw, err := json.Marshal(babiParam)
+	if err != nil {
+		return nil, fmt.Errorf("序列化 babi_param 失败: %w", err)
+	}
+	if !query.Has("babi_param") {
+		query.Set("babi_param", string(raw))
+	}
+	path.RawQuery = query.Encode()
+	return submitRun(ctx, command, path.String(), body, runner)
+}
+
+func submitRun(ctx context.Context, command, path string, body any, runner *Runner) (*SubmitRunResult, error) {
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("%s 运行器客户端缺失", command)
 	}
 	var resp SubmitRunResponse
-	if err := runner.Client.SendRequest(ctx, SubmitRunPath(runner), body, &resp); err != nil {
+	if err := runner.Client.SendRequest(ctx, path, body, &resp); err != nil {
 		return nil, fmt.Errorf("提交 %s 请求失败: %w", command, err)
 	}
 	if resp.Ret != "0" {

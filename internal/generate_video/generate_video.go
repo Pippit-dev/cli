@@ -54,6 +54,18 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	}
 
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
+	switch strings.TrimSpace(opts.Model) {
+	case "MiniMax-H3", "MiniMax-H3-Max", "wan3.0", "happyhorse-1.1":
+		// Follow Web video generation's business scene; this command enters through Skill.
+		return common.SubmitRunWithBabiParam(ctx, "generate-video", body, runner, map[string]string{
+			"scene_lv1":  "ai_agent",
+			"scene_lv2":  "front_tool",
+			"tool_id":    "instant_video",
+			"tab_name":   "other",
+			"edit_type":  "instant_video",
+			"enter_from": "skill",
+		})
+	}
 	return common.SubmitRun(ctx, "generate-video", body, runner)
 }
 
