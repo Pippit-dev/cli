@@ -124,8 +124,9 @@ func TestRootHelpListsSupportedCommands(t *testing.T) {
 	}
 	got := stdout.String()
 	for _, want := range []string{
-		"Pippit CLI generates and processes videos",
+		"Pippit CLI generates audio, videos and images, processes videos",
 		"erase-video-subtitle",
+		"\n  generate-audio ",
 		"generate-video",
 		"download-result",
 		"get-credit-balance",
