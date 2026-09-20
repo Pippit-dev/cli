@@ -27,7 +27,7 @@
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
-| 生成音频、参考音频创作；参考图生成尚未验收 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
+| 音频生成与模型参数透传、本地参考素材上传 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -212,9 +212,9 @@ pippit-tool-cli generate-image \
 
 ## 生音频 CLI
 
-`generate-audio` 使用 Seed Audio 1.0，支持无参考生成或最多 3 个参考音频。参考素材由 CLI 上传，任务提交成功后返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载。
+`generate-audio` 将音频参数交给服务端校验和执行。CLI 不维护模型、输出格式、参考数量或混用规则的白名单，也不会在失败时切换模型。已接入参数不代表所有模型和模式都可用，实际支持范围以服务端为准。
 
-单张参考图的上传和任务提交链路已接通，但尚未通过真实音频生成验收，目前不能承诺稳定可用。参考图与参考音频不能混用；提交成功不代表已经生成音频。
+原有便捷 flags 保留；不用 JSON 且没有显式指定 `--model` 时，兼容默认值仍为 `seedaudio_1.0`。显式 model 按原值发送，包括空字符串和空白，不修剪或替换。JSON 输入模式不添加默认模型，由服务端解释缺省值。
 
 ```bash
 pippit-tool-cli generate-audio \
@@ -224,13 +224,25 @@ pippit-tool-cli generate-audio \
   --sample-rate 24000
 ```
 
-`--prompt` 必填，`--model` 默认且仅支持 `seedaudio_1.0`，不能切换到其他音频模型。其他模型和模式尚未接入，本命令不代表已覆盖网页端的全部音频能力。`--audio` 可以重复，`--image` 至多使用一次。音频文件后缀支持 `.mp3/.wav/.m4a/.aac/.flac/.ogg/.opus`，图片支持 `.jpg/.jpeg/.png/.gif/.bmp/.webp/.svg`；实际素材可用性由服务端检查。
+`--format`、`--sample-rate`、`--speech-rate`、`--loudness-rate`、`--pitch-rate`、`--enable-timestamp` 只写入旧 `audio_config` 的对应字段。只发送显式设置的值，保留 `0` 和 `false`；CLI 仅检查参数类型与数值能否编码为 JSON，语义和范围交给服务端。使用 `audio_config_v2`、`output_format`、`task_type`、`dubbing_config` 等参数时，通过 JSON 提供，CLI 不按模型自动转换旧配置。
 
-输出配置均可选：`--format` 支持 `mp3/wav/pcm/ogg_opus`，`--sample-rate` 为正整数，`--speech-rate`、`--loudness-rate`、`--pitch-rate` 为 Seed Audio 1.0 的有限数值，`--enable-timestamp` 请求时间戳。只发送显式指定的配置，具体范围由服务端决定；未设置时使用服务端默认值。当前不提供独立 `--text`、精确时长、分轨或翻配参数。
+### 通用 JSON 输入
 
-参数校验尚未与网页端逐项对齐：CLI 没有限定采样率选项和调音参数范围，也未增加按音频模型区分的 prompt 长度、参考文件大小和时长校验。通过本地校验不代表服务端一定接受；不能把这些缺口当作模型支持更宽参数的依据。
+`--input '<JSON>'` 与 `--file path.json` 互斥，`--file -` 从 stdin 读取；必须是单个 JSON 对象，最多 64 MiB，重复键和尾随内容会报错。对象直接对应 `audio_part_tool_param`，不要再套一层请求体。
 
-请求使用 `agent_name=pippit_audio_part_agent` 与 `audio_part_tool_param`，参考 ID 位于 `references[].pippit_asset_id`，不会混入图片或视频模型设置。
+```bash
+pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.0","prompt":"用自然的声音说你好","audio_config":{"format":"wav","sample_rate":24000}}'
+pippit-tool-cli generate-audio --file ./audio-params.json
+pippit-tool-cli generate-audio --file - < ./audio-params.json
+```
+
+JSON 中的已提供字段、未知字段、数值精度、`null`、`0` 和 `false` 保留到 HTTP 请求。CLI 能发送字段不表示服务端已经支持它；服务端仍按当前协议解析，未定义字段可能被忽略。模型专属参数及是否允许省略 prompt 由服务端决定，CLI 不填入虚构的 prompt 或 text。
+
+便捷 flag 与 JSON 同字段冲突时直接报错，即使值相同也不覆盖。例如 `--model` 不能与 JSON `model` 同时出现；`--format` 不能与 `audio_config.format` 同时出现，但可以与 `audio_config` 的其他字段组合。已有 JSON `references` 保序，再按 `--audio`、`--image`、`--video` 在命令行出现的顺序追加本地上传结果。已有资产 ID 和 `references[].speaker` 通过 JSON 提供，CLI 不上传或改写这些引用，也不去重；追加本地文件时 `references` 必须是数组。
+
+本地素材参数接收可读的普通文件路径，不接收远程 URL。CLI 会在开始上传前检查所有本地文件；文件类型、参考组合、speaker 与资产 ID 的兼容性仍由服务端判断。参考图的上传与提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用。
+
+外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载；提交成功不等于生成成功。命令不会自动把音频合成到视频，也不把返回的 duration 当作精确时长控制的保证。
 
 ## 生视频 CLI
 

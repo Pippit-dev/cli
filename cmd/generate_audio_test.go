@@ -17,17 +17,26 @@ import (
 func TestGenerateAudioRequest(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind string
+		model      *string
 		files      []string
 		flags      []string
 		config     map[string]any
 	}{
 		{name: "text only"},
+		{name: "arbitrary model", model: audioString("  future/model  ")},
+		{name: "explicit empty model", model: audioString("")},
+		{name: "explicit whitespace model", model: audioString("  ")},
+		{name: "four audio references", kind: "audio", files: []string{"a.wav", "b.wav", "c.wav", "d.wav"}},
+		{name: "two images", kind: "image", files: []string{"a.png", "b.png"}},
+		{name: "video", kind: "video", files: []string{"clip.mp4"}},
+		{name: "unlisted extension", kind: "audio", files: []string{"audio.custom"}},
+		{name: "format and zero rate", flags: []string{"--format", " NewFormat ", "--sample-rate", "0"}, config: map[string]any{"format": " NewFormat ", "sample_rate": float64(0)}},
 		{name: "three audio references", kind: "audio", files: []string{"one.wav", "two.mp3", "three.wav"},
 			flags:  []string{"--format", "WAV", "--sample-rate", "24000", "--speech-rate", "1.2", "--loudness-rate", "0", "--pitch-rate", "-0.5", "--enable-timestamp=false"},
-			config: map[string]any{"format": "wav", "sample_rate": float64(24000), "speech_rate": 1.2, "loudness_rate": float64(0), "pitch_rate": -0.5, "enable_timestamp": false}},
+			config: map[string]any{"format": "WAV", "sample_rate": float64(24000), "speech_rate": 1.2, "loudness_rate": float64(0), "pitch_rate": -0.5, "enable_timestamp": false}},
 		{name: "one image reference", kind: "image", files: []string{"scene.png"}, flags: []string{"--format", "ogg_opus"}, config: map[string]any{"format": "ogg_opus"}},
 		{name: "pcm", flags: []string{"--format", "pcm"}, config: map[string]any{"format": "pcm"}},
-		{name: "mp3 timestamp", flags: []string{"--model", " seedaudio_1.0 ", "--format", "mp3", "--enable-timestamp"}, config: map[string]any{"format": "mp3", "enable_timestamp": true}},
+		{name: "mp3 timestamp", flags: []string{"--format", "mp3", "--enable-timestamp"}, config: map[string]any{"format": "mp3", "enable_timestamp": true}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var uploads int
@@ -65,11 +74,15 @@ func TestGenerateAudioRequest(t *testing.T) {
 						t.Errorf("decode submit: %v", err)
 						return
 					}
-					if len(body) != 3 || body["agent_name"] != "pippit_audio_part_agent" || body["message"] != "温暖的旁白" {
+					if len(body) != 3 || body["agent_name"] != "pippit_audio_part_agent" || body["message"] != "  温暖的旁白  " {
 						t.Errorf("unexpected submit body: %#v", body)
 					}
 					param, ok := body["audio_part_tool_param"].(map[string]any)
-					if !ok || param["model"] != "seedaudio_1.0" || param["prompt"] != body["message"] {
+					wantModel := "seedaudio_1.0"
+					if tc.model != nil {
+						wantModel = *tc.model
+					}
+					if !ok || param["model"] != wantModel || param["prompt"] != body["message"] {
 						t.Errorf("unexpected audio params: %#v", param)
 					}
 					if tc.config == nil {
@@ -99,6 +112,9 @@ func TestGenerateAudioRequest(t *testing.T) {
 			}))
 			defer server.Close()
 			args := []string{"generate-audio", "--prompt", "  温暖的旁白  "}
+			if tc.model != nil {
+				args = append(args, "--model", *tc.model)
+			}
 			for _, name := range tc.files {
 				path := filepath.Join(t.TempDir(), name)
 				if err := os.WriteFile(path, []byte("reference data"), 0o600); err != nil {
@@ -126,14 +142,7 @@ func TestGenerateAudioRejectsInvalidInputsBeforeHTTP(t *testing.T) {
 		args       []string
 	}{
 		{"prompt", "--prompt", []string{}},
-		{"model", "--model 仅支持", []string{"--prompt", "x", "--model", "seedaudio_1.5"}},
-		{"mixed", "不能混用", []string{"--prompt", "x", "--audio", "a.wav", "--image", "b.png"}},
-		{"four audio", "最多支持", []string{"--prompt", "x", "--audio", "a.wav", "--audio", "b.wav", "--audio", "c.wav", "--audio", "d.wav"}},
-		{"two images", "最多支持", []string{"--prompt", "x", "--image", "a.png", "--image", "b.png"}},
-		{"extension", "不支持文件后缀", []string{"--prompt", "x", "--audio", "a.mp4"}},
-		{"missing file", "上传文件不存在", []string{"--prompt", "x", "--audio", filepath.Join(t.TempDir(), "missing.wav")}},
-		{"format", "--format", []string{"--prompt", "x", "--format", "exe"}},
-		{"sample rate", "正整数", []string{"--prompt", "x", "--sample-rate", "0"}},
+		{"missing file", "读取参考文件失败", []string{"--prompt", "x", "--audio", filepath.Join(t.TempDir(), "missing.wav")}},
 		{"nan", "有限数值", []string{"--prompt", "x", "--speech-rate", "NaN"}},
 		{"infinity", "有限数值", []string{"--prompt", "x", "--pitch-rate", "+Inf"}},
 		{"duration", "未知参数", []string{"--prompt", "x", "--duration", "5"}},
@@ -167,3 +176,5 @@ func TestGenerateAudioServerFailurePreservesLogID(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func audioString(value string) *string { return &value }

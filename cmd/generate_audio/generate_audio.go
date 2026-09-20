@@ -1,6 +1,9 @@
 package generate_audio
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 
@@ -10,46 +13,82 @@ import (
 )
 
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	opts := &internalgen.Options{}
+	var prompt, model, input, filePath, format string
 	var sampleRate int32
 	var speechRate, loudnessRate, pitchRate float64
-	var format string
 	var enableTimestamp bool
+	var references []internalgen.LocalReference
 	cmd := &cobra.Command{
 		Use:   "generate-audio",
-		Short: "Generate audio with Seed Audio 1.0",
-		Long: "Generate audio with Seed Audio 1.0. Only seedaudio_1.0 is supported; other audio models and modes are not integrated. This command does not cover all audio features in the web app.\n\n" +
-			"Reference image upload and task submission are connected, but successful audio generation from an image has not been verified. Stable availability is not guaranteed; successful submission does not mean audio was generated.",
+		Short: "Generate audio with model parameters validated by the service",
+		Long: "Generate audio using convenience flags or an audio_part_tool_param JSON object via --input or --file (use - for stdin). Models and parameter combinations are validated by the service. Explicit values are passed unchanged.\n\n" +
+			"JSON mode does not add a model default. Calls without JSON retain seedaudio_1.0 as a compatibility default, not a model allowlist. Legacy output flags only populate audio_config; use JSON for other configurations and modes.\n\n" +
+			"Conflicting JSON fields and explicit flags are rejected. Local audio/image/video references are appended after JSON references in flag order. Reference image submission is connected, but successful generation has not been verified.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			config := &internalgen.AudioConfig{}
-			changed := false
-			for _, setting := range []struct {
-				flag string
-				set  func()
-			}{
-				{"format", func() { config.Format = format }},
-				{"sample-rate", func() { config.SampleRate = &sampleRate }},
-				{"speech-rate", func() { config.SpeechRate = &speechRate }},
-				{"loudness-rate", func() { config.LoudnessRate = &loudnessRate }},
-				{"pitch-rate", func() { config.PitchRate = &pitchRate }},
-				{"enable-timestamp", func() { config.EnableTimestamp = &enableTimestamp }},
-			} {
-				if cmd.Flags().Changed(setting.flag) {
-					setting.set()
-					changed = true
+			flags := cmd.Flags()
+			if flags.Changed("input") && flags.Changed("file") {
+				return fmt.Errorf("--input 和 --file 不能同时使用")
+			}
+			jsonMode := flags.Changed("input") || flags.Changed("file")
+			params := make(map[string]json.RawMessage)
+			if jsonMode {
+				if flags.Changed("file") && strings.TrimSpace(filePath) == "" {
+					return fmt.Errorf("--file 不能为空")
+				}
+				var err error
+				params, err = readParameters(input, filePath, cmd.InOrStdin())
+				if err != nil {
+					return err
+				}
+			} else if flags.NFlag() == 0 {
+				return fmt.Errorf("请提供 --prompt 或 --input/--file 音频参数")
+			}
+			for _, setting := range []struct{ key, value string }{{"prompt", prompt}, {"model", model}} {
+				if flags.Changed(setting.key) {
+					if err := addFlag(params, setting.key, setting.key, setting.value); err != nil {
+						return err
+					}
 				}
 			}
-			opts.AudioConfig = nil
-			if changed {
-				opts.AudioConfig = config
+			if !jsonMode && !flags.Changed("model") {
+				params["model"] = json.RawMessage(`"` + internalgen.DefaultModel + `"`)
 			}
-			result, err := internalgen.Run(cmd.Context(), opts, runner)
+			settings := []struct {
+				flag, key string
+				value     any
+			}{
+				{"format", "format", format}, {"sample-rate", "sample_rate", sampleRate},
+				{"speech-rate", "speech_rate", speechRate}, {"loudness-rate", "loudness_rate", loudnessRate},
+				{"pitch-rate", "pitch_rate", pitchRate}, {"enable-timestamp", "enable_timestamp", enableTimestamp},
+			}
+			var config map[string]json.RawMessage
+			for _, setting := range settings {
+				if !flags.Changed(setting.flag) {
+					continue
+				}
+				if config == nil {
+					config = make(map[string]json.RawMessage)
+					if raw, exists := params["audio_config"]; exists {
+						if !bytes.HasPrefix(bytes.TrimSpace(raw), []byte("{")) || json.Unmarshal(raw, &config) != nil {
+							return fmt.Errorf("--%s 需要合并 audio_config，但 JSON audio_config 不是对象", setting.flag)
+						}
+					}
+				}
+				if err := addFlag(config, setting.key, setting.flag, setting.value); err != nil {
+					return fmt.Errorf("audio_config: %w", err)
+				}
+			}
+			if config != nil {
+				raw, err := json.Marshal(config)
+				if err != nil {
+					return err
+				}
+				params["audio_config"] = raw
+			}
+			result, err := internalgen.Run(cmd.Context(), &internalgen.Options{Parameters: params, LocalReferences: references}, runner)
 			if err != nil {
-				_ = common.AppendDailyErrorLog("generate-audio", err, map[string]string{
-					"prompt": strings.TrimSpace(opts.Prompt),
-					"model":  strings.TrimSpace(opts.Model),
-				})
+				_ = common.AppendDailyErrorLog("generate-audio", err, nil)
 				return err
 			}
 			return common.WriteJSON(stdout, result)
@@ -58,15 +97,40 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
-	flags.StringVar(&opts.Prompt, "prompt", "", "audio generation prompt")
-	flags.StringVar(&opts.Model, "model", internalgen.DefaultModel, "audio model; only seedaudio_1.0 is supported; model switching is not available")
-	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat up to 3 times; cannot combine with --image")
-	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; generation not yet verified; at most one; cannot combine with --audio")
-	flags.StringVar(&format, "format", "", "output audio format: mp3, wav, pcm or ogg_opus; omitted uses the server default")
-	flags.Int32Var(&sampleRate, "sample-rate", 0, "output audio sample rate in Hz")
-	flags.Float64Var(&speechRate, "speech-rate", 0, "Seed Audio 1.0 speech rate; accepted range is validated by the server")
-	flags.Float64Var(&loudnessRate, "loudness-rate", 0, "Seed Audio 1.0 loudness rate; accepted range is validated by the server")
-	flags.Float64Var(&pitchRate, "pitch-rate", 0, "Seed Audio 1.0 pitch rate; accepted range is validated by the server")
-	flags.BoolVar(&enableTimestamp, "enable-timestamp", false, "request audio timestamps")
+	flags.StringVar(&input, "input", "", "audio_part_tool_param JSON object; cannot combine with --file")
+	flags.StringVar(&filePath, "file", "", "audio parameter JSON file, or - for stdin; cannot combine with --input")
+	flags.StringVar(&prompt, "prompt", "", "audio prompt passed unchanged; conflicts with JSON prompt")
+	flags.StringVar(&model, "model", internalgen.DefaultModel, "model passed unchanged; service validates support; default only applies without JSON input")
+	for _, kind := range []string{"audio", "image", "video"} {
+		flags.Var(&referenceFlag{kind: kind, references: &references}, kind, "local reference "+kind+" path; repeat to append after JSON references, in flag order")
+	}
+	flags.StringVar(&format, "format", "", "legacy audio_config.format; passed unchanged, support is validated by the service")
+	flags.Int32Var(&sampleRate, "sample-rate", 0, "legacy audio_config.sample_rate in Hz")
+	flags.Float64Var(&speechRate, "speech-rate", 0, "legacy audio_config.speech_rate")
+	flags.Float64Var(&loudnessRate, "loudness-rate", 0, "legacy audio_config.loudness_rate")
+	flags.Float64Var(&pitchRate, "pitch-rate", 0, "legacy audio_config.pitch_rate")
+	flags.BoolVar(&enableTimestamp, "enable-timestamp", false, "legacy audio_config.enable_timestamp")
 	return cmd
+}
+
+// Each flag shares one ordered list, including when different media types are interleaved.
+type referenceFlag struct {
+	kind       string
+	references *[]internalgen.LocalReference
+}
+
+func (f *referenceFlag) Set(value string) error {
+	*f.references = append(*f.references, internalgen.LocalReference{Type: f.kind, Path: value})
+	return nil
+}
+func (f *referenceFlag) Type() string { return "stringArray" }
+func (f *referenceFlag) String() string {
+	values := make([]string, 0)
+	for _, ref := range *f.references {
+		if ref.Type == f.kind {
+			values = append(values, ref.Path)
+		}
+	}
+	raw, _ := json.Marshal(values)
+	return string(raw)
 }
