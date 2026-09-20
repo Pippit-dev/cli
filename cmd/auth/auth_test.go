@@ -57,6 +57,20 @@ func TestLoginCommandCanRequestSafeCredentialRotation(t *testing.T) {
 	}
 }
 
+func TestLoginCommandRequiresExplicitLegacyLoopback(t *testing.T) {
+	manager := &fakeAuthManager{credential: &internal_auth.Credential{
+		UID: "123", CredentialScope: "account-device-scope", ExpiredAt: time.Now().Add(time.Hour).Unix(),
+	}}
+	command := NewLoginCommand(io.Discard, io.Discard, &common.Runner{Config: &config.Config{}, Auth: manager})
+	command.SetArgs([]string{"--legacy-loopback"})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if len(manager.loginOptions) != 1 || !manager.loginOptions[0].LegacyLoopback {
+		t.Fatal("explicit legacy login option was lost")
+	}
+}
+
 func (manager *fakeAuthManager) Status(context.Context) (*internal_auth.Status, error) {
 	return manager.status, nil
 }

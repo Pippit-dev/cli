@@ -289,6 +289,6 @@ pippit-tool-cli query-result \
 
 ## 鉴权
 
-原生 CLI 命令通过 `pippit-tool-cli login` 打开小云雀网页授权，并把本机设备专属凭证保存到系统安全凭证库；Access Key 不会显示在终端。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机登录。
+原生 CLI 命令通过 `pippit-tool-cli login` 显示小云雀网页授权链接与设备码。浏览器可以在另一台设备上打开链接，登录个人空间并核对设备码后确认，原终端会自动继续并把本机设备专属凭证保存到系统安全凭证库；Access Key 不会显示在终端。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机登录。需要兼容旧服务且浏览器与 CLI 在同一台机器时，可显式使用 `login --legacy-loopback`。
 
 CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。会话提交和查询共享上述凭据。
