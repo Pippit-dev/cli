@@ -226,6 +226,11 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 	if c.authorizer == nil {
 		return fmt.Errorf("授权请求缺少认证器")
 	}
+	// Local PPE validation: keep API requests in the same test lane.
+	if lane := strings.TrimSpace(os.Getenv("PIPPIT_GENERATE_VIDEO_SUBMIT_X_TT_ENV")); lane != "" {
+		req.Header.Set("x-tt-env", lane)
+		req.Header.Set("x-use-ppe", "1")
+	}
 	if err := c.authorizer.Inject(ctx, req); err != nil {
 		return fmt.Errorf("写入认证请求头失败: %w", err)
 	}
