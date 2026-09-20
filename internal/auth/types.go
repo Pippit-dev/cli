@@ -15,7 +15,8 @@ const (
 	deviceIDBytes      = 32
 	randomBindingBytes = 32
 
-	DefaultLoginTimeout = 5 * time.Minute
+	DefaultLoginTimeout        = 5 * time.Minute
+	DefaultSessionLoginTimeout = 20 * time.Minute
 )
 
 var (
@@ -24,6 +25,11 @@ var (
 	ErrSecureStore               = errors.New("安全凭证存储不可用")
 	ErrCredentialAccountMismatch = errors.New("网页授权账号与当前任务账号不一致")
 	ErrRemoteRevokeUnsupported   = errors.New("当前版本不支持在 CLI 中安全撤销远程 Access Key")
+	ErrLoginWaitTimeout          = errors.New("等待网页授权超时，尚未确认登录结果，请重新登录")
+	ErrAuthorizationExpired      = errors.New("网页授权会话已过期，请重新登录")
+	ErrAuthorizationDenied       = errors.New("用户已拒绝本次网页授权")
+	ErrAuthorizationPolicy       = errors.New("当前账号暂不能使用 CLI 授权")
+	ErrSessionUnsupported        = errors.New("服务端尚未支持跨设备授权；同机登录可显式使用 login --legacy-loopback")
 )
 
 // Credential is the dedicated, device-scoped Access Key managed by this CLI.
@@ -53,7 +59,10 @@ type LoginOptions struct {
 	OpenURL  func(string) error
 	Progress io.Writer
 	Timeout  time.Duration
-	// ForceRefresh asks the browser page to rotate this device's rejected AK.
+	// LegacyLoopback explicitly selects the same-device compatibility flow.
+	// Network failures never silently downgrade cross-device authorization.
+	LegacyLoopback bool
+	// ForceRefresh asks the authorization service to rotate this device's rejected AK.
 	// The CLI never calls QueryAk, DeleteAk, or GenerateAk itself.
 	ForceRefresh bool
 	// ExpectedCredentialScope binds reauthentication to the UID and device that

@@ -30,6 +30,7 @@ type logoutResult struct {
 // NewLoginCommand creates the top-level `pippit-tool-cli login` command.
 func NewLoginCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var forceRefresh bool
+	var legacyLoopback bool
 	command := &cobra.Command{
 		Use:   "login",
 		Short: "通过浏览器登录小云雀 CLI",
@@ -40,7 +41,7 @@ func NewLoginCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 				return err
 			}
 			credential, err := manager.Login(command.Context(), internal_auth.LoginOptions{
-				Progress: stderr, ForceRefresh: forceRefresh,
+				Progress: stderr, ForceRefresh: forceRefresh, LegacyLoopback: legacyLoopback,
 			})
 			if err != nil {
 				return err
@@ -60,6 +61,7 @@ func NewLoginCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	command.SetOut(stdout)
 	command.SetErr(stderr)
 	command.Flags().BoolVar(&forceRefresh, "force", false, "强制轮换当前设备的 CLI Access Key（仅在旧密钥被拒绝时使用）")
+	command.Flags().BoolVar(&legacyLoopback, "legacy-loopback", false, "使用旧版同机浏览器回调登录（不支持跨设备）")
 	return command
 }
 

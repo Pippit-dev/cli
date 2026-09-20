@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -20,6 +21,9 @@ type Manager struct {
 	authBaseURL           *url.URL
 	random                io.Reader
 	now                   func() time.Time
+	authClient            *http.Client
+	wait                  func(context.Context, time.Duration) error
+	jitter                func() time.Duration
 	credentialMu          sync.Mutex
 	cachedCredential      *Credential
 	credentialCacheLoaded bool
@@ -46,6 +50,9 @@ func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {
 		authBaseURL: authBaseURL,
 		random:      rand.Reader,
 		now:         time.Now,
+		authClient:  &http.Client{Timeout: 15 * time.Second},
+		wait:        waitForAuthorization,
+		jitter:      authorizationJitter,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -75,6 +82,13 @@ func (m *Manager) ResolveAccessKey(ctx context.Context) (string, error) {
 }
 
 func (m *Manager) Login(ctx context.Context, options LoginOptions) (*Credential, error) {
+	if options.LegacyLoopback {
+		return m.loginLoopback(ctx, options)
+	}
+	return m.loginSession(ctx, options)
+}
+
+func (m *Manager) loginLoopback(ctx context.Context, options LoginOptions) (*Credential, error) {
 	if err := m.validate(); err != nil {
 		return nil, err
 	}
@@ -308,7 +322,7 @@ func (m *Manager) validate() error {
 	if m.authBaseURL.Scheme != "https" && !(m.authBaseURL.Scheme == "http" && isLoopbackHost(m.authBaseURL.Hostname())) {
 		return errors.New("小云雀授权地址必须使用 HTTPS")
 	}
-	if m.authBaseURL.Host == "" || m.authBaseURL.RawQuery != "" || m.authBaseURL.Fragment != "" {
+	if m.authBaseURL.Host == "" || m.authBaseURL.User != nil || m.authBaseURL.Opaque != "" || m.authBaseURL.RawQuery != "" || m.authBaseURL.Fragment != "" {
 		return errors.New("小云雀授权地址无效")
 	}
 	return nil
