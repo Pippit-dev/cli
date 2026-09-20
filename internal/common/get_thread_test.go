@@ -2,6 +2,8 @@ package common
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -70,5 +72,22 @@ func TestGetThreadV2RequiresReadableText(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "get_thread v2 响应缺少 data.readable_text") {
 		t.Fatalf("error = %q, want readable_text validation", err)
+	}
+}
+
+func TestGetThreadPreservesStructuredErrorDataWithoutLoggingIt(t *testing.T) {
+	_, err := GetThread(context.Background(), &GetThreadOptions{ThreadID: "thread_123", RunID: "run_456"}, &Runner{
+		Client: getThreadFakeClient{response: `{"ret":"5","errmsg":"生成失败","log_id":"log_123","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]},"private_marker":"not-for-error-output"}}`},
+	})
+	var logErr *LogIDError
+	if !errors.As(err, &logErr) || logErr.LogID() != "log_123" || !strings.Contains(string(logErr.RawData), `"state":4`) {
+		t.Fatalf("structured error data or LogID lost: %#v", err)
+	}
+	encoded, marshalErr := json.Marshal(logErr)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if strings.Contains(err.Error(), "not-for-error-output") || strings.Contains(string(encoded), "not-for-error-output") || strings.Contains(string(encoded), "RawData") {
+		t.Fatalf("structured error data leaked into error output")
 	}
 }

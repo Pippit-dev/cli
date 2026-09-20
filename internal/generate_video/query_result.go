@@ -272,13 +272,26 @@ func queryResultFromGetThreadBusinessError(err error, opts *QueryResultOptions) 
 	}
 	message := getThreadBusinessErrorMessage(logErr.Message)
 	if message == "" {
-		message = "查询失败"
+		message = "未知错误"
+	}
+	completed := false
+	// Nonzero ret can represent either a query failure or an observed Run failure.
+	// Only a matching structured Run in the error payload can establish a terminal state.
+	thread, parseErr := parseQueryThread(&common.GetThreadResult{RawData: logErr.RawData})
+	if parseErr == nil && (thread.ThreadID == "" || thread.ThreadID == opts.ThreadID) {
+		if run, ok := findQueryRun(thread, opts.RunID); ok && (run.State == failedRunState || run.State == canceledRunState) {
+			completed = true
+			message = firstNonEmpty(extractQueryErrorMessage(run), message)
+		}
+	}
+	if !completed {
+		message = "查询失败：" + message
 	}
 	if logID := logErr.LogID(); logID != "" {
 		message = fmt.Sprintf("%s log_id=%s", message, logID)
 	}
 	return &QueryResultResult{
-		Completed:    true,
+		Completed:    completed,
 		ThreadID:     opts.ThreadID,
 		RunID:        opts.RunID,
 		ErrorMessage: message,

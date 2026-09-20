@@ -150,6 +150,99 @@ func TestQueryResultAudioDownloadErrorsKeepTaskIDs(t *testing.T) {
 	}
 }
 
+func TestQueryResultCanRetrySameRunAfterQueryBusinessError(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/biz/v1/skill/get_thread" {
+			t.Errorf("retry must not upload or submit: %s", r.URL.Path)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode query: %v", err)
+			return
+		}
+		if body["thread_id"] != "thread_123" || body["run_id"] != "run_456" {
+			t.Errorf("query changed task identity: %#v", body)
+		}
+		requests++
+		if requests == 1 {
+			io.WriteString(w, `{"ret":"5","errmsg":"服务器繁忙","log_id":"query_log_1"}`)
+			return
+		}
+		writeAudioQueryFixture(w, map[string]any{
+			"run_id": "run_456", "state": 4,
+			"fail_reason": map[string]any{"message": "下游音频生成失败", "code": 11001},
+		})
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	first := runAudioQuery(t, server.URL, dir)
+	if first["completed"] != false || first["error_message"] != "查询失败：服务器繁忙 log_id=query_log_1" {
+		t.Fatalf("query error must leave Run state unresolved: %#v", first)
+	}
+	second := runAudioQuery(t, server.URL, dir)
+	if second["completed"] != true || second["error_message"] != "下游音频生成失败 (error_code=11001)" {
+		t.Fatalf("second query should report observed Run failure: %#v", second)
+	}
+	if requests != 2 || first["thread_id"] != second["thread_id"] || first["run_id"] != second["run_id"] {
+		t.Fatalf("unexpected query sequence: requests=%d first=%#v second=%#v", requests, first, second)
+	}
+}
+
+func TestQueryResultStructuredBusinessErrorsRequireMatchingTerminalRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, threadID, runID string
+		state                 int
+		completed             bool
+		data                  any
+	}{
+		{name: "failed", threadID: "thread_123", runID: "run_456", state: 4, completed: true},
+		{name: "canceled", threadID: "thread_123", runID: "run_456", state: 5, completed: true},
+		{name: "wrong run", threadID: "thread_123", runID: "other_run", state: 4},
+		{name: "wrong thread", threadID: "other_thread", runID: "run_456", state: 4},
+		{name: "unknown state", threadID: "thread_123", runID: "run_456", state: 99},
+		{name: "working state", threadID: "thread_123", runID: "run_456", state: 2},
+		{name: "success state with error ret", threadID: "thread_123", runID: "run_456", state: 3},
+		{name: "missing data", data: json.RawMessage(`null`)},
+		{name: "missing run", data: map[string]any{"thread": map[string]any{"thread_id": "thread_123"}}},
+		{name: "malformed structured data", data: "not a structured thread"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/biz/v1/skill/get_thread" {
+					t.Errorf("error result must not download or submit: %s", r.URL.Path)
+					return
+				}
+				data := tc.data
+				if data == nil {
+					data = map[string]any{"thread": map[string]any{
+						"thread_id": tc.threadID, "run_list": []any{map[string]any{
+							"run_id": tc.runID, "state": tc.state,
+							"fail_reason": map[string]any{"code": 1, "message": "请求的Run已终止"},
+						}},
+					}}
+				}
+				json.NewEncoder(w).Encode(map[string]any{"ret": "5", "errmsg": "服务器繁忙", "log_id": "structured_log", "data": data})
+			}))
+			defer server.Close()
+			got := runAudioQuery(t, server.URL, t.TempDir())
+			want := "查询失败：服务器繁忙 log_id=structured_log"
+			if tc.completed {
+				want = "请求的Run已终止 (error_code=1) log_id=structured_log"
+			}
+			if got["completed"] != tc.completed || got["error_message"] != want || got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+				t.Fatalf("unexpected error outcome: %#v", got)
+			}
+			for _, kind := range []string{"audios", "images", "videos"} {
+				if items, ok := got[kind].([]any); !ok || len(items) != 0 {
+					t.Fatalf("%s=%#v, want empty media", kind, got[kind])
+				}
+			}
+		})
+	}
+}
+
 func runAudioQuery(t *testing.T, baseURL, dir string) map[string]any {
 	t.Helper()
 	var stdout, stderr bytes.Buffer

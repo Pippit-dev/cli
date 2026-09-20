@@ -304,6 +304,8 @@ pippit-tool-cli query-result \
 
 Run 失败或取消均为终态，`completed=true` 且填充 `error_message`，保留服务端失败原因；尚未结束时 `completed=false`。无论退出码如何，都应先检查 `error_message`；下载失败后继续查询原任务，不重复提交生成。
 
+API 错误响应只有包含与请求 Run ID 匹配的结构化失败或取消状态，才视为已结束；否则返回 `completed=false` 和“查询失败：”错误，保留 LogID 与任务 ID，排障后继续查询同一任务。
+
 ## HTTP 客户端
 
 命令模块通过 `common.Runner` 发起服务调用。运行时配置，例如基础地址、HTTP 超时时间和接口路径，由 `internal/config` 加载，并在运行器中与 `common.Client` 组合使用。
