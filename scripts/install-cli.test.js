@@ -44,6 +44,9 @@ function checkInstaller() {
     isWindows: process.platform === "win32",
     run(command, args, opts) {
       if (command === "curl") {
+        assert(args.includes("--progress-bar"));
+        assert(!args.includes("--silent"));
+        assert.strictEqual(args[args.indexOf("--max-time") + 1], "600");
         fs.writeFileSync(args[args.indexOf("--output") + 1], archive);
       } else if (command === "tar" || command === "powershell.exe") {
         const dest = command === "tar" ? args[args.indexOf("-C") + 1] : opts.env.PIPPIT_CLI_DEST;

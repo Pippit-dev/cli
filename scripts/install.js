@@ -36,12 +36,12 @@ function download(url, destPath) {
   const args = [
     "--fail",
     "--location",
-    "--silent",
+    "--progress-bar",
     "--show-error",
     "--connect-timeout",
     "10",
     "--max-time",
-    "120",
+    "600",
     "--max-redirs",
     "3",
     "--output",
@@ -51,6 +51,7 @@ function download(url, destPath) {
     args.unshift("--ssl-revoke-best-effort");
   }
   args.push(url);
+  console.error(`Downloading ${archiveName} (timeout: 10 minutes)...`);
   run("curl", args);
 }
 

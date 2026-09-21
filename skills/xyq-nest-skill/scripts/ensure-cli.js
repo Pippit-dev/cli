@@ -64,7 +64,7 @@ function ensureCLI({ canvas = false } = {}) {
   function run(command, args, label, quiet = false) {
     try {
       return execFileSync(command, args, {
-        cwd: installDir, env, timeout: quiet ? 10000 : 180000,
+        cwd: installDir, env, timeout: quiet ? 10000 : 660000,
         stdio: quiet ? ["ignore", "pipe", "pipe"] : ["ignore", 2, 2],
       });
     } catch (err) {
