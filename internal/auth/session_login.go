@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+// ErrAuthorizationUncertain means a key mutation was attempted but its result
+// has not been confirmed. Starting another login may repeat that mutation.
+var ErrAuthorizationUncertain = errors.New("本次授权结果尚未确认，密钥可能已创建或更换；请先核对终端和账号中的密钥状态，不要直接重复授权或换钥")
+
+type authorizationUncertainError struct{ cause error }
+
+func (e *authorizationUncertainError) Error() string { return ErrAuthorizationUncertain.Error() }
+func (e *authorizationUncertainError) Unwrap() error { return e.cause }
+func (e *authorizationUncertainError) Is(target error) bool {
+	return target == ErrAuthorizationUncertain
+}
+
 func (m *Manager) loginSession(ctx context.Context, options LoginOptions) (*Credential, error) {
 	if err := m.validate(); err != nil {
 		return nil, err
@@ -24,6 +36,9 @@ func (m *Manager) loginSession(ctx context.Context, options LoginOptions) (*Cred
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	credential, err := m.runSessionLogin(waitCtx, options)
+	if errors.Is(err, ErrAuthorizationUncertain) {
+		return credential, err
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return nil, ErrLoginWaitTimeout
 	}
@@ -93,14 +108,21 @@ func (m *Manager) runSessionLogin(ctx context.Context, options LoginOptions) (*C
 	serverDeadline := time.Unix(created.Session.ExpiresAt, 0).Add(claimWindow)
 	interval := max(minimumPollInterval, time.Duration(created.Session.Interval)*time.Second)
 	delay := interval
+	authorizationUncertain := false
 	for {
 		if err := m.waitSession(ctx, delay, serverDeadline); err != nil {
+			if authorizationUncertain {
+				return nil, &authorizationUncertainError{cause: err}
+			}
 			return nil, err
 		}
 		result, pollErr := m.callSession(ctx, "poll", created.ClaimSecret, sessionRequest{SessionID: created.Session.ID})
 		if pollErr != nil {
 			var requestErr *sessionRequestError
 			if !errors.As(pollErr, &requestErr) || !requestErr.retryable {
+				if authorizationUncertain {
+					return nil, &authorizationUncertainError{cause: pollErr}
+				}
 				return nil, pollErr
 			}
 			delay, interval = nextPollDelay(delay, interval, requestErr)
@@ -118,6 +140,10 @@ func (m *Manager) runSessionLogin(ctx context.Context, options LoginOptions) (*C
 		case "pending":
 			if result.Credential != nil {
 				return nil, errors.New("未确认授权返回了凭据")
+			}
+			if result.Session.Reason == "authorization_uncertain" && !authorizationUncertain {
+				authorizationUncertain = true
+				writeProgress(options.Progress, "授权结果尚未确认，CLI 正在继续查询当前会话；请勿重复发起授权或更换密钥。")
 			}
 			continue
 		case "denied":
@@ -250,6 +276,8 @@ func nextPollDelay(delay, interval time.Duration, requestErr *sessionRequestErro
 
 func sessionExpiredError(reason string) error {
 	switch reason {
+	case "authorization_uncertain":
+		return ErrAuthorizationUncertain
 	case "no_observed_action":
 		return fmt.Errorf("%w（服务端未观察到打开授权页面）", ErrAuthorizationExpired)
 	case "awaiting_decision":

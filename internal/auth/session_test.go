@@ -422,3 +422,127 @@ func TestSessionHTTPTimeoutRemainsRequestTimeout(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionUncertainAuthorizationReconcilesWithoutRestartOrRotation(t *testing.T) {
+	created := testSessionResponse()
+	creates, polls, acks := 0, 0, 0
+	manager, _, delays := sessionManagerForTest(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case sessionAPIPath + "create":
+			creates++
+			var request createSessionRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+			}
+			if request.Force {
+				t.Error("unexpected automatic key rotation")
+			}
+			writeSessionResponse(t, w, created)
+		case sessionAPIPath + "poll":
+			polls++
+			var request sessionRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+			}
+			if request.SessionID != created.Session.ID || r.Header.Get("X-Cli-Session-Secret") != created.ClaimSecret {
+				t.Error("poll switched the authorization session")
+			}
+			switch polls {
+			case 1, 4:
+				response := created
+				response.Session.Reason = "authorization_uncertain"
+				writeSessionResponse(t, w, response)
+			case 2:
+				_, _ = io.WriteString(w, `{"ret":"6"}`)
+			case 3:
+				_, _ = io.WriteString(w, `{"ret":"20002"}`)
+			default:
+				writeSessionResponse(t, w, testAuthorizedResponse(created))
+			}
+		case sessionAPIPath + "ack":
+			acks++
+			writeSessionResponse(t, w, created)
+		default:
+			t.Error("unexpected endpoint")
+			w.WriteHeader(http.StatusNotFound)
+		}
+	})
+	var progress bytes.Buffer
+	credential, err := manager.Login(context.Background(), LoginOptions{Progress: &progress, OpenURL: func(string) error { return nil }})
+	if err != nil || credential == nil || creates != 1 || polls != 5 || acks != 1 {
+		t.Fatalf("uncertain authorization was not reconciled: creates=%d polls=%d acks=%d err=%v", creates, polls, acks, err)
+	}
+	if want := []time.Duration{5 * time.Second, 5 * time.Second, 10 * time.Second, 20 * time.Second, 5 * time.Second}; !reflect.DeepEqual(*delays, want) {
+		t.Fatalf("poll delays=%v, want=%v", *delays, want)
+	}
+	if strings.Count(progress.String(), "授权结果尚未确认") != 1 || !strings.Contains(progress.String(), "请勿重复发起授权或更换密钥") {
+		t.Error("uncertainty must be explained once while continuing the same session")
+	}
+	if strings.Contains(progress.String(), created.ClaimSecret) || strings.Contains(progress.String(), credential.AccessKey) {
+		t.Error("progress leaked credential")
+	}
+}
+
+func TestSessionUncertainAuthorizationExpiryPreservesCredentialsAndClassification(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		waitErr error
+	}{
+		{name: "server expiry"},
+		{name: "local deadline", waitErr: context.DeadlineExceeded},
+		{name: "server wait deadline", waitErr: ErrLoginWaitTimeout},
+		{name: "cancelled wait", waitErr: context.Canceled},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			created := testSessionResponse()
+			created.Session.ExpectedAccount = accountBinding("123")
+			creates, polls, acks := 0, 0, 0
+			manager, store, _ := sessionManagerForTest(t, func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case sessionAPIPath + "create":
+					creates++
+					writeSessionResponse(t, w, created)
+				case sessionAPIPath + "poll":
+					polls++
+					response := created
+					response.Session.Reason = "authorization_uncertain"
+					if polls > 1 {
+						response.Session.Status = "expired"
+					}
+					writeSessionResponse(t, w, response)
+				case sessionAPIPath + "ack":
+					acks++
+					writeSessionResponse(t, w, created)
+				default:
+					t.Error("unexpected endpoint")
+					w.WriteHeader(http.StatusNotFound)
+				}
+			})
+			deviceID := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{3}, 32))
+			original := &Credential{Version: credentialVersion, DeviceID: deviceID, UID: "123", AccessKey: "original-ak", TokenID: "original-token", ExpiredAt: sessionTestNow.Add(time.Hour).Unix()}
+			store.credential = cloneCredential(original)
+			if test.waitErr != nil {
+				wait := manager.wait
+				manager.wait = func(ctx context.Context, delay time.Duration) error {
+					if polls > 0 {
+						return test.waitErr
+					}
+					return wait(ctx, delay)
+				}
+			}
+			_, err := manager.Login(context.Background(), LoginOptions{OpenURL: func(string) error { return nil }})
+			if !errors.Is(err, ErrAuthorizationUncertain) || errors.Is(err, ErrAuthorizationExpired) {
+				t.Fatalf("uncertainty lost at expiry: %v", err)
+			}
+			if test.waitErr != nil && !errors.Is(err, test.waitErr) {
+				t.Fatalf("underlying stop reason lost: %v", err)
+			}
+			if strings.Contains(err.Error(), "请重新登录") || !strings.Contains(err.Error(), "不要直接重复授权或换钥") {
+				t.Fatalf("unsafe retry advice: %v", err)
+			}
+			if creates != 1 || acks != 0 || store.saves != 0 || !reflect.DeepEqual(store.credential, original) {
+				t.Fatalf("uncertain result restarted, ACKed or replaced credentials: creates=%d acks=%d saves=%d", creates, acks, store.saves)
+			}
+		})
+	}
+}
