@@ -76,7 +76,7 @@ func TestGetThreadV2RequiresReadableText(t *testing.T) {
 }
 
 func TestGetThreadPreservesStructuredErrorDataWithoutLoggingIt(t *testing.T) {
-	_, err := GetThread(context.Background(), &GetThreadOptions{ThreadID: "thread_123", RunID: "run_456"}, &Runner{
+	_, err := GetThread(context.Background(), &GetThreadOptions{ThreadID: "thread_123", RunID: "run_456", PreserveErrorData: true}, &Runner{
 		Client: getThreadFakeClient{response: `{"ret":"5","errmsg":"生成失败","log_id":"log_123","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]},"private_marker":"not-for-error-output"}}`},
 	})
 	var logErr *LogIDError
@@ -89,5 +89,15 @@ func TestGetThreadPreservesStructuredErrorDataWithoutLoggingIt(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "not-for-error-output") || strings.Contains(string(encoded), "not-for-error-output") || strings.Contains(string(encoded), "RawData") {
 		t.Fatalf("structured error data leaked into error output")
+	}
+}
+
+func TestGetThreadOmitsStructuredErrorDataByDefault(t *testing.T) {
+	_, err := GetThread(context.Background(), &GetThreadOptions{ThreadID: "thread_123", RunID: "run_456"}, &Runner{
+		Client: getThreadFakeClient{response: `{"ret":"5","errmsg":"legacy failure","log_id":"log_123","data":{"private_marker":"not-retained"}}`},
+	})
+	var logErr *LogIDError
+	if !errors.As(err, &logErr) || len(logErr.RawData) != 0 || err.Error() != "获取线程请求返回失败: ret=5 errmsg=legacy failure log_id=log_123" {
+		t.Fatalf("default GetThread error contract changed: %v", err)
 	}
 }

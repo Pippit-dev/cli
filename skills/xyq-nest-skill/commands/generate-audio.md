@@ -84,6 +84,12 @@ pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.5","task_type":"du
 
 ## 返回与处理
 
-成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。音频位于 `audios[]`，视频位于 `videos[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。当前 query-result 只交付音频、视频和图片；即使 include 请求并生成了字幕，也不会输出或下载独立字幕文件。实际 duration 不等于精确时长控制能力。
+成功提交返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`，随后通过 `query-result --audio` 执行 [异步结果与媒体交付](../workflows/async-delivery.md)，包括 dubbing 返回视频的任务：
+
+```bash
+pippit-tool-cli query-result --audio --thread-id THREAD_ID --run-id RUN_ID --download-dir "./xyq_output"
+```
+
+音频位于 `audios[]`，视频位于 `videos[]`，逐项交付 output_path 对应文件；提交成功不是生成成功。`query-result --audio` 只交付音频、视频和图片；即使 include 请求并生成了字幕，也不会输出或下载独立字幕文件。实际 duration 不等于精确时长控制能力。
 
 模型不支持、引用非法、鉴权或生成失败时说明真实错误，不改成视频请求、不自动切换模型、不重复提交未知结果的任务。查询报错与已确认的失败终态按 [查询契约](query-result.md) 区分。

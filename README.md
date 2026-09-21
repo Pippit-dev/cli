@@ -44,6 +44,8 @@ node /path/to/xyq-skill/scripts/ensure-cli.js
 
 Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原生资产命令使用 `cli_path`，语义命令通过 `node "CANVAS_ENTRY" canvas command ...` 执行。检查会真实加载 npm 内的离线命令目录，避免把原生帮助误当作运行时已就绪。画布编辑使用独立的 [查询、编辑与回读流程](skills/xyq-nest-skill/workflows/canvas-edit.md)，不套用媒体轮询。
 
+音频生成及其结果查询使用 `ensure-cli.js --audio`，额外检查音频生成命令和 `query-result --audio`。原有图视频等任务不要求音频能力，也不会为缺少音频命令而升级已有 CLI。
+
 登录后选择生成或处理命令，统一接入 [异步结果与媒体交付](skills/xyq-nest-skill/workflows/async-delivery.md)。完整基础案例见 [生成一张图并交付](skills/xyq-nest-skill/examples/generate-and-deliver.md)，组合案例由入口按需引导。
 
 ### 模块维护
@@ -51,7 +53,7 @@ Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原
 - `SKILL.md` 维护能力边界、意图到命令的路由及必要执行规则。
 - `commands/` 每个模块维护适用场景、必填与可选参数、最小调用、真实返回契约及失败处理；授权相关命令合并在同一文档。
 - `workflows/` 维护共用轮询与媒体交付规则；`examples/` 展示基础完整流程及易混淆的组合场景，引用规则，不复制参数手册。
-- 新增 CLI 时补命令文档、入口路由、`ensure-cli.js` 必需命令集合和安装测试；声明是同步结果还是异步任务，是否需要附加运行时及其检查方式，按需接入交付流程，补正常、缺输入和易混淆场景用例。
+- 新增 CLI 时补命令文档、入口路由、`ensure-cli.js` 对应场景的命令检查和安装测试；声明是同步结果还是异步任务，是否需要附加运行时及其检查方式，按需接入交付流程，补正常、缺输入和易混淆场景用例。
 - 文档使用 Skill 内相对链接，打包时保留结构。规范副本位于 `skills/xyq-nest-skill/`，项目发现入口 `.agents/skills/xyq-skill` 指向该目录。
 - 修改后运行 `node scripts/skills.test.js` 与 `node scripts/install-cli.test.js`，检查引用完整、保留命令与安装检查一致及缺命令升级/缓存复用；Agent 行为用例见 [测试场景](skills/xyq-nest-skill/tests/agent_test_cases.md)。这些检查不代表真实生成已验证。
 
@@ -244,7 +246,7 @@ JSON 中的已提供字段、未知字段、数值精度、`null`、`0` 和 `fal
 
 本地素材参数接收可读的普通文件路径，不接收远程 URL。CLI 会在开始上传前检查所有本地文件；文件类型、参考组合、speaker 与资产 ID 的兼容性仍由服务端判断。参考图的上传与提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用。
 
-外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result` 查询和下载；提交成功不等于生成成功。结果按模式包含音频或视频，例如 dubbing 请求 `include=["video_url"]` 可返回翻配视频；普通音频生成不会自动把产物配回任意源视频。返回的 duration 也不代表精确时长控制能力。
+外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result --audio` 查询和下载；提交成功不等于生成成功。结果按模式包含音频或视频，例如 dubbing 请求 `include=["video_url"]` 可返回翻配视频，该任务仍用 `--audio` 查询；普通音频生成不会自动把产物配回任意源视频。返回的 duration 也不代表精确时长控制能力。
 
 ## 生视频 CLI
 
@@ -309,7 +311,7 @@ pippit-tool-cli erase-video-subtitle \
 
 两个命令都输出 `thread_id`、`run_id` 和 `web_thread_link`。拿到任务 ID 后，可继续使用 `query-result` 查询并下载结果。
 
-查询并下载图片、视频或音频结果：
+查询并下载生图/生视频结果：
 
 ```bash
 pippit-tool-cli query-result \
@@ -318,11 +320,18 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run 并输出 JSON。Run 成功后下载视频、图片和音频产物，`completed=true`；`videos`、`images`、`audios` 各项包含 `download_url` 和 `output_path`。音频还保留可用的 `name`、`pippit_asset_id`、`duration`（秒）。音频扩展名从已知格式的元数据、URL 路径或名称中获取；无法判断时使用 `.audio`，不猜测编码。图片格式缺省时仍使用 `.png`。
+`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
 
-Run 失败或取消均为终态，`completed=true` 且填充 `error_message`，保留服务端失败原因；尚未结束时 `completed=false`。无论退出码如何，都应先检查 `error_message`；下载失败后继续查询原任务，不重复提交生成。
+`generate-audio` 创建的任务使用显式音频查询模式，包含 dubbing 返回视频的情况：
 
-API 错误响应只有包含与请求 Run ID 匹配的结构化失败或取消状态，才视为已结束；否则返回 `completed=false` 和“查询失败：”错误，保留 LogID 与任务 ID，排障后继续查询同一任务。
+```bash
+pippit-tool-cli query-result --audio \
+  --thread-id "skill_xxx" \
+  --run-id "skill_xxx" \
+  --download-dir "./audio-output"
+```
+
+`--audio` 增加 `audios` 数组并下载音频及同任务中的视频、图片，保留可用的音频名称、资产 ID 和 duration。该模式对 API 错误响应要求匹配的结构化失败或取消状态，才认定 Run 已结束；缺少匹配终态时返回 `completed=false` 和“查询失败：”错误，保留 LogID 与任务 ID。音频扩展名未知时使用 `.audio`，不猜测编码。默认查询保留原有图视频输出字段、错误判断和下载行为，不自动按产物推断查询模式。无论使用哪个模式，都先检查 `error_message`；下载失败后继续查询原任务，不重复提交生成。
 
 ## HTTP 客户端
 

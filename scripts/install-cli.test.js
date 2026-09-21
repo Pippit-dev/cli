@@ -95,7 +95,7 @@ function checkInstaller() {
   assert.deepStrictEqual(effects, []);
 }
 
-function bootstrapFixture({ failure, platform = "linux", version = "9.9.9", missingCommand = "generate-image", canvas = false } = {}) {
+function bootstrapFixture({ failure, platform = "linux", version = "9.9.9", missingCommand = "generate-image", canvas = false, audio = false } = {}) {
   const dirs = [];
   const calls = [];
   const home = fs.mkdtempSync(path.join(root, "user-"));
@@ -108,7 +108,7 @@ function bootstrapFixture({ failure, platform = "linux", version = "9.9.9", miss
     dirs, calls, npmDir,
     options: {
       main: true,
-      process: { platform, execPath: nodePath, argv: [nodePath, bootstrap, ...(canvas ? ["--canvas"] : [])], env: { XYQ_ACCESS_KEY: "test-key", PATH: npmDir } },
+      process: { platform, execPath: nodePath, argv: [nodePath, bootstrap, ...(canvas ? ["--canvas"] : []), ...(audio ? ["--audio"] : [])], env: { XYQ_ACCESS_KEY: "test-key", PATH: npmDir } },
       modules: {
         os: { homedir: () => home },
         child_process: {
@@ -182,7 +182,7 @@ function checkBootstrap() {
     assert.strictEqual(result.cli_path, JSON.parse(next.output[0]).cli_path);
     assert.strictEqual(fixture.dirs.length, 1, "Subsequent invocations must reuse the cached CLI");
     for (const command of ["status", "login", "logout", "query-result",
-      "generate-image", "generate-audio", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
+      "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
       assert.strictEqual(fixture.calls.filter((call) => call.args[0] === command).length, 2);
     }
     assert.strictEqual(fixture.calls.filter((call) => call.args[0].endsWith("install-cli.js")).length, 1);
@@ -213,7 +213,7 @@ function checkBootstrap() {
   }
   // Every retained command participates in compatibility checks and cache reuse.
   for (const missingCommand of ["status", "login", "logout", "query-result", "generate-image",
-    "generate-audio", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
+    "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
     fs.writeFileSync(existing, "missing-command");
@@ -274,6 +274,24 @@ function checkBootstrap() {
   help.options.process.argv = [process.execPath, bootstrap, "--help"];
   assert.strictEqual(load(bootstrap, help.options).proc.exitCode, 0);
   assert.strictEqual(help.calls.length, 0, "Help must not install or download anything");
+
+  for (const missingCommand of ["generate-audio", "query-result --audio"]) {
+    for (const audio of [false, true]) {
+      const fixture = bootstrapFixture({ missingCommand, audio });
+      const existing = path.join(fixture.npmDir, "pippit-tool-cli");
+      fs.writeFileSync(existing, "missing-command");
+      const result = load(bootstrap, fixture.options);
+      assert.strictEqual(result.proc.exitCode, 0, result.errors.join("\n"));
+      assert.strictEqual(fixture.dirs.length, audio ? 1 : 0, "Only audio tasks may upgrade for missing audio support");
+      assert.strictEqual(JSON.parse(result.output[0]).cli_path === existing, !audio);
+      assert.strictEqual(fs.readFileSync(existing, "utf8"), "missing-command");
+      assert.strictEqual(load(bootstrap, fixture.options).proc.exitCode, 0);
+      assert.strictEqual(fixture.dirs.length, audio ? 1 : 0, "Audio tasks must reuse a compatible cache");
+      if (!audio) {
+        assert(!fixture.calls.some((call) => call.args[0] === "generate-audio" || call.args.includes("--audio")));
+      }
+    }
+  }
 }
 
 function checkCanvasBootstrap() {

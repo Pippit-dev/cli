@@ -25,12 +25,23 @@ func TestAudioFileNameUsesOnlySafeExtensions(t *testing.T) {
 	}
 }
 
-func TestQueryResultFileNamesDoNotReuseAllocatedSuffixes(t *testing.T) {
+func TestAudioQueryResultFileNamesDoNotReuseAllocatedSuffixes(t *testing.T) {
 	used := map[string]int{}
 	want := []string{"voice.wav", "voice-2.wav", "voice-2-2.wav", "voice-3.wav"}
 	for i, name := range []string{"voice.wav", "voice.wav", "voice-2.wav", "voice.wav"} {
-		if got := uniqueQueryResultFileName(name, used); got != want[i] {
+		if got := uniqueAudioQueryResultFileName(name, used); got != want[i] {
 			t.Fatalf("filename %d = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestQueryResultRetainsLegacyFileNames(t *testing.T) {
+	used := map[string]int{}
+	// Keep the existing image/video naming contract; audio has a separate allocator.
+	want := []string{"voice.wav", "voice-2.wav", "voice-2.wav", "voice-3.wav"}
+	for i, name := range []string{"voice.wav", "voice.wav", "voice-2.wav", "voice.wav"} {
+		if got := uniqueQueryResultFileName(name, used); got != want[i] {
+			t.Fatalf("legacy filename %d = %q, want %q", i, got, want[i])
 		}
 	}
 }

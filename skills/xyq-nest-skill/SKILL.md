@@ -12,7 +12,7 @@ metadata:
 
 ## 开始执行
 
-1. 画布任务运行 `node "{baseDir}/scripts/ensure-cli.js" --canvas`，其他任务运行 `node "{baseDir}/scripts/ensure-cli.js"`。保存返回的 `cli_path`；Canvas 还需保存 `canvas_entry`。文档中的 `pippit-tool-cli` 替换为带引号的 `cli_path`；画布语义命令按模块说明通过 Node 入口执行。同一任务复用，安装细节见 [安装说明](scripts/install.md)。
+1. 画布任务运行 `node "{baseDir}/scripts/ensure-cli.js" --canvas`；音频生成及其结果查询运行 `node "{baseDir}/scripts/ensure-cli.js" --audio`；其他任务运行 `node "{baseDir}/scripts/ensure-cli.js"`。保存返回的 `cli_path`；Canvas 还需保存 `canvas_entry`。文档中的 `pippit-tool-cli` 替换为带引号的 `cli_path`；画布语义命令按模块说明通过 Node 入口执行。同一任务复用，安装细节见 [安装说明](scripts/install.md)。
 2. 按下表选择操作，只读取命中的命令文档。执行需要鉴权的操作前，按 [授权说明](commands/auth.md) 检查登录；有效登录可复用。
 3. 生成、视频处理和查询已有媒体结果时，还必须读取 [异步结果与媒体交付](workflows/async-delivery.md)。画布任务使用 [画布查询、编辑与验证](workflows/canvas-edit.md)，不把画布编辑当作媒体生成。积分与授权操作直接返回结果。
 
@@ -32,6 +32,7 @@ metadata:
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
+| 查询 generate-audio 创建的任务，含翻配视频产物 | `query-result --audio` | [查询结果](commands/query-result.md) |
 | 查询个人积分余额、剩余 credits | `get-credit-balance` | [积分](commands/get-credit-balance.md) |
 
 - 普通生图、生音频、生视频也走对应生成命令，无需用户额外声明“模型直出”。

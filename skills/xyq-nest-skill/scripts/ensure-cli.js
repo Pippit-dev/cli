@@ -8,7 +8,7 @@ const path = require("path");
 
 const REQUIRED_COMMANDS = [
   "status", "login", "logout", "query-result",
-  "generate-image", "generate-audio", "generate-video", "video-super-resolution",
+  "generate-image", "generate-video", "video-super-resolution",
   "erase-video-subtitle", "get-credit-balance",
 ];
 
@@ -44,7 +44,7 @@ function findCLIOnPath() {
   return null;
 }
 
-function ensureCLI({ canvas = false } = {}) {
+function ensureCLI({ canvas = false, audio = false } = {}) {
   if (Number(process.versions.node.split(".")[0]) < 16) {
     throw new Error("需要 Node.js 16+ 和 npm。");
   }
@@ -80,6 +80,7 @@ function ensureCLI({ canvas = false } = {}) {
       throw new Error(`CLI 版本 ${version} 与 npm 包版本 ${expectedVersion} 不一致。`);
     }
     const commands = REQUIRED_COMMANDS.map((command) => [command]);
+    if (audio) commands.push(["generate-audio"], ["query-result", "--audio"]);
     if (canvas) {
       for (const command of ["create", "get", "allocate", "upload", "apply"]) commands.push(["canvas", command]);
     }
@@ -158,13 +159,14 @@ function ensureCLI({ canvas = false } = {}) {
 
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === "--help") {
-    console.log("Usage: node ensure-cli.js [--canvas]\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。--canvas 额外验证画布原生命令和 npm 运行时，并返回 canvas_entry。");
-  } else if (process.argv.length !== 2 && !(process.argv.length === 3 && process.argv[2] === "--canvas")) {
-    console.error("不支持的参数。用法：node ensure-cli.js [--canvas]");
+    console.log("Usage: node ensure-cli.js [--canvas] [--audio]\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。--canvas 额外验证画布原生命令和 npm 运行时，并返回 canvas_entry。--audio 额外验证音频生成与 query-result --audio；其他任务不要求音频能力。");
+  } else if (process.argv.slice(2).some((arg) => !["--canvas", "--audio"].includes(arg))
+      || new Set(process.argv.slice(2)).size !== process.argv.length - 2) {
+    console.error("不支持的参数。用法：node ensure-cli.js [--canvas] [--audio]");
     process.exitCode = 1;
   } else {
     try {
-      console.log(JSON.stringify(ensureCLI({ canvas: process.argv[2] === "--canvas" })));
+      console.log(JSON.stringify(ensureCLI({ canvas: process.argv.includes("--canvas"), audio: process.argv.includes("--audio") })));
     } catch (err) {
       console.error(err.message);
       process.exitCode = 1;

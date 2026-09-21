@@ -23,7 +23,8 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 		Short: "Generate audio with model parameters validated by the service",
 		Long: "Generate audio using convenience flags or an audio_part_tool_param JSON object via --input or --file (use - for stdin). Models and parameter combinations are validated by the service. Explicit values are passed unchanged.\n\n" +
 			"JSON mode does not add a model default. Calls without JSON retain seedaudio_1.0 as a compatibility default, not a model allowlist. Legacy output flags only populate audio_config; use JSON for other configurations and modes.\n\n" +
-			"Conflicting JSON fields and explicit flags are rejected. Local audio/image/video references are appended after JSON references in flag order. Reference image submission is connected, but successful generation has not been verified.",
+			"Conflicting JSON fields and explicit flags are rejected. Local audio/image/video references are appended after JSON references in flag order. Reference image submission is connected, but successful generation has not been verified.\n\n" +
+			"After submission, use query-result --audio with the returned thread_id and run_id to query and download the results, including any dubbing video.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			flags := cmd.Flags()

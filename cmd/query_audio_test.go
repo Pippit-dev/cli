@@ -344,7 +344,7 @@ func runAudioQuery(t *testing.T, baseURL, dir string) map[string]any {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	root := newTestRootCommand(t, &stdout, &stderr, baseURL)
-	root.SetArgs([]string{"query-result", "--thread-id", "thread_123", "--run-id", "run_456", "--download-dir", dir})
+	root.SetArgs([]string{"query-result", "--audio", "--thread-id", "thread_123", "--run-id", "run_456", "--download-dir", dir})
 	if err := root.Execute(); err != nil {
 		t.Fatalf("query Execute: %v", err)
 	}

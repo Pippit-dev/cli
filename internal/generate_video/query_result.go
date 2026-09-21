@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,9 +14,8 @@ import (
 )
 
 const (
-	successRunState  = 3
-	failedRunState   = 4
-	canceledRunState = 5
+	successRunState = 3
+	failedRunState  = 4
 )
 
 // QueryResultOptions is the command-facing request shape for query-result.
@@ -35,16 +33,6 @@ type QueryResultResult struct {
 	ErrorMessage string             `json:"error_message"`
 	Videos       []QueryResultVideo `json:"videos"`
 	Images       []QueryResultImage `json:"images"`
-	Audios       []QueryResultAudio `json:"audios"`
-}
-
-// QueryResultAudio describes a downloaded audio. Duration is in seconds, when available.
-type QueryResultAudio struct {
-	DownloadURL   string   `json:"download_url"`
-	OutputPath    string   `json:"output_path"`
-	Name          string   `json:"name,omitempty"`
-	PippitAssetID string   `json:"pippit_asset_id,omitempty"`
-	Duration      *float64 `json:"duration,omitempty"`
 }
 
 // QueryResultVideo describes a downloaded video from query-result.
@@ -65,19 +53,12 @@ type queryThread struct {
 }
 
 type queryRun struct {
-	RunID        string          `json:"run_id"`
-	State        int             `json:"state"`
-	ErrorMessage string          `json:"error_message"`
-	ErrorMsg     string          `json:"error_msg"`
-	Errmsg       string          `json:"errmsg"`
-	FailReason   queryFailReason `json:"fail_reason"`
-	EntryList    []queryEntry    `json:"entry_list"`
-}
-
-type queryFailReason struct {
-	Message         string          `json:"message"`
-	FallbackMessage string          `json:"fallback_message"`
-	Code            json.RawMessage `json:"code"`
+	RunID        string       `json:"run_id"`
+	State        int          `json:"state"`
+	ErrorMessage string       `json:"error_message"`
+	ErrorMsg     string       `json:"error_msg"`
+	Errmsg       string       `json:"errmsg"`
+	EntryList    []queryEntry `json:"entry_list"`
 }
 
 type queryEntry struct {
@@ -96,7 +77,6 @@ type queryContent struct {
 type queryContentData struct {
 	Video        *queryVideo     `json:"video"`
 	Image        *queryImage     `json:"image"`
-	Audio        *queryAudio     `json:"audio"`
 	ErrorMessage string          `json:"error_message"`
 	ErrorCode    json.RawMessage `json:"error_code"`
 }
@@ -116,18 +96,6 @@ type queryImage struct {
 
 type queryImageMeta struct {
 	Format string `json:"format"`
-}
-
-type queryAudio struct {
-	DownloadURL   string         `json:"url"`
-	Name          string         `json:"name"`
-	PippitAssetID string         `json:"pippit_asset_id"`
-	Metadata      queryAudioMeta `json:"metadata"`
-}
-
-type queryAudioMeta struct {
-	Format   string   `json:"format"`
-	Duration *float64 `json:"duration"`
 }
 
 func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.Runner) (*QueryResultResult, error) {
@@ -157,25 +125,21 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 	if run.State != successRunState {
 		result := &QueryResultResult{
-			Completed: run.State == failedRunState || run.State == canceledRunState,
+			Completed: run.State == failedRunState,
 			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 			RunID:     opts.RunID,
 			Videos:    []QueryResultVideo{},
 			Images:    []QueryResultImage{},
-			Audios:    []QueryResultAudio{},
 		}
 		if run.State == failedRunState {
 			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 失败")
-		} else if run.State == canceledRunState {
-			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 已取消")
 		}
 		return result, nil
 	}
 
 	videos := extractQueryVideos(run)
 	images := extractQueryImages(run)
-	audios := extractQueryAudios(run)
-	if len(videos) == 0 && len(images) == 0 && len(audios) == 0 {
+	if len(videos) == 0 && len(images) == 0 {
 		return nil, fmt.Errorf("下载失败：未找到可下载的产物")
 	}
 
@@ -184,7 +148,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		return nil, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
 	}
 
-	usedNames := make(map[string]int, len(videos)+len(images)+len(audios))
+	usedNames := make(map[string]int, len(videos)+len(images))
 
 	resultVideos := make([]QueryResultVideo, 0, len(videos))
 	for i, video := range videos {
@@ -238,30 +202,12 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		})
 	}
 
-	resultAudios := make([]QueryResultAudio, 0, len(audios))
-	for i, audio := range audios {
-		if strings.TrimSpace(audio.DownloadURL) == "" {
-			return nil, fmt.Errorf("下载失败：第 %d 个音频产物 url 为空", i+1)
-		}
-		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(audioFileName(audio, i+1), usedNames))
-		if _, err := common.DownloadResult(ctx, common.DownloadResultOptions{
-			URL: audio.DownloadURL, OutputPath: outputPath,
-		}, runner); err != nil {
-			return nil, fmt.Errorf("下载失败：%w", err)
-		}
-		resultAudios = append(resultAudios, QueryResultAudio{
-			DownloadURL: audio.DownloadURL, OutputPath: outputPath, Name: audio.Name,
-			PippitAssetID: audio.PippitAssetID, Duration: audio.Metadata.Duration,
-		})
-	}
-
 	return &QueryResultResult{
 		Completed: true,
 		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 		RunID:     opts.RunID,
 		Videos:    resultVideos,
 		Images:    resultImages,
-		Audios:    resultAudios,
 	}, nil
 }
 
@@ -272,32 +218,18 @@ func queryResultFromGetThreadBusinessError(err error, opts *QueryResultOptions) 
 	}
 	message := getThreadBusinessErrorMessage(logErr.Message)
 	if message == "" {
-		message = "未知错误"
-	}
-	completed := false
-	// Nonzero ret can represent either a query failure or an observed Run failure.
-	// Only a matching structured Run in the error payload can establish a terminal state.
-	thread, parseErr := parseQueryThread(&common.GetThreadResult{RawData: logErr.RawData})
-	if parseErr == nil && (thread.ThreadID == "" || thread.ThreadID == opts.ThreadID) {
-		if run, ok := findQueryRun(thread, opts.RunID); ok && (run.State == failedRunState || run.State == canceledRunState) {
-			completed = true
-			message = firstNonEmpty(extractQueryErrorMessage(run), message)
-		}
-	}
-	if !completed {
-		message = "查询失败：" + message
+		message = "查询失败"
 	}
 	if logID := logErr.LogID(); logID != "" {
 		message = fmt.Sprintf("%s log_id=%s", message, logID)
 	}
 	return &QueryResultResult{
-		Completed:    completed,
+		Completed:    true,
 		ThreadID:     opts.ThreadID,
 		RunID:        opts.RunID,
 		ErrorMessage: message,
 		Videos:       []QueryResultVideo{},
 		Images:       []QueryResultImage{},
-		Audios:       []QueryResultAudio{},
 	}, true
 }
 
@@ -422,26 +354,8 @@ func extractQueryImages(run queryRun) []queryImage {
 	return images
 }
 
-func extractQueryAudios(run queryRun) []queryAudio {
-	audios := make([]queryAudio, 0)
-	for _, entry := range run.EntryList {
-		for _, content := range entry.Artifact.Content {
-			if content.SubType == "biz/x_data_audio" && content.Data.Audio != nil {
-				audios = append(audios, *content.Data.Audio)
-			}
-		}
-	}
-	return audios
-}
-
 func extractQueryErrorMessage(run queryRun) string {
 	if message := firstNonEmpty(run.ErrorMessage, run.ErrorMsg, run.Errmsg); message != "" {
-		return message
-	}
-	if message := firstNonEmpty(run.FailReason.Message, run.FailReason.FallbackMessage); message != "" {
-		if code := rawMessageString(run.FailReason.Code); code != "" && code != "0" {
-			return fmt.Sprintf("%s (error_code=%s)", message, code)
-		}
 		return message
 	}
 	for _, entry := range run.EntryList {
@@ -506,46 +420,6 @@ func imageFileName(image queryImage, index int) string {
 	return name
 }
 
-func audioFileName(audio queryAudio, index int) string {
-	name := firstNonEmpty(audio.PippitAssetID, audio.Name, "audio_"+strconv.Itoa(index))
-	name = sanitizeFileName(name)
-	ext := normalizeAudioFormatExt(audio.Metadata.Format)
-	if ext == "" {
-		if parsed, err := url.Parse(audio.DownloadURL); err == nil {
-			ext = normalizeAudioFormatExt(filepath.Ext(parsed.Path))
-		}
-	}
-	if ext == "" {
-		ext = normalizeAudioFormatExt(filepath.Ext(audio.Name))
-	}
-	if ext == "" {
-		ext = "audio"
-	}
-	if normalizeAudioFormatExt(filepath.Ext(name)) != "" {
-		name = strings.TrimSuffix(name, filepath.Ext(name))
-	}
-	return name + "." + ext
-}
-
-// Only known audio formats can become a file extension; URL queries are never used.
-func normalizeAudioFormatExt(format string) string {
-	format = strings.ToLower(strings.TrimSpace(format))
-	format = strings.TrimPrefix(format, "audio/")
-	format = strings.TrimPrefix(format, ".")
-	switch format {
-	case "mpeg":
-		return "mp3"
-	case "x-wav", "wave":
-		return "wav"
-	case "ogg_opus":
-		return "ogg"
-	case "mp3", "wav", "pcm", "m4a", "aac", "flac", "ogg", "opus":
-		return format
-	default:
-		return ""
-	}
-}
-
 // normalizeImageFormatExt maps the server-provided metadata.format to a safe
 // file extension. Only a known allowlist is accepted; anything else (including
 // "image/jpeg", ".jpeg", or empty values) falls back to "png".
@@ -595,19 +469,11 @@ func sanitizeFileName(name string) string {
 
 func uniqueQueryResultFileName(name string, used map[string]int) string {
 	count := used[name] + 1
+	used[name] = count
 	if count == 1 {
-		used[name] = count
 		return name
 	}
 	ext := filepath.Ext(name)
 	base := strings.TrimSuffix(name, ext)
-	for {
-		candidate := fmt.Sprintf("%s-%d%s", base, count, ext)
-		if used[candidate] == 0 {
-			used[name] = count
-			used[candidate] = 1
-			return candidate
-		}
-		count++
-	}
+	return fmt.Sprintf("%s-%d%s", base, count, ext)
 }
