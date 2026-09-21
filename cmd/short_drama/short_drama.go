@@ -55,6 +55,7 @@ func newShortDramaSubmitRunCommand(stdout, stderr io.Writer, runner *common.Runn
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
+	cmd.Flags().StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	cmd.Flags().StringVar(&opts.Message, "message", "", "message to send to the short drama agent")
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "existing thread ID; omit to create a new thread")
 	cmd.Flags().StringArrayVar(&opts.AssetIDs, "asset-ids", nil, "asset ID to attach; repeat for multiple assets")

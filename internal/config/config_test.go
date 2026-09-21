@@ -23,6 +23,9 @@ func TestLoadUsesDefaultConfig(t *testing.T) {
 	if cfg.Paths.GetCreditBalance != GetCreditBalancePath {
 		t.Fatalf("GetCreditBalance path = %q, want %q", cfg.Paths.GetCreditBalance, GetCreditBalancePath)
 	}
+	if cfg.Paths.GetAvailableModelList != GetAvailableModelListPath {
+		t.Fatalf("GetAvailableModelList path = %q, want %q", cfg.Paths.GetAvailableModelList, GetAvailableModelListPath)
+	}
 }
 
 func TestLoadReadsAccessKey(t *testing.T) {

@@ -42,14 +42,15 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
+	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
 	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos")
 	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios")
 	flags.IntVar(&durationSec, "duration", 0, "video duration in seconds")
 	flags.StringVar(&opts.Ratio, "ratio", "", "video ratio, such as 9:16, 16:9, 3:4, 4:3")
-	flags.StringVar(&opts.Model, "model", "", "video model; normal users: Seedance_2.0_mini_lite; VIP-only: seedance2.0_vision, seedance2.0_fast_vision, Seedance_2.0_mini, Seedance_2.5")
-	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution, such as 720p, 1080p")
-	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide two --image values in first-frame, last-frame order")
+	flags.StringVar(&opts.Model, "model", "", "video model key; use 'model list' to discover available models")
+	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution; optional for Seedance_2.0_mini and Seedance_2.0_mini_lite (server defaults to 720p); use 'model describe <key>' for current configuration")
+	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide --image values in first-frame, last-frame order; MiniMax and Wan also accept a single first-frame image in this mode")
 	return cmd
 }

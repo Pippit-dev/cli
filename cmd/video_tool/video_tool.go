@@ -31,6 +31,7 @@ func NewSuperResolutionCommand(stdout, stderr io.Writer, runner *common.Runner) 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
+	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.VideoPath, "video", "", "local input video path")
 	flags.StringVar(&opts.OutputResolution, "output-resolution", "", "output resolution passed to the service: 720p, 1080p, 2k, or 4k")
 	flags.StringVar(&opts.ToolVersion, "tool-version", "", "optional tool version passed to the service: standard, professional_v1, or professional_v2")
@@ -58,6 +59,7 @@ func NewEraseSubtitleCommand(stdout, stderr io.Writer, runner *common.Runner) *c
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
+	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.VideoPath, "video", "", "local input video path")
 	return cmd
 }

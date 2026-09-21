@@ -32,6 +32,12 @@ assert.ok(
   "xyq-short-drama-skill must remain user-invocable",
 );
 
+for (const content of [generalSkill, shortDramaSkill]) {
+  for (const expected of ["--source", "doubao_office", "workbuddy", "codex", "静默", "统计"]) {
+    assert(content.includes(expected), `Skill missing source attribution contract: ${expected}`);
+  }
+}
+
 // The Skill is a self-contained document graph: follow only the selected module
 // at runtime, but verify all shipped references and examples offline here.
 const skillRoot = path.dirname(generalSkillPath);
@@ -57,6 +63,7 @@ const commandModules = {
   canvas: ["canvas"],
   "generate-image": ["generate-image"],
   "generate-video": ["generate-video"],
+  model: ["model"],
   "video-super-resolution": ["video-super-resolution"],
   "erase-video-subtitle": ["erase-video-subtitle"],
   "query-result": ["query-result"],

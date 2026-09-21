@@ -44,6 +44,9 @@ function checkInstaller() {
     isWindows: process.platform === "win32",
     run(command, args, opts) {
       if (command === "curl") {
+        assert(args.includes("--progress-bar"));
+        assert(!args.includes("--silent"));
+        assert.strictEqual(args[args.indexOf("--max-time") + 1], "600");
         fs.writeFileSync(args[args.indexOf("--output") + 1], archive);
       } else if (command === "tar" || command === "powershell.exe") {
         const dest = command === "tar" ? args[args.indexOf("-C") + 1] : opts.env.PIPPIT_CLI_DEST;
@@ -182,8 +185,8 @@ function checkBootstrap() {
     assert.strictEqual(result.cli_path, JSON.parse(next.output[0]).cli_path);
     assert.strictEqual(fixture.dirs.length, 1, "Subsequent invocations must reuse the cached CLI");
     for (const command of ["status", "login", "logout", "query-result",
-      "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
-      assert.strictEqual(fixture.calls.filter((call) => call.args[0] === command).length, 2);
+      "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
+      assert.strictEqual(fixture.calls.filter((call) => call.args.slice(0, -1).join(" ") === command).length, 2);
     }
     assert.strictEqual(fixture.calls.filter((call) => call.args[0].endsWith("install-cli.js")).length, 1);
     // If the binary is removed, repair the incomplete cache with a fresh installation.
@@ -213,7 +216,7 @@ function checkBootstrap() {
   }
   // Every retained command participates in compatibility checks and cache reuse.
   for (const missingCommand of ["status", "login", "logout", "query-result", "generate-image",
-    "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance"]) {
+    "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
     fs.writeFileSync(existing, "missing-command");
@@ -262,7 +265,7 @@ function checkBootstrap() {
   assert.strictEqual(load(bootstrap, failedUpgrade.options).proc.exitCode, 1);
   assert.strictEqual(failedUpgrade.dirs.length, 1, "An incompatible latest release must fail without an upgrade loop");
   assert.strictEqual(fs.readFileSync(oldPath, "utf8"), "missing-command");
-  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "generate-image", "query-result"]) {
+  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "generate-image", "query-result", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ failure });
     const result = load(bootstrap, fixture.options);
     assert.strictEqual(result.proc.exitCode, 1, failure);

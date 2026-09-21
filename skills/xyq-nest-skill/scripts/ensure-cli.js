@@ -9,7 +9,7 @@ const path = require("path");
 const REQUIRED_COMMANDS = [
   "status", "login", "logout", "query-result",
   "generate-image", "generate-video", "video-super-resolution",
-  "erase-video-subtitle", "get-credit-balance",
+  "erase-video-subtitle", "get-credit-balance", "model list", "model describe",
 ];
 
 function npmCommand() {
@@ -64,7 +64,7 @@ function ensureCLI({ canvas = false } = {}) {
   function run(command, args, label, quiet = false) {
     try {
       return execFileSync(command, args, {
-        cwd: installDir, env, timeout: quiet ? 10000 : 180000,
+        cwd: installDir, env, timeout: quiet ? 10000 : 660000,
         stdio: quiet ? ["ignore", "pipe", "pipe"] : ["ignore", 2, 2],
       });
     } catch (err) {
@@ -79,7 +79,7 @@ function ensureCLI({ canvas = false } = {}) {
     if (expectedVersion && version !== expectedVersion) {
       throw new Error(`CLI 版本 ${version} 与 npm 包版本 ${expectedVersion} 不一致。`);
     }
-    const commands = REQUIRED_COMMANDS.map((command) => [command]);
+    const commands = REQUIRED_COMMANDS.map((command) => command.split(" "));
     if (canvas) {
       for (const command of ["create", "get", "allocate", "upload", "apply"]) commands.push(["canvas", command]);
     }

@@ -18,6 +18,7 @@ var (
 
 // Options is the stable command-facing request shape for generate-video.
 type Options struct {
+	Source       string
 	Prompt       string
 	ImagePaths   []string
 	VideoPaths   []string
@@ -54,7 +55,15 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	}
 
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
-	return common.SubmitRun(ctx, "generate-video", body, runner)
+	// Business attribution belongs to this command, regardless of the selected model.
+	return common.SubmitRunWithBabiParam(ctx, "generate-video", body, runner, map[string]string{
+		"scene_lv1":  "ai_agent",
+		"scene_lv2":  "front_tool",
+		"tool_id":    "instant_video",
+		"tab_name":   "other",
+		"edit_type":  "instant_video",
+		"enter_from": "skill",
+	})
 }
 
 func ValidateOptions(opts *Options) error {
@@ -116,11 +125,11 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []s
 		GenerateType: opts.GenerateType,
 	}
 
-	return map[string]any{
+	return common.WithSubmitRunSource(map[string]any{
 		"agent_name":            common.AgentNameVideoPart,
 		"message":               prompt,
 		"video_part_tool_param": param,
-	}
+	}, opts.Source)
 }
 
 func assetRefs(assetIDs []string) []*common.MediaAsset {

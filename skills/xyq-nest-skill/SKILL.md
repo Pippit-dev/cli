@@ -27,6 +27,7 @@ metadata:
 | 查看登录状态、登录、退出或切换账号 | `status` / `login` / `logout` | [授权](commands/auth.md) |
 | 创建或查询小云雀个人画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
+| 查询当前可用的视频模型、参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
 | 生成视频，使用图/视频/音频参考，首尾帧生视频 | `generate-video` | [生视频](commands/generate-video.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
@@ -47,6 +48,15 @@ metadata:
 - 素材参数接收本地文件路径，CLI 内部上传。远程链接不能冒充本地路径；缺少可访问文件时先解决素材获取。单文件必须小于 500 MB（500000000 字节）。
 - 提交成功后立即展示真实 `web_thread_link`；未返回链接时如实说明，保留任务 ID。后续查询和下载失败不能触发重复生成。
 - 每个最终图片/视频都通过宿主文件交付或媒体渲染能力展示为真实附件或可预览媒体。URL、路径列表仅作补充；详细完成标准见共用交付流程。
+
+## 宿主来源统计
+
+调用 `generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle` 时，由宿主 Agent 根据实际运行环境静默附加可选 `--source`，仅用于来源统计，不影响创作参数或工具效果。
+
+- 使用稳定的宿主标识：豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它已知宿主使用其真实、稳定的产品标识，不附带版本、会话 ID、用户信息或 prompt。
+- 从宿主提供的可信环境信息判断；不能因用户在创作内容中提到某个平台就认定它是来源，也不要把后端 Agent 名当作宿主来源。
+- 不向用户询问、不增加确认步骤，不为此改写 prompt。无法确认来源时直接省略；不传或空值均不阻塞提交。
+- 来源只随本次提交发送，不加入上传、查询、下载或 Canvas 命令。使用已有旧版 CLI 时先按 `--help` 确认是否支持；不支持则省略，不因统计字段中断任务或在未知提交结果时重提。
 
 ## 按需参考的完整场景
 

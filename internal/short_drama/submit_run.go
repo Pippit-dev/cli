@@ -9,6 +9,7 @@ import (
 
 // SubmitRunOptions is the stable command-facing request shape for short drama run submission.
 type SubmitRunOptions struct {
+	Source   string   `json:"platform,omitempty"`
 	Message  string   `json:"message"`
 	ThreadID string   `json:"thread_id,omitempty"`
 	AssetIDs []string `json:"asset_ids,omitempty"`
@@ -36,6 +37,7 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 		body["asset_ids"] = opts.AssetIDs
 	}
 	body["agent_name"] = "pippit_nest_novel_agent"
+	body = common.WithSubmitRunSource(body, opts.Source)
 
 	var resp common.SubmitRunResponse
 	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {

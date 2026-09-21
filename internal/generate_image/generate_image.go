@@ -23,6 +23,7 @@ const ratioUsage = "enum values: 0=原始比例/自动, 2=16:9(横屏), 13=21:9(
 
 // Options is the stable command-facing request shape for generate-image.
 type Options struct {
+	Source             string
 	Prompt             string
 	ImagePaths         []string
 	Model              string
@@ -151,7 +152,7 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string) map[string]any {
 	if len(imageAssetIDs) > 0 {
 		body["asset_ids"] = imageAssetIDs
 	}
-	return body
+	return common.WithSubmitRunSource(body, opts.Source)
 }
 
 func parseRatio(raw string) (*int, error) {

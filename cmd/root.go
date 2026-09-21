@@ -72,6 +72,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetCreditBalanceCommand(stdout, stderr, runner))
+	root.AddCommand(newModelCommand(stdout, stderr, runner))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newSubmitRunCommand(stdout, stderr, runner))
 	root.AddCommand(newUploadFileCommand(stdout, stderr, runner))

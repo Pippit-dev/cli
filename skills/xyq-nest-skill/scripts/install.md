@@ -10,7 +10,7 @@ node "{baseDir}/scripts/ensure-cli.js"
 
 ## 查找与复用
 
-脚本依次检查 PATH 中的 CLI 和自身缓存，验证版本及本 Skill 使用命令的 `--help`；命令集合维护在脚本的 `REQUIRED_COMMANDS`。帮助检查不调用生成服务，也不需要凭据，不证明账号权限或服务端运行状态。
+脚本依次检查 PATH 中的 CLI 和自身缓存，验证版本及本 Skill 使用命令的 `--help`；命令集合维护在脚本的 `REQUIRED_COMMANDS`，包含 `model list` 和 `model describe`。帮助检查不调用生成服务，也不需要凭据，不证明账号权限或服务端运行状态。
 
 命令齐全则直接复用，不检查最新版本；不存在或缺少必需命令时，获取 `@pippit-dev/cli@latest`。PATH 旧版本缺少命令但缓存完整时复用缓存，避免每次升级。版本命令不能运行或检查超时则报告运行错误。
 
