@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
@@ -97,4 +98,13 @@ func SubmitRunPath(runner *Runner) string {
 		return runner.Config.Paths.SubmitRun
 	}
 	return config.SubmitRunPath
+}
+
+// WithSubmitRunSource adds optional host attribution to a newly constructed skill request.
+// The API consumes this metadata as platform; it is not part of the creative input.
+func WithSubmitRunSource(body map[string]any, source string) map[string]any {
+	if source = strings.TrimSpace(source); source != "" {
+		body["platform"] = source
+	}
+	return body
 }

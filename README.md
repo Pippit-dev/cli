@@ -27,6 +27,7 @@
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
+| 查看可用视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -209,6 +210,17 @@ pippit-tool-cli generate-image \
 
 图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 整数格式、generate-image-count 非负和文件后缀。
 
+## 视频模型发现
+
+```bash
+pippit-tool-cli model list
+pippit-tool-cli model search MiniMax
+pippit-tool-cli model describe MiniMax-H3
+pippit-tool-cli model list --refresh
+```
+
+使用当前登录凭证查询服务端；成功结果按账号和环境隔离缓存 5 分钟，`--refresh` 强制刷新。失败时提示重试，不回退静态列表或过期缓存。`describe` 将比例枚举转换为可直接传给 `--ratio` 的字符串，并整理分辨率、时长和素材限制；不展示内部 `config_key`，未知比例枚举跳过。生成仍由服务端校验。详见 [模型发现](skills/xyq-nest-skill/commands/model.md)。
+
 ## 生视频 CLI
 
 `generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
@@ -227,7 +239,7 @@ pippit-tool-cli generate-video \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。普通用户支持模型 `Seedance_2.0_mini_lite`；`seedance2.0_vision`、`seedance2.0_fast_vision`、`Seedance_2.0_mini` 和 `Seedance_2.5` 为 VIP 专属模型。CLI 会在提交前校验 prompt 和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。当前可用模型通过 `model list` 查询，参数详情通过 `model describe MODEL_KEY` 查询。CLI 会在提交前校验 prompt 和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
 
 首尾帧生视频时，按首帧、尾帧的顺序传入两次 `--image`，并设置 `--generate-type 1`：
 
@@ -292,3 +304,13 @@ pippit-tool-cli query-result \
 原生 CLI 命令通过 `pippit-tool-cli login` 打开小云雀网页授权，并把本机设备专属凭证保存到系统安全凭证库；Access Key 不会显示在终端。可用 `pippit-tool-cli status` 查看状态、`pippit-tool-cli logout` 清除本机登录。
 
 CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。会话提交和查询共享上述凭据。
+
+### 宿主来源统计
+
+调用 Skill 提交接口的命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`。
+
+由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；未提供/空值时不发送该字段。不会自动读取环境变量、持久化来源或影响查询、上传、下载、Canvas 命令。
+
+```bash
+pippit-tool-cli generate-video --prompt "小猫在花园散步" --model Seedance_2.0_mini --source workbuddy
+```

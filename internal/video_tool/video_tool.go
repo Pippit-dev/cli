@@ -17,6 +17,7 @@ const (
 
 // SuperResolutionOptions is the command-facing request shape for video-super-resolution.
 type SuperResolutionOptions struct {
+	Source           string
 	VideoPath        string
 	ToolVersion      string
 	OutputResolution string
@@ -24,6 +25,7 @@ type SuperResolutionOptions struct {
 
 // EraseSubtitleOptions is the command-facing request shape for erase-video-subtitle.
 type EraseSubtitleOptions struct {
+	Source    string
 	VideoPath string
 }
 
@@ -43,7 +45,7 @@ func RunSuperResolution(ctx context.Context, opts *SuperResolutionOptions, runne
 	if err != nil {
 		return nil, err
 	}
-	return common.SubmitRun(ctx, "video-super-resolution", buildSuperResolutionSubmitRunBody(opts, assetID), runner)
+	return common.SubmitRun(ctx, "video-super-resolution", common.WithSubmitRunSource(buildSuperResolutionSubmitRunBody(opts, assetID), opts.Source), runner)
 }
 
 // RunEraseSubtitle uploads one video and submits a subtitle-erasing run.
@@ -59,7 +61,7 @@ func RunEraseSubtitle(ctx context.Context, opts *EraseSubtitleOptions, runner *c
 	if err != nil {
 		return nil, err
 	}
-	return common.SubmitRun(ctx, "erase-video-subtitle", buildEraseSubtitleSubmitRunBody(assetID), runner)
+	return common.SubmitRun(ctx, "erase-video-subtitle", common.WithSubmitRunSource(buildEraseSubtitleSubmitRunBody(assetID), opts.Source), runner)
 }
 
 // ValidateSuperResolutionOptions validates only command shape; semantic enums remain service-owned.

@@ -32,8 +32,12 @@ func (c *videoSubmitRecordingClient) SendRequest(_ context.Context, path string,
 	return json.Unmarshal([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread_123","run_id":"run_123"}}}`), out)
 }
 
-func TestRunCarriesModelHubROIQuery(t *testing.T) {
-	for _, model := range []string{"MiniMax-H3", "MiniMax-H3-Max", "wan3.0", "happyhorse-1.1", "Seedance_2.5", ""} {
+func TestRunCarriesVideoROIQuery(t *testing.T) {
+	for _, model := range []string{
+		"MiniMax-H3", "MiniMax-H3-Max", "wan3.0", "happyhorse-1.1",
+		"Seedance_2.5", "seedance2.0_vision", "seedance2.0_fast_vision",
+		"Seedance_2.0_mini", "Seedance_2.0_mini_lite", "", "future-model",
+	} {
 		t.Run(model, func(t *testing.T) {
 			client := &videoSubmitRecordingClient{}
 			runner := &common.Runner{
@@ -50,12 +54,6 @@ func TestRunCarriesModelHubROIQuery(t *testing.T) {
 			query := path.Query()
 			if path.Path != "/custom/submit_run" || query.Get("source") != "a+b" || len(query["item"]) != 2 {
 				t.Fatalf("configured path/query lost: %s", client.path)
-			}
-			if model == "Seedance_2.5" || model == "" {
-				if query.Has("babi_param") {
-					t.Fatal("existing Seedance path must remain unchanged")
-				}
-				return
 			}
 			var babi map[string]string
 			if err := json.Unmarshal([]byte(query.Get("babi_param")), &babi); err != nil {
@@ -78,17 +76,21 @@ func TestRunCarriesModelHubROIQuery(t *testing.T) {
 }
 
 func TestRunPreservesExplicitROIQuery(t *testing.T) {
-	client := &videoSubmitRecordingClient{}
-	raw := `{"scene_lv1":"ai_agent","scene_lv2":"front_tool","tool_id":"custom_video"}`
-	runner := &common.Runner{Client: client, Config: &config.Config{Paths: &config.Paths{
-		SubmitRun: "/custom/submit_run?babi_param=" + url.QueryEscape(raw),
-	}}}
-	if _, err := Run(context.Background(), &Options{Prompt: "cat walking", Model: "MiniMax-H3"}, runner); err != nil {
-		t.Fatal(err)
-	}
-	path, err := url.Parse(client.path)
-	if err != nil || path.Query().Get("babi_param") != raw {
-		t.Fatalf("explicit attribution overwritten: %s, %v", client.path, err)
+	for _, model := range []string{"MiniMax-H3", "Seedance_2.0_mini"} {
+		t.Run(model, func(t *testing.T) {
+			client := &videoSubmitRecordingClient{}
+			raw := `{"scene_lv1":"ai_agent","scene_lv2":"front_tool","tool_id":"custom_video"}`
+			runner := &common.Runner{Client: client, Config: &config.Config{Paths: &config.Paths{
+				SubmitRun: "/custom/submit_run?babi_param=" + url.QueryEscape(raw),
+			}}}
+			if _, err := Run(context.Background(), &Options{Prompt: "cat walking", Model: model}, runner); err != nil {
+				t.Fatal(err)
+			}
+			path, err := url.Parse(client.path)
+			if err != nil || path.Query().Get("babi_param") != raw {
+				t.Fatalf("explicit attribution overwritten: %s, %v", client.path, err)
+			}
+		})
 	}
 }
 

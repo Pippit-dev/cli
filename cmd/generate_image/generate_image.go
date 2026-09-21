@@ -44,6 +44,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
+	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.Prompt, "prompt", "", "image generation prompt")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
 	flags.StringVar(&opts.Model, "model", "", "image model; supported: seedream_5.0_pro, seedream_5.0, seedream_4.3, nova2, seedream_4.5, seedream_4.1, seedream_4")

@@ -13,6 +13,7 @@ const (
 	DefaultAuthStoreServiceName = "pippit-cli"
 	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
 	GetCreditBalancePath        = "/api/biz/v1/skill/get_credit_balance"
+	GetAvailableModelListPath   = "/api/biz/v1/skill/get_available_model_list"
 	GetThreadPath               = "/api/biz/v1/skill/get_thread"
 	UploadFilePath              = "/api/biz/v1/skill/upload_file"
 	ListThreadFilePath          = "/api/biz/v1/skill/list_thread_file"
@@ -30,11 +31,12 @@ type Config struct {
 }
 
 type Paths struct {
-	SubmitRun        string
-	GetCreditBalance string
-	GetThread        string
-	UploadFile       string
-	ListThreadFile   string
+	SubmitRun             string
+	GetCreditBalance      string
+	GetAvailableModelList string
+	GetThread             string
+	UploadFile            string
+	ListThreadFile        string
 }
 
 // Load resolves the built-in runtime config.
@@ -45,11 +47,12 @@ func Load() *Config {
 		AuthTTL:     DefaultAuthTTL,
 		AccessKey:   strings.TrimSpace(os.Getenv(EnvXYQAccessKey)),
 		Paths: &Paths{
-			SubmitRun:        SubmitRunPath,
-			GetCreditBalance: GetCreditBalancePath,
-			GetThread:        GetThreadPath,
-			UploadFile:       UploadFilePath,
-			ListThreadFile:   ListThreadFilePath,
+			SubmitRun:             SubmitRunPath,
+			GetCreditBalance:      GetCreditBalancePath,
+			GetAvailableModelList: GetAvailableModelListPath,
+			GetThread:             GetThreadPath,
+			UploadFile:            UploadFilePath,
+			ListThreadFile:        ListThreadFilePath,
 		},
 	}
 }
