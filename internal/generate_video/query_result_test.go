@@ -1,6 +1,50 @@
 package generate_video
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
+
+func TestAudioFileNameUsesOnlySafeExtensions(t *testing.T) {
+	for _, tc := range []struct {
+		name, id, format, url, want string
+	}{
+		{"voice", "asset_1", "audio/wav", "https://x/audio.mp3?sign=secret", "asset_1.wav"},
+		{"voice", "asset_1", "", "https://x/audio.MP3?sign=secret", "asset_1.mp3"},
+		{"voice.wav", "", "audio/mpeg", "", "voice.mp3"},
+		{"voice.wav", "", "", "https://x/no-extension", "voice.wav"},
+		{"voice", "", "ogg_opus", "", "voice.ogg"},
+		{"voice", "", "pcm", "", "voice.pcm"},
+		{"../voice\\bad", "", "../../evil.exe", "https://x/a.exe", ".._voice_bad.audio"},
+		{"", "", "", "https://x/a?ext=.mp3", "audio_2.audio"},
+	} {
+		got := audioFileName(queryAudio{Name: tc.name, PippitAssetID: tc.id, DownloadURL: tc.url, Metadata: queryAudioMeta{Format: tc.format}}, 2)
+		if got != tc.want || filepath.Base(got) != got {
+			t.Errorf("audioFileName(%#v) = %q, want %q", tc, got, tc.want)
+		}
+	}
+}
+
+func TestAudioQueryResultFileNamesDoNotReuseAllocatedSuffixes(t *testing.T) {
+	used := map[string]int{}
+	want := []string{"voice.wav", "voice-2.wav", "voice-2-2.wav", "voice-3.wav"}
+	for i, name := range []string{"voice.wav", "voice.wav", "voice-2.wav", "voice.wav"} {
+		if got := uniqueAudioQueryResultFileName(name, used); got != want[i] {
+			t.Fatalf("filename %d = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
+func TestQueryResultRetainsLegacyFileNames(t *testing.T) {
+	used := map[string]int{}
+	// Keep the existing image/video naming contract; audio has a separate allocator.
+	want := []string{"voice.wav", "voice-2.wav", "voice-2.wav", "voice-3.wav"}
+	for i, name := range []string{"voice.wav", "voice.wav", "voice-2.wav", "voice.wav"} {
+		if got := uniqueQueryResultFileName(name, used); got != want[i] {
+			t.Fatalf("legacy filename %d = %q, want %q", i, got, want[i])
+		}
+	}
+}
 
 func TestVideoFileNameUsesVIDBeforeTimestampTitle(t *testing.T) {
 	got := videoFileName(queryVideo{

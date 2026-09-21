@@ -13,12 +13,16 @@ import (
 // NewQueryResultCommand builds the query-result command.
 func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	opts := &internalgen.QueryResultOptions{}
+	var audio bool
 
 	cmd := &cobra.Command{
 		Use:   "query-result",
 		Short: "Query a run result and download completed videos or images",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if audio {
+				return runAudioQueryResult(cmd, stdout, opts, runner)
+			}
 			result, err := internalgen.QueryResult(cmd.Context(), opts, runner)
 			if err != nil {
 				_ = common.AppendDailyErrorLog("query-result", err, map[string]string{
@@ -38,6 +42,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from generate-video output")
 	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate-video output")
 	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos or images into")
+	cmd.Flags().BoolVar(&audio, "audio", false, "query a generate-audio task with audio result and terminal-state handling")
 	return cmd
 }
 

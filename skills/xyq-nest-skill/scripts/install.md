@@ -37,3 +37,7 @@ node "{baseDir}/scripts/ensure-cli.js"
 成功额外返回 `canvas_entry`，供 `node "CANVAS_ENTRY" canvas command ...` 使用；`cli_path` 仍用于原生命令。语义操作的实际支持范围以当前目录为准，检查通过不代表所有业务操作或服务端权限都可用。
 
 独立 Go 二进制没有 npm 入口，或包内运行时缺失/损坏时，Canvas 模式按原有规则检查缓存并至多安装一次最新完整 npm 包，保留旧安装直到新版本通过。普通媒体任务不要求 Canvas 运行时，也不会因为缺少它而升级。不要把缓存内的 `run.js` 单独复制出来，它依赖相邻模块与 `dist` 运行时。
+
+## 音频命令检查
+
+音频生成及其结果查询使用 `node "{baseDir}/scripts/ensure-cli.js" --audio`，额外检查 `generate-audio` 和 `query-result --audio` 的帮助。图视频、授权和积分等原有流程不要求音频能力，不会因为已有 CLI 缺少音频命令而升级。查询音频任务时仍需显式传 `query-result --audio`；安装检查不会替命令添加参数。

@@ -9,11 +9,11 @@
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 图片生成与参考图编辑、音频和视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
 
 ### 技能路由
 
-- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
+- 图片生成与参考图编辑、音频生成、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
 - 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
 
 需要补充、选择或确认时，使用宿主实际暴露且当前模式允许的工具：Codex 的 `request_user_input` / `request_user_input_async`、WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。
@@ -27,6 +27,7 @@
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
+| 音频生成与模型参数透传、本地参考素材上传 | `generate-audio` | [音频](skills/xyq-nest-skill/commands/generate-audio.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -43,6 +44,8 @@ node /path/to/xyq-skill/scripts/ensure-cli.js
 
 Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原生资产命令使用 `cli_path`，语义命令通过 `node "CANVAS_ENTRY" canvas command ...` 执行。检查会真实加载 npm 内的离线命令目录，避免把原生帮助误当作运行时已就绪。画布编辑使用独立的 [查询、编辑与回读流程](skills/xyq-nest-skill/workflows/canvas-edit.md)，不套用媒体轮询。
 
+音频生成及其结果查询使用 `ensure-cli.js --audio`，额外检查音频生成命令和 `query-result --audio`。原有图视频等任务不要求音频能力，也不会为缺少音频命令而升级已有 CLI。
+
 登录后选择生成或处理命令，统一接入 [异步结果与媒体交付](skills/xyq-nest-skill/workflows/async-delivery.md)。完整基础案例见 [生成一张图并交付](skills/xyq-nest-skill/examples/generate-and-deliver.md)，组合案例由入口按需引导。
 
 ### 模块维护
@@ -50,7 +53,7 @@ Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原
 - `SKILL.md` 维护能力边界、意图到命令的路由及必要执行规则。
 - `commands/` 每个模块维护适用场景、必填与可选参数、最小调用、真实返回契约及失败处理；授权相关命令合并在同一文档。
 - `workflows/` 维护共用轮询与媒体交付规则；`examples/` 展示基础完整流程及易混淆的组合场景，引用规则，不复制参数手册。
-- 新增 CLI 时补命令文档、入口路由、`ensure-cli.js` 必需命令集合和安装测试；声明是同步结果还是异步任务，是否需要附加运行时及其检查方式，按需接入交付流程，补正常、缺输入和易混淆场景用例。
+- 新增 CLI 时补命令文档、入口路由、`ensure-cli.js` 对应场景的命令检查和安装测试；声明是同步结果还是异步任务，是否需要附加运行时及其检查方式，按需接入交付流程，补正常、缺输入和易混淆场景用例。
 - 文档使用 Skill 内相对链接，打包时保留结构。规范副本位于 `skills/xyq-nest-skill/`，项目发现入口 `.agents/skills/xyq-skill` 指向该目录。
 - 修改后运行 `node scripts/skills.test.js` 与 `node scripts/install-cli.test.js`，检查引用完整、保留命令与安装检查一致及缺命令升级/缓存复用；Agent 行为用例见 [测试场景](skills/xyq-nest-skill/tests/agent_test_cases.md)。这些检查不代表真实生成已验证。
 
@@ -209,6 +212,42 @@ pippit-tool-cli generate-image \
 
 图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 整数格式、generate-image-count 非负和文件后缀。
 
+## 生音频 CLI
+
+`generate-audio` 将音频参数交给服务端校验和执行。CLI 不维护模型、输出格式、参考数量或混用规则的白名单，也不会在失败时切换模型。已接入参数不代表所有模型和模式都可用，实际支持范围以服务端为准。
+
+真实用例已验证 `seedaudio_1.0` 的 JSON 生成与下载，以及 `seedaudio_1.5` 的 `reference`、`separate` 和合规视频翻配 `dubbing`；翻配用例返回并下载了音频和视频。1.0 参考图用例仍未成功。具体结果和验证边界见 [音频命令说明](skills/xyq-nest-skill/commands/generate-audio.md#已验证范围)。这些结果不是模型白名单，也不代表所有素材与参数组合均可用；模型到生成服务的映射由服务端配置决定，CLI 不改写 model。
+
+原有便捷 flags 保留；不用 JSON 且没有显式指定 `--model` 时，兼容默认值仍为 `seedaudio_1.0`。显式 model 按原值发送，包括空字符串和空白，不修剪或替换。JSON 输入模式不添加默认模型，由服务端解释缺省值。
+
+```bash
+pippit-tool-cli generate-audio \
+  --prompt "用温暖自然的声音介绍今天的旅行" \
+  --audio ./reference.wav \
+  --format wav \
+  --sample-rate 24000
+```
+
+`--format`、`--sample-rate`、`--speech-rate`、`--loudness-rate`、`--pitch-rate`、`--enable-timestamp` 只写入旧 `audio_config` 的对应字段。只发送显式设置的值，保留 `0` 和 `false`；CLI 仅检查参数类型与数值能否编码为 JSON，语义和范围交给服务端。使用 `audio_config_v2`、`output_format`、`task_type`、`dubbing_config` 等参数时，通过 JSON 提供，CLI 不按模型自动转换旧配置。
+
+### 通用 JSON 输入
+
+`--input '<JSON>'` 与 `--file path.json` 互斥，`--file -` 从 stdin 读取；必须是单个 JSON 对象，最多 64 MiB，重复键和尾随内容会报错。对象直接对应 `audio_part_tool_param`，不要再套一层请求体。
+
+```bash
+pippit-tool-cli generate-audio --input '{"model":"seedaudio_1.0","prompt":"用自然的声音说你好","audio_config":{"format":"wav","sample_rate":24000}}'
+pippit-tool-cli generate-audio --file ./audio-params.json
+pippit-tool-cli generate-audio --file - < ./audio-params.json
+```
+
+JSON 中的已提供字段、未知字段、数值精度、`null`、`0` 和 `false` 保留到 HTTP 请求。CLI 能发送字段不表示服务端已经支持它；服务端仍按当前协议解析，未定义字段可能被忽略。模型专属参数及是否允许省略 prompt 由服务端决定，CLI 不填入虚构的 prompt 或 text。
+
+便捷 flag 与 JSON 同字段冲突时直接报错，即使值相同也不覆盖。例如 `--model` 不能与 JSON `model` 同时出现；`--format` 不能与 `audio_config.format` 同时出现，但可以与 `audio_config` 的其他字段组合。已有 JSON `references` 保序，再按 `--audio`、`--image`、`--video` 在命令行出现的顺序追加本地上传结果。已有资产 ID 和 `references[].speaker` 通过 JSON 提供，CLI 不上传或改写这些引用，也不去重；追加本地文件时 `references` 必须是数组。
+
+本地素材参数接收可读的普通文件路径，不接收远程 URL。CLI 会在开始上传前检查所有本地文件；文件类型、参考组合、speaker 与资产 ID 的兼容性仍由服务端判断。参考图的上传与提交链路已接通，但尚未通过真实音频生成验收，不能承诺稳定可用。
+
+外层请求始终使用 `agent_name=pippit_audio_part_agent`；JSON 不能修改 agent、鉴权、团队或外层协议字段。`message` 优先取非空 prompt，其次 text、task_type 描述；均无内容时使用中性任务描述，不改写音频参数。任务提交成功返回 `thread_id`、`run_id`、`web_thread_link`，再用 `query-result --audio` 查询和下载；提交成功不等于生成成功。结果按模式包含音频或视频，例如 dubbing 请求 `include=["video_url"]` 可返回翻配视频，该任务仍用 `--audio` 查询；普通音频生成不会自动把产物配回任意源视频。返回的 duration 也不代表精确时长控制能力。
+
 ## 生视频 CLI
 
 `generate-video` 会上传本地参考图片、视频和音频，然后向视频片段 Agent 提交生视频请求：
@@ -282,6 +321,17 @@ pippit-tool-cli query-result \
 ```
 
 `query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
+
+`generate-audio` 创建的任务使用显式音频查询模式，包含 dubbing 返回视频的情况：
+
+```bash
+pippit-tool-cli query-result --audio \
+  --thread-id "skill_xxx" \
+  --run-id "skill_xxx" \
+  --download-dir "./audio-output"
+```
+
+`--audio` 增加 `audios` 数组并下载音频及同任务中的视频、图片，保留可用的音频名称、资产 ID 和 duration。该模式对 API 错误响应要求匹配的结构化失败或取消状态，才认定 Run 已结束；缺少匹配终态时返回 `completed=false` 和“查询失败：”错误，保留 LogID 与任务 ID。音频扩展名未知时使用 `.audio`，不猜测编码。默认查询保留原有图视频输出字段、错误判断和下载行为，不自动按产物推断查询模式。无论使用哪个模式，都先检查 `error_message`；下载失败后继续查询原任务，不重复提交生成。
 
 ## HTTP 客户端
 

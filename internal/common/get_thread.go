@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
@@ -15,6 +16,8 @@ type GetThreadOptions struct {
 	ThreadID string `json:"thread_id"`
 	RunID    string `json:"run_id,omitempty"`
 	Version  string `json:"version,omitempty"`
+	// PreserveErrorData is local-only and used by explicit audio result queries.
+	PreserveErrorData bool `json:"-"`
 }
 
 // GetThreadResult is the parsed get_thread response used by `pippit-tool-cli get-thread`.
@@ -53,7 +56,14 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		if !opts.PreserveErrorData {
+			return nil, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		}
+		return nil, &LogIDError{
+			Message: strings.TrimSpace(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)),
+			ID:      strings.TrimSpace(resp.LogID),
+			RawData: resp.Data,
+		}
 	}
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("get_thread 响应缺少 data")

@@ -30,6 +30,8 @@ type logIDCarrier interface {
 type LogIDError struct {
 	Message string
 	ID      string
+	// RawData preserves structured API error data for callers, never error text or logs.
+	RawData []byte `json:"-"`
 }
 
 func NewLogIDError(message string, logID string) error {
