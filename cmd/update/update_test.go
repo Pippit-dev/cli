@@ -26,13 +26,14 @@ func TestInstallSkillsInstallsAllBundledSkills(t *testing.T) {
 	binDir := t.TempDir()
 	capturePath := filepath.Join(t.TempDir(), "args.txt")
 	npxPath := filepath.Join(binDir, "npx")
-	script := "#!/bin/sh\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done > \"$CAPTURE_ARGS\"\n"
+	script := "#!/bin/sh\nif [ \"$npm_config_global\" = true ] && [ \"$1\" != --global=false ]; then exit 1; fi\nfor arg in \"$@\"; do printf '%s\\n' \"$arg\"; done > \"$CAPTURE_ARGS\"\n"
 	if err := os.WriteFile(npxPath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("CAPTURE_ARGS", capturePath)
+	t.Setenv("npm_config_global", "true")
 	t.Setenv("HOME", t.TempDir())
 
 	var stderr bytes.Buffer
@@ -45,7 +46,7 @@ func TestInstallSkillsInstallsAllBundledSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Split(strings.TrimSpace(string(gotBytes)), "\n")
-	want := []string{"-y", "skills", "add", root, "-g", "-y", "--skill", "*"}
+	want := []string{"--global=false", "-y", "skills", "add", root, "-g", "-y", "--skill", "*"}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("npx args mismatch\ngot:  %#v\nwant: %#v", got, want)
 	}
