@@ -4,19 +4,43 @@
 
 ## 技能列表
 
-本仓库在 `skills/` 目录下包含两个智能体技能：
+本仓库在 `skills/` 目录下包含三个智能体技能：
 
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
 | `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
+| `xyq-marketing-skill` | 商品图文营销一键成片：剧情广告、品牌大片、达人带货，含素材上传、进度查询与媒体下载。 | `skills/xyq-marketing-skill/` |
 
 ### 技能路由
 
 - 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
 - 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
+- 商品图文营销成片、剧情广告、品牌大片和达人带货视频使用 `xyq-marketing-skill`；由公开营销 API 完成创作编排。
 
 需要补充、选择或确认时，使用宿主实际暴露且当前模式允许的工具：Codex 的 `request_user_input` / `request_user_input_async`、WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。
+
+## 小云雀营销成片技能
+
+入口：[skills/xyq-marketing-skill/SKILL.md](skills/xyq-marketing-skill/SKILL.md)。使用 [官网](https://xyq.jianying.com/cli?tab=api) 已开放的营销 API，支持素材上传、营销视频提交、结果查询与下载、积分查询。安装器会从 `skills/` 自动安装该 Skill，也可以单独安装：
+
+```bash
+npx skills add Pippit-dev/cli --skill xyq-marketing-skill
+```
+
+需要 Node.js 16+，使用 Skill 内自包含脚本，无额外 npm 依赖。脚本从当前进程读取 `XYQ_ACCESS_KEY`；API 与 CLI 可使用同一 Access Key，但 CLI 浏览器登录不会设置此环境变量。密钥在本机安全配置，不写入请求 JSON 或命令参数。
+
+```bash
+# 从仓库根目录执行；营销请求字段见接口契约，默认只预览
+node skills/xyq-marketing-skill/scripts/marketing.js generate --request request.json --dry-run
+# 用户已要求真实生成时提交，然后用返回的真实 ID 取回媒体
+node skills/xyq-marketing-skill/scripts/marketing.js generate --request request.json --execute
+node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID --run-id RUN_ID --wait --output-dir ./results
+```
+
+参数与错误处理见 [接口契约](skills/xyq-marketing-skill/references/api.md)，完整示例见 [商品图到营销视频](skills/xyq-marketing-skill/examples/product-video.md)。这是 Skill 脚本入口，不是新增的 Go CLI 子命令。营销 API 未公开团队切换字段，不宣称支持团队空间切换。
+
+维护后运行 `node scripts/marketing-skill.test.js` 和 `node scripts/skills.test.js`，验证请求、上传、任务状态、下载与 Skill 引用。测试使用本地模拟服务，不会创建真实付费任务。
 
 ## 小云雀图片、视频与媒体处理技能
 

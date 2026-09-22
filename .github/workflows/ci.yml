@@ -53,6 +53,9 @@ jobs:
       - name: Test CLI-only installation and Skill bootstrap
         run: node scripts/install-cli.test.js
 
+      - name: Test bundled Skills and marketing API workflow
+        run: node scripts/skills.test.js && npm run test:marketing-skill
+
   go:
     name: Go tests
     runs-on: ubuntu-22.04

@@ -1,15 +1,16 @@
 {
   "name": "@pippit-dev/cli",
-  "version": "1.0.29",
+  "version": "1.0.30",
   "description": "Pippit CLI",
   "bin": {
     "pippit-tool-cli": "scripts/run.js"
   },
   "scripts": {
     "postinstall": "node scripts/install.js",
+    "test:marketing-skill": "node scripts/marketing-skill.test.js",
     "prepack": "node scripts/prepare-canvas-runtime.js",
     "prepare:canvas-runtime": "node scripts/prepare-canvas-runtime.js",
-    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/install-wizard.test.js && node scripts/install-cli.test.js && node scripts/run-help.test.js && node scripts/canvas-command.test.js && node scripts/canvas-command-schema.test.js && node scripts/canvas-command-guides.test.js && node scripts/prepare-canvas-runtime.test.js && node scripts/canvas-command-runtime.test.js && npm run test:canvas-operations && go test ./... && go vet ./...",
+    "test": "node scripts/version-check.test.js && node scripts/skills.test.js && node scripts/marketing-skill.test.js && node scripts/install-wizard.test.js && node scripts/install-cli.test.js && node scripts/run-help.test.js && node scripts/canvas-command.test.js && node scripts/canvas-command-schema.test.js && node scripts/canvas-command-guides.test.js && node scripts/prepare-canvas-runtime.test.js && node scripts/canvas-command-runtime.test.js && npm run test:canvas-operations && go test ./... && go vet ./...",
     "verify:canvas-runtime": "node scripts/prepare-canvas-runtime.js --check-only",
     "test:canvas-runtime": "node scripts/canvas-command-runtime.test.js",
     "test:canvas-operations": "node scripts/canvas-command-canvas-operations.test.js && node scripts/canvas-command-scene3d-operations.test.js && node scripts/canvas-command-timeline-operations.test.js"
