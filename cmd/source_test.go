@@ -16,6 +16,9 @@ import (
 )
 
 func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LocalAppData", t.TempDir())
 	for _, name := range []string{"submit-run", "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "short-drama"} {
 		t.Run(name, func(t *testing.T) {
 			video := filepath.Join(t.TempDir(), "input.mp4")
@@ -24,7 +27,7 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 			}
 			args := map[string][]string{
 				"submit-run":             {"submit-run", "--message", "  保留原文\nworkbuddy 只是内容  ", "--thread-id", "skill_existing", "--asset-ids", "asset_1"},
-				"generate-image":         {"generate-image", "--prompt", "cat", "--model", "seedream_5.0_pro", "--ratio", "6", "--resolution", "4K"},
+				"generate-image":         {"generate-image", "--prompt", "cat", "--model", "Seedream 5.0 Pro", "--ratio", "6", "--resolution", "4K"},
 				"generate-video":         {"generate-video", "--prompt", "cat", "--model", "Seedance_2.0_mini", "--duration", "4", "--ratio", "16:9"},
 				"video-super-resolution": {"video-super-resolution", "--video", video, "--output-resolution", "1080p"},
 				"erase-video-subtitle":   {"erase-video-subtitle", "--video", video},
@@ -37,6 +40,8 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 			uploadFailure := false
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
+				case config.GetAvailableModelListPath:
+					_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"seedream_5.0_pro","name":"Seedream 5.0 Pro","kind":"image"}]}}}`))
 				case config.SubmitRunPath:
 					submitCount++
 					if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer test-token" {

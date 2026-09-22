@@ -209,7 +209,7 @@ func TestDescriptionCreationModesAndCacheNotMutated(t *testing.T) {
 }
 
 func TestImageDescriptionParametersAndConstraints(t *testing.T) {
-	raw := `{"key":"future-image","kind":"image","is_default":true,
+	raw := `{"key":"future-image","name":"未来图片模型","report_name":"internal-report-model","kind":"image","is_default":true,
 	"supported_ratio_list":[0,2,6,13,1,999],"default_ratio":6,
 	"parameter_config":{"dimensions":[
 	{"key":"resolution","label":"图片分辨率","required_field":false,"default_value":"2k","option_list":[{"value":"2k","label":"高清"},{"value":"4K","disabled":true}]},
@@ -221,6 +221,12 @@ func TestImageDescriptionParametersAndConstraints(t *testing.T) {
 	"creation_mode_config":{"modes":[{"key":"reference_generation","enabled":true}]}}
 	`
 	out := description(t, raw)
+	if _, exists := out["key"]; exists || string(out["name"]) != `"未来图片模型"` {
+		t.Fatalf("image identity must contain only the display name: %s", out)
+	}
+	if _, exists := out["report_name"]; exists {
+		t.Fatal("internal reporting model name exposed")
+	}
 	var ratio struct {
 		Options []int64
 		Default int64

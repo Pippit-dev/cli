@@ -2,14 +2,14 @@
 
 需要有效登录或 `XYQ_ACCESS_KEY`。生成前可查询当前账号可用的模型及参数配置。`--type image` 查询图片，`--type video` 查询视频；省略时保持查询视频。两类查询共用 Skill 模型接口，图片请求的 `scene=web_image_agent`，视频请求的 `scene=web_turbo_video_generator`，`source_model_key` 为空。身份沿用个人 AK，不传入团队范围。
 
-使用旧版 CLI 时先检查 `model --help` 是否列出 `image` 类型；若仅支持 `video`，需要升级后再查询，不能用视频结果回答图片模型问题。
+使用旧版 CLI 时先检查 `model --help` 是否支持图片名称查询，并确认 `generate-image --help` 的 `--model` 接受完整名称；仅支持视频或仍要求图片 key 时先升级，不能用视频结果回答图片模型问题。
 
 ```bash
-# 图片模型列表、按名称检索、按准确 key 查看详情
+# 图片模型列表、按名称检索、按完整名称查看详情
 pippit-tool-cli model list --type image
 pippit-tool-cli model search "智能图片" --type image
-pippit-tool-cli model describe IMAGE_MODEL_KEY --type image
-pippit-tool-cli model IMAGE_MODEL_KEY -t image
+pippit-tool-cli model describe "智能图片V2.5 Fast" --type image
+pippit-tool-cli model "智能图片V2.5 Fast" -t image
 pippit-tool-cli model list --type image --refresh
 
 # 全部可见视频模型
@@ -27,7 +27,11 @@ pippit-tool-cli model list --refresh
 pippit-tool-cli model describe MiniMax-H3 --refresh
 ```
 
-`list` 输出 `models`，每项包含 `key`、`name`、`kind`。关键词与 key 完全一致时优先返回该项，否则按 key / name 不区分大小写检索。`describe` 只接受准确 key，输出整理后的 `model` 参数详情；不知道 key 时先查列表，不用展示名猜枚举。
+`list` 输出 `models`。图片每项只用 `name` 展示模型名称，另保留 `kind`，不输出底层模型枚举。图片搜索按名称不区分大小写匹配；`describe` 和 `generate-image --model` 使用列表中的完整名称，包含空格时加引号。名称示例以实际查询结果为准；不硬编码名称到枚举的映射。
+
+视频每项继续包含 `key`、`name`、`kind`；关键词与 key 完全一致时优先返回该项，否则按 key / name 不区分大小写检索，`describe` 使用准确 key。
+
+向用户列模型、展示详情或解释选择时只称图片模型名称，例如“智能图片V2.5 Fast”，不补充对应底层模型值。即使旧版工具仍返回枚举，也不要向用户展示；执行当前名称契约需要升级 CLI。
 
 列表与详情不输出模型级 `is_default`；服务端默认标记不代表用户授权自动选模型。用户未明确模型且未授权代选时先确认，不按列表顺序代选；比例、分辨率、时长、推理强度等参数默认值继续展示，但不据此自动填入用户未指定的生成参数。
 
@@ -47,7 +51,7 @@ pippit-tool-cli model describe MiniMax-H3 --refresh
 
 ```json
 {
-  "key": "IMAGE_MODEL_KEY",
+  "name": "智能图片V2.5 Fast",
   "kind": "image",
   "ratio": {
     "options": [0, 2, 6],
@@ -65,7 +69,7 @@ pippit-tool-cli model describe MiniMax-H3 --refresh
 - 图片详情完整保留原始 `parameter_config`，其中的选项文案、未知维度、`default_combination`、`need_available_combinations`、`combination_dimension_keys` 和 `available_combinations` 都可供核对。原始条件和组合里的值保留服务端格式；比对时将比例值按整数枚举解析，并统一分辨率/推理强度大小写。
 - 顶层可选值不表示可以任意组合；只在用户提供参数时，按生效条件及合法组合选择。原始配置中的 disabled 选项不可用；未知维度不能直接拼成 CLI 参数。图片创作模式保留原始配置，不套用视频的 `generate_type`。
 
-生成参数见 [生图命令](generate-image.md)。CLI 不增加模型准入或参数组合白名单，也不因模型查询结果自动修改生成请求。
+生成参数见 [生图命令](generate-image.md)。CLI 使用查询配置解析图片模型名称；名称缺失、重复或未找到时失败，刷新后重试，不回退猜测。最终模型准入和参数校验由服务端执行，用户未指定的参数不自动补齐。
 
 ## 视频参数配置
 
@@ -92,8 +96,8 @@ pippit-tool-cli model describe MiniMax-H3 --refresh
 - `creation_modes` 保留 `enabled`、素材校验等服务端策略，并为文本/参考/首尾帧模式标注对应 `generate_type`。`smart` 比例策略显示 `adaptive`；其他可识别模式继承模型比例。MiniMax 的文本模式排除 `adaptive`，纯文生视频使用固定比例。原始模式 key 不是生成参数，未标注 `generate_type` 的模式不代表 CLI 已接入。
 - 条件维度的 `active_when_any`、参数组合约束及其他未转换字段保留；模型级选项不保证任意组合都可用。配置不一致时通过 `warnings` 提示刷新，未知比例枚举直接跳过。
 
-内部 `config_key` 不输出。缓存仍保存服务端原始配置，列表/详情展示时转换，不修改生成请求、不新增本地模型准入限制。生成参数格式见 [生视频命令](generate-video.md)。
+内部 `config_key` 不输出。缓存仍保存服务端原始配置，列表/详情展示时转换。图片模型标识仅在提交时从名称解析，视频请求契约保持不变，不新增静态模型准入限制。生成参数格式见 [生视频命令](generate-video.md)。
 
-查询结果反映当前账号的服务端可见配置与 Skill 准入范围；最终提交仍由服务端判断权限、参数、余额等条件。缓存最多滞后 5 分钟，需要最新值时使用 `--refresh`。生成命令不会自动请求模型列表或凭缓存拦截生成。
+查询结果反映当前账号的服务端可见配置与 Skill 准入范围；最终提交仍由服务端判断权限、参数、余额等条件。缓存最多滞后 5 分钟，需要最新值时使用 `--refresh`。图片生成在上传前使用当前凭证的有效缓存解析完整名称；没有有效缓存时先请求图片模型列表。解析失败时不上传、不提交，不把名称直接传给服务端。视频生成仍不自动查询模型列表。
 
 图片查询依赖服务端 Skill 接口开放 `web_image_agent`，生成依赖对应模型和参数的提交支持。接口返回场景不支持或参数拒绝时如实报告；不能用 Web 模型截图、静态列表或视频目录替代真实查询结果。

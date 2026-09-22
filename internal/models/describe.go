@@ -34,6 +34,7 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	var source struct {
 		Key       string  `json:"key"`
+		Name      string  `json:"name"`
 		Kind      string  `json:"kind"`
 		Ratios    []int64 `json:"supported_ratio_list"`
 		Default   *int64  `json:"default_ratio"`
@@ -56,6 +57,11 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	delete(out, "config_key")
 	delete(out, "is_default") // A server default does not authorize model selection.
+	if source.Kind == "image" {
+		delete(out, "key")
+		delete(out, "report_name")
+		out["name"] = strings.TrimSpace(source.Name)
+	}
 	warnings := []string{}
 	warn := func(message string) { warnings = append(warnings, message) }
 	ratios := make([]any, 0, len(source.Ratios))

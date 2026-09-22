@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,7 +23,8 @@ const (
 )
 
 // Catalog preserves the server's model configuration, including unknown fields
-// and integer enums. It is never used as a local generation allowlist.
+// and integer enums. Image names are resolved here before submission; admission
+// and parameter validation remain the server's responsibility.
 type Catalog struct {
 	Scene     string `json:"scene"`
 	ConfigKey string `json:"config_key"`
@@ -32,7 +34,7 @@ type Catalog struct {
 }
 
 type Summary struct {
-	Key  string `json:"key"`
+	Key  string `json:"key,omitempty"`
 	Name string `json:"name"`
 	Kind string `json:"kind"`
 }
@@ -199,15 +201,26 @@ func validateCatalog(catalog *Catalog, scene string) error {
 		return fmt.Errorf("缺少配置或场景不匹配")
 	}
 	seen := make(map[string]bool)
+	seenNames := make(map[string]bool)
 	for _, raw := range catalog.Config.Models {
 		var model Summary
 		if json.Unmarshal(raw, &model) != nil || strings.TrimSpace(model.Key) == "" || model.Kind != kind {
 			return fmt.Errorf("模型条目缺少有效 key 或 kind")
 		}
 		if seen[model.Key] {
+			if kind == "image" {
+				return fmt.Errorf("图片模型配置包含重复条目")
+			}
 			return fmt.Errorf("模型 key 重复: %s", model.Key)
 		}
 		seen[model.Key] = true
+		if kind == "image" {
+			name := strings.TrimSpace(model.Name)
+			if name == "" || seenNames[name] {
+				return fmt.Errorf("图片模型名称缺失或重复，请刷新模型列表")
+			}
+			seenNames[name] = true
+		}
 	}
 	return nil
 }
@@ -218,7 +231,10 @@ func (c *Catalog) Search(query string) []Summary {
 	for _, raw := range c.Config.Models {
 		var model Summary
 		_ = json.Unmarshal(raw, &model) // validated at the network/cache boundary
-		if model.Key == query {
+		if c.Scene == ImageScene {
+			model.Key = "" // Wire identifiers stay in the raw catalog only.
+			model.Name = strings.TrimSpace(model.Name)
+		} else if model.Key == query {
 			return []Summary{model}
 		}
 		if query == "" || strings.Contains(strings.ToLower(model.Name), strings.ToLower(query)) || strings.Contains(strings.ToLower(model.Key), strings.ToLower(query)) {
@@ -228,18 +244,70 @@ func (c *Catalog) Search(query string) []Summary {
 	return matches
 }
 
-func (c *Catalog) Describe(key string) (json.RawMessage, error) {
-	key = strings.TrimSpace(key)
+func (c *Catalog) findModel(selector string) (json.RawMessage, error) {
+	selector = strings.TrimSpace(selector)
+	var found json.RawMessage
 	for _, raw := range c.Config.Models {
 		var model Summary
 		_ = json.Unmarshal(raw, &model)
-		if model.Key == key {
-			return describeModel(raw)
+		value := model.Key
+		if c.Scene == ImageScene {
+			value = strings.TrimSpace(model.Name)
+		}
+		if value != "" && value == selector {
+			if found != nil {
+				return nil, fmt.Errorf("模型名称重复，请执行 model list --type image --refresh 刷新后重试")
+			}
+			found = raw
 		}
 	}
-	kind := "video"
-	if c.Scene == ImageScene {
-		kind = "image"
+	if found != nil {
+		return found, nil
 	}
-	return nil, fmt.Errorf("未找到可用模型 %q；请执行 model list --type %s --refresh 查看当前模型", key, kind)
+	if c.Scene == ImageScene {
+		return nil, fmt.Errorf("未找到该图片模型名称；请执行 model list --type image --refresh，并使用列表中的完整名称")
+	}
+	return nil, fmt.Errorf("未找到可用模型 %q；请执行 model list --type video --refresh 查看当前模型", selector)
+}
+
+func (c *Catalog) Describe(selector string) (json.RawMessage, error) {
+	raw, err := c.findModel(selector)
+	if err != nil {
+		return nil, err
+	}
+	return describeModel(raw)
+}
+
+// ImageModelKey translates the user's exact display name into a wire value.
+// Never guess keys from names or send an unresolved name to the server.
+func (c *Catalog) ImageModelKey(name string) (string, error) {
+	if c.Scene != ImageScene {
+		return "", fmt.Errorf("图片生成需要图片模型配置")
+	}
+	raw, err := c.findModel(name)
+	if err != nil {
+		return "", err
+	}
+	var model Summary
+	_ = json.Unmarshal(raw, &model)
+	return model.Key, nil
+}
+
+// ImageDisplayMessage keeps known wire identifiers out of server error messages.
+func (c *Catalog) ImageDisplayMessage(message string) string {
+	var models []Summary
+	for _, raw := range c.Config.Models {
+		var model Summary
+		_ = json.Unmarshal(raw, &model)
+		if model.Kind == "image" && model.Key != "" && strings.TrimSpace(model.Name) != "" {
+			models = append(models, model)
+		}
+	}
+	// A key can be a prefix of another key. Replace the longer one first.
+	sort.Slice(models, func(i, j int) bool { return len(models[i].Key) > len(models[j].Key) })
+	pairs := make([]string, 0, len(models)*2)
+	for _, model := range models {
+		pairs = append(pairs, model.Key, strings.TrimSpace(model.Name))
+	}
+	return strings.NewReplacer(pairs...).Replace(message)
 }

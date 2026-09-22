@@ -91,14 +91,14 @@ func TestImageModelCommands(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["scene"] != "web_image_agent" || body["source_model_key"] != "" || r.URL.Path != config.GetAvailableModelListPath {
 			t.Errorf("unexpected request: body=%v path=%s err=%v", body, r.URL.Path, err)
 		}
-		_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-config","config":{"models":[{"key":"image-model","name":"图片测试模型","kind":"image","is_default":true,"supported_ratio_list":[0,2,6],"parameter_config":{"dimensions":[{"key":"resolution","default_value":"2K","option_list":[{"value":"2K"}]},{"key":"effort","default_value":"low","option_list":[{"value":"low"},{"value":"high"}]}]}}]}}}`))
+		_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-config","config":{"models":[{"key":"image-model","report_name":"image-model","name":"图片测试模型","kind":"image","is_default":true,"supported_ratio_list":[0,2,6],"parameter_config":{"dimensions":[{"key":"resolution","default_value":"2K","option_list":[{"value":"2K"}]},{"key":"effort","default_value":"low","option_list":[{"value":"low"},{"value":"high"}]}]}}]}}}`))
 	}))
 	defer server.Close()
 	for _, args := range [][]string{
 		{"model", "list", "--type", "image"},
 		{"model", "search", "图片", "-t", "image"},
-		{"model", "describe", "image-model", "--type", "image"},
-		{"model", "image-model", "-t", "image"},
+		{"model", "describe", "图片测试模型", "--type", "image"},
+		{"model", "图片测试模型", "-t", "image"},
 	} {
 		var stdout, stderr bytes.Buffer
 		cfg := config.Load()
@@ -111,10 +111,10 @@ func TestImageModelCommands(t *testing.T) {
 		if !strings.Contains(stdout.String(), `"scene": "web_image_agent"`) && !strings.Contains(stdout.String(), `"scene":"web_image_agent"`) {
 			t.Fatalf("missing image scene: %s", stdout.String())
 		}
-		if strings.Contains(stdout.String(), `"is_default"`) || strings.Contains(stdout.String(), `"config_key"`) {
+		if strings.Contains(stdout.String(), `"is_default"`) || strings.Contains(stdout.String(), `"config_key"`) || strings.Contains(stdout.String(), "image-model") {
 			t.Fatalf("internal fields exposed: %s", stdout.String())
 		}
-		if args[1] == "describe" || args[1] == "image-model" {
+		if args[1] == "describe" || args[1] == "图片测试模型" {
 			var output struct {
 				Model struct {
 					Effort struct{ Options []string }

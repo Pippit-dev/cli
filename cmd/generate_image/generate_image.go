@@ -48,10 +48,10 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.Prompt, "prompt", "", "image generation prompt")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
-	flags.StringVar(&opts.Model, "model", "", "image model key; use 'model list --type image' to discover available models")
+	flags.StringVar(&opts.Model, "model", "", "exact image model name from 'model list --type image' (quote names containing spaces)")
 	flags.StringVar(&opts.Ratio, "ratio", "", "image ratio; "+internalgen.SupportedRatioUsage())
-	flags.StringVar(&opts.Resolution, "resolution", "", "image resolution; use 'model describe MODEL_KEY --type image' for available values")
-	flags.StringVar(&opts.Effort, "effort", "", "image reasoning effort; only use values exposed by 'model describe MODEL_KEY --type image'")
+	flags.StringVar(&opts.Resolution, "resolution", "", "image resolution; use 'model describe \"MODEL_NAME\" --type image' for available values")
+	flags.StringVar(&opts.Effort, "effort", "", "image reasoning effort; only use values exposed by 'model describe \"MODEL_NAME\" --type image'")
 	flags.IntVar(&generateImageCount, "generate-image-count", 0, "generated image count")
 	return cmd
 }

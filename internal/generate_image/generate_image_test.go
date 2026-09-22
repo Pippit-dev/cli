@@ -20,10 +20,10 @@ func TestValidateOptionsRequiresModel(t *testing.T) {
 	}
 }
 
-func TestValidateOptionsAllowsServerDecidedModel(t *testing.T) {
+func TestValidateOptionsAllowsDynamicModelName(t *testing.T) {
 	opts := &Options{
 		Prompt: "x",
-		Model:  "seedream_3.0",
+		Model:  "图片测试模型",
 	}
 
 	if err := ValidateOptions(opts); err != nil {
@@ -34,7 +34,7 @@ func TestValidateOptionsAllowsServerDecidedModel(t *testing.T) {
 func TestValidateOptionsAllowsServerDecidedRatio(t *testing.T) {
 	opts := &Options{
 		Prompt: "x",
-		Model:  "seedream_4.5",
+		Model:  "图片测试模型",
 		Ratio:  "99",
 	}
 
@@ -46,7 +46,7 @@ func TestValidateOptionsAllowsServerDecidedRatio(t *testing.T) {
 func TestValidateOptionsAllowsServerDecidedResolution(t *testing.T) {
 	opts := &Options{
 		Prompt:     "x",
-		Model:      "seedream_4.5",
+		Model:      "图片测试模型",
 		Resolution: "8K",
 	}
 
@@ -59,7 +59,7 @@ func TestValidateOptionsRejectsNegativeGenerateImageCount(t *testing.T) {
 	count := -1
 	opts := &Options{
 		Prompt:             "x",
-		Model:              "seedream_4.5",
+		Model:              "图片测试模型",
 		GenerateImageCount: &count,
 	}
 
@@ -108,11 +108,11 @@ func TestParseRatioSupportsVisibleEnumValues(t *testing.T) {
 
 func TestImageOptionalParametersAndEffortPassThrough(t *testing.T) {
 	for _, effort := range []string{"", " HIGH ", "future-effort"} {
-		opts := &Options{Prompt: "image", Model: "future-image-model", Effort: effort}
+		opts := &Options{Prompt: "image", Model: "未来图片模型", Effort: effort}
 		if err := ValidateOptions(opts); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := json.Marshal(buildSubmitRunBody(opts, nil))
+		raw, err := json.Marshal(buildSubmitRunBody(opts, "future-image-model", nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -143,7 +143,7 @@ func TestImageOptionalParametersAndEffortPassThrough(t *testing.T) {
 func TestParseRatioRejectsNonInteger(t *testing.T) {
 	for _, ratio := range []string{"9:16", "adaptive", "17:11", "3.0"} {
 		t.Run(ratio, func(t *testing.T) {
-			err := ValidateOptions(&Options{Prompt: "image", Model: "future-image-model", Ratio: ratio})
+			err := ValidateOptions(&Options{Prompt: "image", Model: "未来图片模型", Ratio: ratio})
 			if err == nil || !strings.Contains(err.Error(), "必须是整数枚举值") {
 				t.Fatalf("ratio %q: error = %v, want integer enum validation", ratio, err)
 			}
@@ -154,7 +154,7 @@ func TestParseRatioRejectsNonInteger(t *testing.T) {
 func TestValidateOptionsRejectsUnsupportedImageExtension(t *testing.T) {
 	opts := &Options{
 		Prompt:     "x",
-		Model:      "seedream_4.5",
+		Model:      "图片测试模型",
 		ImagePaths: []string{"ref.tiff"},
 	}
 
@@ -171,13 +171,13 @@ func TestBuildSubmitRunBodyWithGeneralAgentSettings(t *testing.T) {
 	count := 2
 	opts := &Options{
 		Prompt:             "  生成小猫海报  ",
-		Model:              " seedream_5.0_pro ",
+		Model:              " Seedream 5.0 Pro ",
 		Ratio:              "6",
 		Resolution:         " 4k ",
 		GenerateImageCount: &count,
 	}
 
-	body := buildSubmitRunBody(opts, []string{"asset_1"})
+	body := buildSubmitRunBody(opts, "seedream_5.0_pro", []string{"asset_1"})
 	if body["agent_name"] != agentNameNest {
 		t.Fatalf("agent_name = %v, want nest agent", body["agent_name"])
 	}

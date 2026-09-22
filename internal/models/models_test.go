@@ -286,7 +286,10 @@ func TestImageCatalogValidation(t *testing.T) {
 		valid               bool
 	}{
 		{"empty", ImageScene, `[]`, true},
-		{"image", ImageScene, `[{"key":"dynamic-image","kind":"image"}]`, true},
+		{"image", ImageScene, `[{"key":"dynamic-image","name":"图片测试模型","kind":"image"}]`, true},
+		{"missing name", ImageScene, `[{"key":"x","kind":"image"}]`, false},
+		{"blank name", ImageScene, `[{"key":"x","kind":"image","name":" "}]`, false},
+		{"duplicate name", ImageScene, `[{"key":"x","kind":"image","name":"名称"},{"key":"y","kind":"image","name":" 名称 "}]`, false},
 		{"wrong scene", VideoScene, `[{"key":"x","kind":"image"}]`, false},
 		{"wrong kind", ImageScene, `[{"key":"x","kind":"video"}]`, false},
 		{"duplicate", ImageScene, `[{"key":"x","kind":"image"},{"key":"x","kind":"image"}]`, false},
@@ -300,5 +303,53 @@ func TestImageCatalogValidation(t *testing.T) {
 				t.Fatalf("result=%+v err=%v valid=%v", result, err, tc.valid)
 			}
 		})
+	}
+}
+
+func TestImageNamesKeepWireKeysInternalAcrossCache(t *testing.T) {
+	const response = `{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-config","config":{"models":[{"key":"wire-image","name":"智能图片V2","kind":"image"},{"key":"wire-image-fast","report_name":"wire-image-fast","name":"智能图片V2.5 Fast","kind":"image","is_default":true,"supported_ratio_list":[3,6]}]}}}`
+	s := newTestService(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(response)) })
+	for i := 0; i < 2; i++ {
+		result, err := s.Get(context.Background(), "image", false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Cached != (i == 1) {
+			t.Fatalf("cached=%v", result.Cached)
+		}
+		catalog := result.Catalog
+		list := catalog.Search("智能图片")
+		if len(list) != 2 || list[1].Name != "智能图片V2.5 Fast" {
+			t.Fatalf("unexpected image names: %+v", list)
+		}
+		if len(catalog.Search("wire-image")) != 0 || len(catalog.Search("fast")) != 1 {
+			t.Fatal("image search must use display names only")
+		}
+		raw, err := json.Marshal(list)
+		if err != nil || strings.Contains(string(raw), `"key"`) || strings.Contains(string(raw), "wire-image") {
+			t.Fatalf("list leaked identifiers: %s, %v", raw, err)
+		}
+		detail, err := catalog.Describe(list[1].Name)
+		if err != nil || strings.Contains(string(detail), "wire-image") || !strings.Contains(string(detail), "智能图片V2.5 Fast") {
+			t.Fatalf("detail leaked identifiers or lost name: %s, %v", detail, err)
+		}
+		key, err := catalog.ImageModelKey(" 智能图片V2.5 Fast ")
+		if err != nil || key != "wire-image-fast" {
+			t.Fatalf("name resolution: key=%q, err=%v", key, err)
+		}
+		for _, invalid := range []string{"", "智能图片", "wire-image-fast", "不存在"} {
+			if _, err := catalog.ImageModelKey(invalid); err == nil || strings.Contains(err.Error(), "wire-image") {
+				t.Fatalf("unresolved input accepted or leaked: %q, %v", invalid, err)
+			}
+			if _, err := catalog.Describe(invalid); err == nil || strings.Contains(err.Error(), "wire-image") {
+				t.Fatalf("detail accepted unresolved input: %q, %v", invalid, err)
+			}
+		}
+		if !strings.Contains(string(catalog.Config.Models[1]), "wire-image-fast") {
+			t.Fatal("presentation mutated the cached request identifier")
+		}
+		if got := catalog.ImageDisplayMessage("wire-image-fast / wire-image"); got != "智能图片V2.5 Fast / 智能图片V2" {
+			t.Fatalf("error must use names: %s", got)
+		}
 	}
 }
