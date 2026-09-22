@@ -40,23 +40,28 @@ for (const content of [generalSkill, shortDramaSkill]) {
 
 // The Skill is a self-contained document graph: follow only the selected module
 // at runtime, but verify all shipped references and examples offline here.
-const skillRoot = path.dirname(generalSkillPath);
-const visited = new Set();
-function visitDocument(filePath) {
-  filePath = path.resolve(filePath);
-  assert(filePath.startsWith(skillRoot + path.sep), `Skill reference escapes its package: ${filePath}`);
-  if (visited.has(filePath)) return;
-  visited.add(filePath);
-  const content = readRequiredFile(filePath);
-  for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
-    const target = match[1].split("#")[0];
-    if (!target || /^[a-z]+:/i.test(target)) continue;
-    const resolved = path.resolve(path.dirname(filePath), target);
-    assert(fs.existsSync(resolved), `Broken Skill link in ${filePath}: ${target}`);
-    if (resolved.endsWith(".md")) visitDocument(resolved);
+function collectSkillDocuments(entryPath) {
+  const skillRoot = path.dirname(entryPath);
+  const visited = new Set();
+  function visitDocument(filePath) {
+    filePath = path.resolve(filePath);
+    assert(filePath.startsWith(skillRoot + path.sep), `Skill reference escapes its package: ${filePath}`);
+    if (visited.has(filePath)) return;
+    visited.add(filePath);
+    const content = readRequiredFile(filePath);
+    for (const match of content.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+      const target = match[1].split("#")[0];
+      if (!target || /^[a-z]+:/i.test(target)) continue;
+      const resolved = path.resolve(path.dirname(filePath), target);
+      assert(fs.existsSync(resolved), `Broken Skill link in ${filePath}: ${target}`);
+      if (resolved.endsWith(".md")) visitDocument(resolved);
+    }
   }
+  visitDocument(entryPath);
+  return visited;
 }
-visitDocument(generalSkillPath);
+const skillRoot = path.dirname(generalSkillPath);
+const visited = collectSkillDocuments(generalSkillPath);
 const skillDocuments = [...visited].map((file) => readRequiredFile(file)).join("\n");
 const commandModules = {
   auth: ["status", "login", "logout"],
@@ -103,9 +108,18 @@ function checkSkillFiles(dir) {
 }
 checkSkillFiles(skillRoot);
 
+const shortDramaVisited = collectSkillDocuments(shortDramaSkillPath);
+const shortDramaDocuments = [...shortDramaVisited].map(readRequiredFile).join("\n");
+for (const folder of ["commands", "workflows", "examples", "scripts"]) {
+  for (const file of fs.readdirSync(path.join(path.dirname(shortDramaSkillPath), folder))) {
+    if (file.endsWith(".md")) {
+      assert(shortDramaVisited.has(path.join(path.dirname(shortDramaSkillPath), folder, file)), `Unreachable short-drama document: ${folder}/${file}`);
+    }
+  }
+}
 for (const requiredText of ["request_user_input", "ask_user_question", "credits"]) {
   assert.ok(
-    shortDramaSkill.includes(requiredText),
+    shortDramaDocuments.includes(requiredText),
     `xyq-short-drama-skill missing contract: ${requiredText}`,
   );
 }

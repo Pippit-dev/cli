@@ -18,7 +18,9 @@ pippit-tool-cli model list --refresh
 pippit-tool-cli model describe MiniMax-H3 --refresh
 ```
 
-`list` 输出 `models`，每项包含 `key`、`name`、`kind`、`is_default`。关键词与 key 完全一致时优先返回该项，否则按 key / name 不区分大小写检索。`describe` 只接受准确 key，输出整理后的 `model` 参数详情；不知道 key 时先查列表，不用展示名猜枚举。
+`list` 输出 `models`，每项包含 `key`、`name`、`kind`。关键词与 key 完全一致时优先返回该项，否则按 key / name 不区分大小写检索。`describe` 只接受准确 key，输出整理后的 `model` 参数详情；不知道 key 时先查列表，不用展示名猜枚举。
+
+列表与详情不输出模型级 `is_default`；服务端默认标记不代表用户授权自动选模型。用户未明确模型且未授权代选时先确认，不按列表顺序代选；比例、分辨率、时长等参数默认值继续展示。
 
 两种输出均包含 `scene`、`cached`、`fetched_at`、`expires_at`。合法空列表输出 `models: []`，表示当前没有可见模型。
 

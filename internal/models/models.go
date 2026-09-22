@@ -31,10 +31,9 @@ type Catalog struct {
 }
 
 type Summary struct {
-	Key       string `json:"key"`
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	IsDefault bool   `json:"is_default"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+	Kind string `json:"kind"`
 }
 
 type Result struct {

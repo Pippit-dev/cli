@@ -21,7 +21,7 @@ func description(t *testing.T, raw string) map[string]json.RawMessage {
 }
 
 func TestDescriptionCLIParametersAndRawPreservation(t *testing.T) {
-	raw := `{"key":"MiniMax-H3","supported_ratio_list":[0,2,13,3,4,5,6],"default_ratio":3,"config_key":"internal",
+	raw := `{"key":"MiniMax-H3","is_default":true,"supported_ratio_list":[0,2,13,3,4,5,6],"default_ratio":3,"config_key":"internal",
 	"future_field":9007199254740993,"audio_total_limit":0,"max_image_size":31457280,"min_video_duration":2000,
 	"supported_duration_list":[{"value":999}],"default_duration_value":999,
 	"parameter_config":{"dimensions":[
@@ -30,7 +30,7 @@ func TestDescriptionCLIParametersAndRawPreservation(t *testing.T) {
 	{"key":"seed","default_value":"random"}],"need_available_combinations":true}}
 	`
 	out := description(t, raw)
-	for _, key := range []string{"config_key", "supported_ratio_list", "default_ratio", "supported_duration_list", "default_duration_value", "audio_total_limit", "max_image_size"} {
+	for _, key := range []string{"config_key", "is_default", "supported_ratio_list", "default_ratio", "supported_duration_list", "default_duration_value", "audio_total_limit", "max_image_size"} {
 		if _, ok := out[key]; ok {
 			t.Fatalf("unconverted field %s", key)
 		}
