@@ -16,6 +16,9 @@ const PATHS = {
 };
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const nonempty = value => typeof value === 'string' && value.trim().length > 0;
+const RUN_STATES = Object.freeze({ 0: 'Unspecified', 1: 'Submitted', 2: 'Working', 3: 'Completed', 4: 'Failed', 5: 'Canceled', 6: 'InputRequired', 7: 'Generating', 8: 'Interrupt', 9: 'HITL_Interrupt' });
+const WAIT_STATES = ['1', '2', '7', '8'];
+const INPUT_STATES = ['6', '9'];
 function requireValue(condition, message) { if (!condition) throw new Error(message); }
 function onlyKeys(value, keys) {
   requireValue(object(value), '请求字段必须是 JSON 对象');
@@ -29,6 +32,7 @@ function validate(body) {
   if ('asset_ids' in body) requireValue(Array.isArray(body.asset_ids) && body.asset_ids.every(nonempty), 'asset_ids 必须为素材 ID 字符串数组');
   const settings = body.general_agent_settings;
   onlyKeys(settings, ['ratio', 'duration_start', 'duration_end', 'show_subtitle', 'video_model', 'video_resolution']);
+  requireValue(nonempty(settings.video_model), 'general_agent_settings.video_model 必填；请先取得用户模型选择或按已授权的选择范围配置模型');
   if ('ratio' in settings) requireValue([2, 3, 4, 5, 6].includes(settings.ratio), 'ratio 必须为 2/3/4/5/6 的整数枚举');
   for (const key of ['duration_start', 'duration_end']) {
     if (key in settings) requireValue(Number.isInteger(settings[key]) && settings[key] > 0 && settings[key] <= 2147483647, `${key} 必须为正整数秒数（int32）`);
@@ -51,7 +55,7 @@ function checkResponse(action, result, body) {
   if (action === 'balance') requireValue(typeof data.total_remain_amount === 'string' && /^\d+$/.test(data.total_remain_amount), '余额响应缺少字符串 total_remain_amount');
   if (action === 'query') {
     requireValue(data.thread_id === body.thread_id && data.run_id === body.run_id, '返回任务 ID 与请求不一致');
-    requireValue(['1', '2', '3', '4', '5'].includes(String(data.run_state)), '未知 run_state，停止轮询');
+    requireValue((typeof data.run_state === 'number' || typeof data.run_state === 'string') && /^\d+$/.test(String(data.run_state)), 'run_state 缺失或格式异常');
     for (const key of ['video_urls', 'image_urls']) {
       if (key in data) requireValue(Array.isArray(data[key]) && data[key].every(nonempty), `${key} 格式异常`);
     }
@@ -158,7 +162,7 @@ const HELP = `小云雀营销 Skill（Node.js >= 16）
 所有 API 调用从环境读取 XYQ_ACCESS_KEY；generate 默认仅预览。
 --timeout 秒数：单请求总时限，默认 60；--max-wait：轮询总时限，默认 900。
 query 输出 API 原始响应；有 --output-dir 时成功结果附带 downloaded_files。
-退出码：0 成功/单次查询进行中；1 输入或接口错误；2 生成失败/取消/无视频；3 等待超时。
+退出码：0 成功/单次查询进行中；1 输入或接口错误；2 生成失败/取消/无视频；3 等待超时；4 等待用户交互；5 未知或未指定状态。
 `;
 
 function parseArgs(argv) {
@@ -207,13 +211,26 @@ async function main(argv, { env = process.env, out = console.log, clientFactory 
     const pollClient = action === 'query' && options.wait
       ? clientFactory({ key: env.XYQ_ACCESS_KEY, timeout: Math.min(options.timeout * 1000, Math.max(1, deadline - now())) }) : client;
     result = action === 'upload' ? await client.upload(options.file) : await pollClient.api(action, body);
-    if (action !== 'query' || !options.wait || !['1', '2'].includes(String(result.data.run_state))) break;
+    if (action !== 'query' || !options.wait || !WAIT_STATES.includes(String(result.data.run_state))) break;
     if (now() >= deadline) {
       out(JSON.stringify({ ...result, wait_timed_out: true })); return 3;
     }
     await pause(Math.min(10000, deadline - now()));
     if (now() >= deadline) { out(JSON.stringify({ ...result, wait_timed_out: true })); return 3; }
   } while (true);
+  if (action === 'query') {
+    const state = String(result.data.run_state);
+    if (INPUT_STATES.includes(state)) {
+      out(JSON.stringify({ ...result, run_state_name: RUN_STATES[state], action_required: true,
+        next_step: '查看同一会话的确认或问卷；沿用已有授权，缺少必要选择时再询问用户。确认后取得同一 thread 的最新 run_id 再查询，旧 Run 可保持此状态。不要重复生成。' }));
+      return 4;
+    }
+    if (!(state in RUN_STATES) || state === '0') {
+      out(JSON.stringify({ ...result, run_state_name: RUN_STATES[state] || 'Unknown', unknown_state: true,
+        next_step: '停止自动轮询，保留任务 ID 和原始响应，核实服务端状态含义；不要重新提交生成。' }));
+      return 5;
+    }
+  }
   // Print IDs and URLs before downloads so a partial download failure remains resumable.
   out(JSON.stringify(result));
   if (action === 'query') {

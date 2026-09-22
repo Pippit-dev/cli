@@ -28,16 +28,18 @@ async function test() {
   const ids = { thread_id: 'marketing-thread', run_id: 'marketing-run' };
   const response = (state, extra = {}) => ({ ret: '0', data: { ...ids, run_state: state, ...extra } });
   try {
-    const body = { message: '按原文生成 🛍️', general_agent_settings: { ratio: 3, show_subtitle: false, duration_start: 15, duration_end: 15 } };
+    const body = { message: '按原文生成 🛍️', general_agent_settings: { video_model: 'seedance2.0_vision', ratio: 3, show_subtitle: false, duration_start: 15, duration_end: 15 } };
     assert.strictEqual(validate(body), body);
     for (const invalid of [
       { message: '', general_agent_settings: {} },
       { message: 'x' },
-      { message: 'x', general_agent_settings: { ratio: '9:16' } },
-      { message: 'x', general_agent_settings: { show_subtitle: 'false' } },
-      { message: 'x', general_agent_settings: { duration_start: 20, duration_end: 15 } },
-      { message: 'x', general_agent_settings: { duration_start: 1.5 } },
-      { message: 'x', general_agent_settings: { duration_start: 2147483648 } },
+      { message: 'x', general_agent_settings: {} },
+      { message: 'x', general_agent_settings: { video_model: ' ' } },
+      { message: 'x', general_agent_settings: { video_model: 'future-model', ratio: '9:16' } },
+      { message: 'x', general_agent_settings: { video_model: 'future-model', show_subtitle: 'false' } },
+      { message: 'x', general_agent_settings: { video_model: 'future-model', duration_start: 20, duration_end: 15 } },
+      { message: 'x', general_agent_settings: { video_model: 'future-model', duration_start: 1.5 } },
+      { message: 'x', general_agent_settings: { video_model: 'future-model', duration_start: 2147483648 } },
       { message: 'x', general_agent_settings: {}, asset_ids: [123] },
       { message: 'x', general_agent_settings: {}, TeamID: 'invented' },
     ]) assert.throws(() => validate(invalid));
@@ -91,7 +93,7 @@ async function test() {
     json(response('3', { run_id: 'different' }));
     await assert.rejects(client.api('query', ids), /不一致/);
     json(response('unknown'));
-    await assert.rejects(client.api('query', ids), /未知 run_state/);
+    await assert.rejects(client.api('query', ids), /run_state 缺失或格式异常/);
     respond = (_, res) => { res.writeHead(302, { Location: 'https://other.example/secret' }); res.end(); };
     let before = received.length;
     await assert.rejects(client.api('generate', body), /HTTP 302/);
@@ -107,7 +109,7 @@ async function test() {
 
     const queryArgs = ['query', '--thread-id', ids.thread_id, '--run-id', ids.run_id];
     const seenActions = [];
-    let states = [1, '2', 3];
+    let states = [1, '2', 7, '8', 3];
     let clock = 0;
     const outputs = [];
     const runtime = {
@@ -118,15 +120,36 @@ async function test() {
       } }),
     };
     assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 0);
-    assert.deepStrictEqual(seenActions, ['query', 'query', 'query']);
+    assert.deepStrictEqual(seenActions, ['query', 'query', 'query', 'query', 'query']);
     assert.strictEqual(outputs[0].data.run_state, 3);
-    assert.strictEqual(clock, 20000);
+    assert.strictEqual(clock, 40000);
+    for (const state of [6, '6', 9, '9']) {
+      states = [state, 3];
+      const beforeClock = clock;
+      assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 4);
+      assert.strictEqual(states.length, 1, 'input-required run must not be polled again');
+      assert.strictEqual(clock, beforeClock, 'input-required run must not sleep');
+      const result = outputs[outputs.length - 1];
+      assert.strictEqual(result.action_required, true);
+      assert.strictEqual(result.run_state_name, state == 9 ? 'HITL_Interrupt' : 'InputRequired');
+      assert.deepStrictEqual(result.data, response(state, { video_urls: ['https://cdn.example/final.mp4'] }).data);
+    }
+    states = [2, 7, 9, 3];
+    assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 4);
+    assert.strictEqual(states.length, 1);
+    for (const state of [0, 99, '99']) {
+      states = [state, 3];
+      assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 5);
+      assert.strictEqual(states.length, 1);
+      assert.strictEqual(outputs[outputs.length - 1].unknown_state, true);
+      assert.strictEqual(outputs[outputs.length - 1].data.run_state, state);
+    }
     for (const state of [4, '5']) {
       states = [state];
       assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 2);
       assert.strictEqual(states.length, 0);
     }
-    states = [1, 2];
+    states = [8, 2];
     assert.strictEqual(await main([...queryArgs, '--wait', '--max-wait', '1'], runtime), 3);
     assert.strictEqual(states.length, 1, 'stop at deadline without a further query');
     assert.strictEqual(outputs[outputs.length - 1].wait_timed_out, true);
