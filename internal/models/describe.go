@@ -56,6 +56,7 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 		out[key] = value
 	}
 	delete(out, "config_key")
+	delete(out, "is_default") // A server default does not authorize model selection.
 	warnings := []string{}
 	warn := func(message string) { warnings = append(warnings, message) }
 	ratios := make([]string, 0, len(source.Ratios))

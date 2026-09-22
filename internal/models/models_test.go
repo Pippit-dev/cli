@@ -158,6 +158,20 @@ func TestModelConfigurationPreservedAcrossCache(t *testing.T) {
 		if err != nil || !strings.Contains(string(raw), "9007199254740993") || !strings.Contains(string(raw), `"audio_total_limit":0`) {
 			t.Fatalf("configuration lost values: %s %v", raw, err)
 		}
+		var details map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &details); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := details["is_default"]; exists {
+			t.Fatal("model detail must not expose the server default marker")
+		}
+		list, err := json.Marshal(result.Catalog.Search(""))
+		if err != nil || strings.Contains(string(list), `"is_default"`) {
+			t.Fatalf("model list must not expose the server default marker: %s %v", list, err)
+		}
+		if !strings.Contains(string(result.Catalog.Config.Models[0]), `"is_default":true`) {
+			t.Fatal("presentation must preserve the raw catalog across cache reads")
+		}
 		if len(result.Catalog.Search("新模")) != 1 || len(result.Catalog.Search("missing")) != 0 {
 			t.Fatal("unexpected search result")
 		}
