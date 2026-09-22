@@ -21,12 +21,12 @@ func description(t *testing.T, raw string) map[string]json.RawMessage {
 }
 
 func TestDescriptionCLIParametersAndRawPreservation(t *testing.T) {
-	raw := `{"key":"MiniMax-H3","is_default":true,"supported_ratio_list":[0,2,13,3,4,5,6],"default_ratio":3,"config_key":"internal",
+	raw := `{"key":"MiniMax-H3","kind":"video","is_default":true,"supported_ratio_list":[0,2,13,3,4,5,6],"default_ratio":3,"config_key":"internal",
 	"future_field":9007199254740993,"audio_total_limit":0,"max_image_size":31457280,"min_video_duration":2000,
 	"supported_duration_list":[{"value":999}],"default_duration_value":999,
 	"parameter_config":{"dimensions":[
-	{"key":"duration","default_value":"10","range_config":{"min_value":4,"max_value":15,"step":1}},
-	{"key":"resolution","default_value":" 768P ","option_list":[{"value":"768p"},{"value":"2k"},{"value":"4k","disabled":true}]},
+	{"key":"duration","label":"视频时长","description":"生成的视频时长","required_field":true,"default_value":"10","range_config":{"min_value":4,"max_value":15,"step":1}},
+	{"key":"resolution","label":"视频分辨率","description":"输出清晰度","required_field":false,"default_value":" 768P ","option_list":[{"value":"768p"},{"value":"2k"},{"value":"4k","disabled":true}]},
 	{"key":"seed","default_value":"random"}],"need_available_combinations":true}}
 	`
 	out := description(t, raw)
@@ -46,8 +46,10 @@ func TestDescriptionCLIParametersAndRawPreservation(t *testing.T) {
 		t.Fatalf("ratio=%+v", ratio)
 	}
 	var resolution struct {
-		Options []string
-		Default string
+		Options            []string
+		Default            string
+		Label, Description string
+		Required           *bool `json:"required_field"`
 	}
 	if err := json.Unmarshal(out["resolution"], &resolution); err != nil {
 		t.Fatal(err)
@@ -55,15 +57,23 @@ func TestDescriptionCLIParametersAndRawPreservation(t *testing.T) {
 	if !reflect.DeepEqual(resolution.Options, []string{"768p", "2k"}) || resolution.Default != "768p" {
 		t.Fatalf("resolution=%+v", resolution)
 	}
+	if resolution.Label != "视频分辨率" || resolution.Description != "输出清晰度" || resolution.Required == nil || *resolution.Required {
+		t.Fatalf("video resolution metadata lost: %+v", resolution)
+	}
 	var duration struct {
 		Min, Max, Step, Default int
 		Unit                    string
+		Label, Description      string
+		Required                *bool `json:"required_field"`
 	}
 	if err := json.Unmarshal(out["duration"], &duration); err != nil {
 		t.Fatal(err)
 	}
 	if duration.Min != 4 || duration.Max != 15 || duration.Step != 1 || duration.Default != 10 || duration.Unit != "seconds" {
 		t.Fatalf("duration=%+v", duration)
+	}
+	if duration.Label != "视频时长" || duration.Description != "生成的视频时长" || duration.Required == nil || !*duration.Required {
+		t.Fatalf("video duration metadata lost: %+v", duration)
 	}
 	if string(out["future_field"]) != "9007199254740993" {
 		t.Fatal("integer precision lost")
@@ -195,5 +205,115 @@ func TestDescriptionCreationModesAndCacheNotMutated(t *testing.T) {
 	}
 	if !bytes.Equal(before, catalog.Config.Models[0]) {
 		t.Fatal("description mutated cached raw config")
+	}
+}
+
+func TestImageDescriptionParametersAndConstraints(t *testing.T) {
+	raw := `{"key":"future-image","kind":"image","is_default":true,
+	"supported_ratio_list":[0,2,6,13,1,999],"default_ratio":6,
+	"parameter_config":{"dimensions":[
+	{"key":"resolution","label":"图片分辨率","required_field":false,"default_value":"2k","option_list":[{"value":"2k","label":"高清"},{"value":"4K","disabled":true}]},
+	{"key":"effort","label":"推理强度","description":"计算档位","required_field":true,"default_value":"HIGH","active_when_any":[{"resolution":["2k"]}],"option_list":[{"value":"low"},{"value":"HIGH","label":"高","description":"更多计算"},{"value":"max","disabled":true}]},
+	{"key":"future-dimension","option_list":[{"value":"future-choice"}]}],
+	"need_available_combinations":true,"combination_dimension_keys":["resolution","effort"],
+	"default_combination":{"resolution":"2k","effort":"HIGH"},
+	"available_combinations":[{"option_values":{"resolution":"2k","effort":"HIGH"}}]},
+	"creation_mode_config":{"modes":[{"key":"reference_generation","enabled":true}]}}
+	`
+	out := description(t, raw)
+	var ratio struct {
+		Options []int64
+		Default int64
+		Labels  map[string]string `json:"option_labels"`
+	}
+	var resolution, effort struct {
+		Options     []string
+		Default     string
+		Required    *bool           `json:"required_field"`
+		Active      json.RawMessage `json:"active_when_any"`
+		Label       string
+		Description string
+	}
+	for key, target := range map[string]any{"ratio": &ratio, "resolution": &resolution, "effort": &effort} {
+		if err := json.Unmarshal(out[key], target); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !reflect.DeepEqual(ratio.Options, []int64{0, 2, 6, 13}) || ratio.Default != 6 || !reflect.DeepEqual(ratio.Labels, map[string]string{"0": "adaptive", "2": "16:9", "6": "1:1", "13": "21:9"}) {
+		t.Fatalf("ratio=%+v", ratio)
+	}
+	if !reflect.DeepEqual(resolution.Options, []string{"2K"}) || resolution.Default != "2K" || resolution.Required == nil || *resolution.Required {
+		t.Fatalf("resolution=%+v", resolution)
+	}
+	if !reflect.DeepEqual(effort.Options, []string{"low", "high"}) || effort.Default != "high" || effort.Required == nil || !*effort.Required || effort.Label != "推理强度" || effort.Description != "计算档位" || string(effort.Active) != `[{"resolution":["2k"]}]` {
+		t.Fatalf("effort=%+v", effort)
+	}
+	var source map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &source); err != nil {
+		t.Fatal(err)
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, source["parameter_config"]); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(out["parameter_config"], compact.Bytes()) {
+		t.Fatalf("raw dimension metadata or combination rules changed: %s", out["parameter_config"])
+	}
+	if bytes.Contains(out["creation_mode_config"], []byte("generate_type")) || len(out["creation_modes"]) != 0 {
+		t.Fatal("image modes must not acquire video generation selectors")
+	}
+	if _, exists := out["is_default"]; exists {
+		t.Fatal("model default marker exposed")
+	}
+}
+
+func TestImageDescriptionOptionalEffortAndRatioDimension(t *testing.T) {
+	out := description(t, `{"kind":"image","supported_ratio_list":[2],"parameter_config":{"dimensions":[{"key":"ratio","default_value":"13","option_list":[{"value":"13"},{"value":"6"},{"value":"2","disabled":true},{"value":"999"},{"value":"1"}]}]}}`)
+	if len(out["effort"]) != 0 || len(out["resolution"]) != 0 {
+		t.Fatal("absent capabilities must not be invented")
+	}
+	var ratio struct {
+		Options []int64
+		Default int64
+		Labels  map[string]string `json:"option_labels"`
+	}
+	if err := json.Unmarshal(out["ratio"], &ratio); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ratio.Options, []int64{13, 6}) || ratio.Default != 13 || !reflect.DeepEqual(ratio.Labels, map[string]string{"13": "21:9", "6": "1:1"}) {
+		t.Fatalf("ratio dimension did not override legacy list: %+v", ratio)
+	}
+	for _, raw := range []string{
+		`{"kind":"image","parameter_config":{"dimensions":[{"key":"effort","default_value":"high","option_list":[{"value":"low"},{"value":"high","disabled":true}]}]}}`,
+		`{"kind":"image","parameter_config":{"dimensions":[{"key":"effort","option_list":[]}]}}`,
+	} {
+		out := description(t, raw)
+		if len(out["warnings"]) == 0 || bytes.Contains(out["effort"], []byte(`"default"`)) {
+			t.Fatalf("invalid effort configuration accepted: %s", out["effort"])
+		}
+	}
+	_, err := describeModel(json.RawMessage(`{"kind":"image","parameter_config":{"dimensions":[{"key":"effort"},{"key":"effort"}]}}`))
+	if err == nil {
+		t.Fatal("duplicate effort dimension accepted")
+	}
+}
+
+func TestImageRatioZeroDefaultAndUnavailableValues(t *testing.T) {
+	for _, raw := range []string{
+		`{"kind":"image","supported_ratio_list":[0,0,3,1,999],"default_ratio":0}`,
+		`{"kind":"image","parameter_config":{"dimensions":[{"key":"ratio","default_value":"0","option_list":[{"value":"0"},{"value":"0"},{"value":"3"},{"value":"6","disabled":true},{"value":"1"},{"value":"999"}]}]}}`,
+	} {
+		out := description(t, raw)
+		var ratio struct {
+			Options []int64
+			Default *int64
+			Labels  map[string]string `json:"option_labels"`
+		}
+		if err := json.Unmarshal(out["ratio"], &ratio); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(ratio.Options, []int64{0, 3}) || ratio.Default == nil || *ratio.Default != 0 || !reflect.DeepEqual(ratio.Labels, map[string]string{"0": "adaptive", "3": "9:16"}) {
+			t.Fatalf("numeric zero default or available ratio values changed: %s", out["ratio"])
+		}
 	}
 }

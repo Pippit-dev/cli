@@ -19,7 +19,7 @@ var (
 	allowedImageExtensions    = common.StringSet(allowedImageExtensionList)
 )
 
-const ratioUsage = "enum values: 0=原始比例/自动, 2=16:9(横屏), 13=21:9(电影), 3=9:16(竖屏), 4=4:3, 5=3:4, 6=1:1"
+const ratioUsage = "integer enum from 'model describe MODEL_KEY --type image' (e.g. 0=adaptive, 2=16:9, 3=9:16, 6=1:1)"
 
 // Options is the stable command-facing request shape for generate-image.
 type Options struct {
@@ -29,6 +29,7 @@ type Options struct {
 	Model              string
 	Ratio              string
 	Resolution         string
+	Effort             string
 	GenerateImageCount *int
 }
 
@@ -36,6 +37,7 @@ type generalAgentSettings struct {
 	ImageModel         string `json:"image_model"`
 	Ratio              *int   `json:"ratio,omitempty"`
 	Resolution         string `json:"resolution,omitempty"`
+	ImageEffort        string `json:"image_effort,omitempty"`
 	GenerateImageCount *int   `json:"generate_image_count,omitempty"`
 }
 
@@ -146,6 +148,7 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string) map[string]any {
 			ImageModel:         strings.TrimSpace(opts.Model),
 			Ratio:              ratio,
 			Resolution:         strings.ToUpper(strings.TrimSpace(opts.Resolution)),
+			ImageEffort:        strings.ToLower(strings.TrimSpace(opts.Effort)),
 			GenerateImageCount: opts.GenerateImageCount,
 		},
 	}
@@ -162,7 +165,7 @@ func parseRatio(raw string) (*int, error) {
 	}
 	value, err := strconv.Atoi(ratio)
 	if err != nil {
-		return nil, fmt.Errorf("ratio %q 必须是整数枚举值；可参考：%s", ratio, ratioUsage)
+		return nil, fmt.Errorf("ratio %q 必须是整数枚举值（如 3 表示 9:16）；请用 model describe MODEL_KEY --type image 查询", ratio)
 	}
 	return &value, nil
 }

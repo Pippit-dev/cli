@@ -137,3 +137,42 @@ func TestGenerateImageRequiresModel(t *testing.T) {
 		t.Fatalf("error = %q, want model validation", err)
 	}
 }
+
+func TestGenerateImageDynamicParameters(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path != "/api/biz/v1/skill/submit_run" {
+			t.Errorf("generation must not query a model catalog: %s", r.URL.Path)
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var body struct {
+			AgentName string `json:"agent_name"`
+			Settings  struct {
+				Model      string `json:"image_model"`
+				Ratio      int    `json:"ratio"`
+				Resolution string `json:"resolution"`
+				Effort     string `json:"image_effort"`
+			} `json:"general_agent_settings"`
+		}
+		if err := sonic.Unmarshal(raw, &body); err != nil {
+			t.Error(err)
+			return
+		}
+		if body.AgentName != "pippit_nest_agent" || body.Settings.Model != "future-image-model" || body.Settings.Ratio != 13 || body.Settings.Resolution != "8K" || body.Settings.Effort != "future-effort" {
+			t.Errorf("incorrect request mapping: %s", raw)
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"image-thread","run_id":"image-run"}}}`))
+	}))
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{"generate-image", "--prompt", "image", "--model", "future-image-model", "--ratio", "13", "--resolution", "8k", "--effort", " FUTURE-EFFORT "})
+	if err := root.Execute(); err != nil || requests != 1 {
+		t.Fatalf("Execute: err=%v requests=%d", err, requests)
+	}
+}

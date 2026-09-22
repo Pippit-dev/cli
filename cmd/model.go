@@ -16,10 +16,7 @@ func newModelCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	var modelType string
 	service := models.NewService(runner)
 	query := func(cmd *cobra.Command, args []string, describe bool) error {
-		if modelType != "video" {
-			return fmt.Errorf("当前仅支持 --type video")
-		}
-		result, err := service.Get(cmd.Context(), refresh)
+		result, err := service.Get(cmd.Context(), modelType, refresh)
 		if err != nil {
 			return err
 		}
@@ -44,8 +41,8 @@ func newModelCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	}
 	cmd := &cobra.Command{
 		Use:   "model [key]",
-		Short: "Discover available video models and their server configuration",
-		Long:  "Query available video models using your current credentials. Successful queries are cached locally for 5 minutes. Use --refresh to bypass the cache; retry if a query fails.",
+		Short: "Discover available image and video models and their server configuration",
+		Long:  "Query available image and video models using your current credentials. Successful queries are cached locally for 5 minutes. Use --refresh to bypass the cache; retry if a query fails.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withErrorLog("model", nil, func(cmd *cobra.Command, args []string) error {
 			return query(cmd, args, len(args) > 0)
@@ -54,10 +51,10 @@ func newModelCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.PersistentFlags().BoolVar(&refresh, "refresh", false, "refresh the 5-minute local model cache")
-	cmd.PersistentFlags().StringVarP(&modelType, "type", "t", "video", "model type (currently video only)")
+	cmd.PersistentFlags().StringVarP(&modelType, "type", "t", "video", "model type: video or image (default video)")
 	cmd.AddCommand(&cobra.Command{
 		Use: "list [query]", Aliases: []string{"search"},
-		Short: "List video models, optionally filtered by key or name",
+		Short: "List image or video models, optionally filtered by key or name",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: withErrorLog("model list", nil, func(cmd *cobra.Command, args []string) error {
 			return query(cmd, args, false)

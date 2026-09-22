@@ -34,6 +34,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 					"model":                strings.TrimSpace(opts.Model),
 					"ratio":                strings.TrimSpace(opts.Ratio),
 					"resolution":           strings.ToUpper(strings.TrimSpace(opts.Resolution)),
+					"effort":               strings.ToLower(strings.TrimSpace(opts.Effort)),
 					"generate_image_count": optionalIntString(opts.GenerateImageCount),
 				})
 				return err
@@ -47,9 +48,10 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 	flags.StringVar(&opts.Prompt, "prompt", "", "image generation prompt")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
-	flags.StringVar(&opts.Model, "model", "", "image model; supported: seedream_5.0_pro, seedream_5.0, seedream_4.3, nova2, seedream_4.5, seedream_4.1, seedream_4")
+	flags.StringVar(&opts.Model, "model", "", "image model key; use 'model list --type image' to discover available models")
 	flags.StringVar(&opts.Ratio, "ratio", "", "image ratio; "+internalgen.SupportedRatioUsage())
-	flags.StringVar(&opts.Resolution, "resolution", "", "image resolution; only seedream_5.0_pro supports these options: 1K, 2K, 4K")
+	flags.StringVar(&opts.Resolution, "resolution", "", "image resolution; use 'model describe MODEL_KEY --type image' for available values")
+	flags.StringVar(&opts.Effort, "effort", "", "image reasoning effort; only use values exposed by 'model describe MODEL_KEY --type image'")
 	flags.IntVar(&generateImageCount, "generate-image-count", 0, "generated image count")
 	return cmd
 }

@@ -45,11 +45,11 @@ func TestMissingCredentialsCannotReadFreshCache(t *testing.T) {
 		requests++
 		_, _ = w.Write([]byte(validResponse))
 	})
-	if _, err := s.Get(context.Background(), false); err != nil {
+	if _, err := s.Get(context.Background(), "video", false); err != nil {
 		t.Fatal(err)
 	}
 	s.runner.Auth = unavailableAuth{}
-	result, err := s.Get(context.Background(), false)
+	result, err := s.Get(context.Background(), "video", false)
 	if err == nil || result != nil || requests != 1 || !strings.Contains(err.Error(), "login") {
 		t.Fatalf("must require login before cache: result=%+v err=%v requests=%d", result, err, requests)
 	}
@@ -63,7 +63,7 @@ func TestCacheTTLRefreshAndIsolation(t *testing.T) {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		var body map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["scene"] != Scene || body["source_model_key"] != "" {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["scene"] != VideoScene || body["source_model_key"] != "" {
 			t.Errorf("unexpected body: %v, err=%v", body, err)
 		}
 		_, _ = w.Write([]byte(validResponse))
@@ -72,7 +72,7 @@ func TestCacheTTLRefreshAndIsolation(t *testing.T) {
 	s.now = func() time.Time { return now }
 	check := func(refresh, cached bool, count int) *Result {
 		t.Helper()
-		result, err := s.Get(context.Background(), refresh)
+		result, err := s.Get(context.Background(), "video", refresh)
 		if err != nil || result.Cached != cached || requests != count {
 			t.Fatalf("Get: result=%+v err=%v requests=%d, want cached=%v requests=%d", result, err, requests, cached, count)
 		}
@@ -89,9 +89,9 @@ func TestCacheTTLRefreshAndIsolation(t *testing.T) {
 	check(true, false, 3)
 	s.runner.Config.AccessKey = "second-account"
 	check(false, false, 4)
-	oldPath := s.cachePath("second-account", config.GetAvailableModelListPath)
+	oldPath := s.cachePath("second-account", config.GetAvailableModelListPath, VideoScene)
 	s.runner.Config.BaseURL += "/other-api"
-	if s.cachePath("second-account", config.GetAvailableModelListPath) == oldPath {
+	if s.cachePath("second-account", config.GetAvailableModelListPath, VideoScene) == oldPath {
 		t.Fatal("API base URLs must not share cache")
 	}
 	files, _ := os.ReadDir(s.cacheDir)
@@ -110,7 +110,7 @@ func TestFailedQueryDoesNotUseOrCacheStaleData(t *testing.T) {
 		requests++
 		_, _ = w.Write([]byte(response))
 	})
-	if _, err := s.Get(context.Background(), false); err != nil {
+	if _, err := s.Get(context.Background(), "video", false); err != nil {
 		t.Fatal(err)
 	}
 	for _, invalid := range []string{
@@ -120,29 +120,29 @@ func TestFailedQueryDoesNotUseOrCacheStaleData(t *testing.T) {
 		`not-json`,
 	} {
 		response = invalid
-		if result, err := s.Get(context.Background(), true); err == nil || result != nil || !strings.Contains(err.Error(), "重试") {
+		if result, err := s.Get(context.Background(), "video", true); err == nil || result != nil || !strings.Contains(err.Error(), "重试") {
 			t.Fatalf("failed query must suggest retry: result=%+v err=%v", result, err)
 		}
 		before := requests
-		if _, err := s.Get(context.Background(), false); err == nil || requests != before+1 {
+		if _, err := s.Get(context.Background(), "video", false); err == nil || requests != before+1 {
 			t.Fatal("retry must query the server, not reuse cached success or failure")
 		}
 	}
 	response = validResponse
-	if _, err := s.Get(context.Background(), false); err != nil {
+	if _, err := s.Get(context.Background(), "video", false); err != nil {
 		t.Fatal(err)
 	}
-	cachePath := s.cachePath(s.runner.Config.AccessKey, config.GetAvailableModelListPath)
+	cachePath := s.cachePath(s.runner.Config.AccessKey, config.GetAvailableModelListPath, VideoScene)
 	if err := os.WriteFile(cachePath, []byte("broken"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := s.Get(context.Background(), false)
+	result, err := s.Get(context.Background(), "video", false)
 	if err != nil || result.Cached {
 		t.Fatalf("corrupt cache should refresh: %+v %v", result, err)
 	}
 	// A timestamp in the future must not extend visibility indefinitely.
 	s.now = func() time.Time { return result.FetchedAt.Add(-time.Second) }
-	if s.readCache(cachePath) != nil {
+	if s.readCache(cachePath, VideoScene) != nil {
 		t.Fatal("future-dated cache must be ignored")
 	}
 }
@@ -150,7 +150,7 @@ func TestFailedQueryDoesNotUseOrCacheStaleData(t *testing.T) {
 func TestModelConfigurationPreservedAcrossCache(t *testing.T) {
 	s := newTestService(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(validResponse)) })
 	for i := 0; i < 2; i++ {
-		result, err := s.Get(context.Background(), false)
+		result, err := s.Get(context.Background(), "video", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,7 +188,7 @@ func TestCacheWriteFailureStillReturnsServerResult(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.cacheDir = file
-	result, err := s.Get(context.Background(), false)
+	result, err := s.Get(context.Background(), "video", false)
 	if err != nil || result.Cached || result.Warning == "" {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -207,8 +207,98 @@ func TestEmptyAndDuplicateModels(t *testing.T) {
 		if err := json.Unmarshal([]byte(tc.data), &catalog); err != nil {
 			t.Fatal(err)
 		}
-		if err := validateCatalog(&catalog); (err == nil) != tc.valid {
+		if err := validateCatalog(&catalog, VideoScene); (err == nil) != tc.valid {
 			t.Fatalf("validateCatalog = %v", err)
 		}
+	}
+}
+
+func TestImageAndVideoCacheIsolation(t *testing.T) {
+	requests := map[string]int{}
+	failImage := false
+	s := newTestService(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		scene := body["scene"]
+		requests[scene]++
+		if body["source_model_key"] != "" || len(body) != 2 {
+			t.Errorf("unexpected identity or selector fields: %v", body)
+		}
+		response := validResponse
+		switch scene {
+		case ImageScene:
+			response = strings.ReplaceAll(strings.ReplaceAll(validResponse, VideoScene, ImageScene), `"kind":"video"`, `"kind":"image"`)
+			if failImage {
+				response = `{"ret":"1001","errmsg":"scene not supported"}`
+			}
+		case VideoScene:
+		default:
+			t.Errorf("unexpected scene %q", scene)
+		}
+		_, _ = w.Write([]byte(response))
+	})
+	for _, kind := range []string{"image", "video"} {
+		for i := 0; i < 2; i++ {
+			result, err := s.Get(context.Background(), kind, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Cached != (i == 1) || result.Catalog.Search("")[0].Kind != kind {
+				t.Fatalf("cache crossed model type: %+v", result)
+			}
+		}
+	}
+	if requests[ImageScene] != 1 || requests[VideoScene] != 1 {
+		t.Fatalf("requests=%v", requests)
+	}
+	// Even a syntactically valid video cache at the image path must be ignored.
+	videoPath := s.cachePath(s.runner.Config.AccessKey, config.GetAvailableModelListPath, VideoScene)
+	imagePath := s.cachePath(s.runner.Config.AccessKey, config.GetAvailableModelListPath, ImageScene)
+	raw, err := os.ReadFile(videoPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(imagePath, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.Get(context.Background(), "image", false)
+	if err != nil || result.Cached || requests[ImageScene] != 2 {
+		t.Fatalf("mismatched cache not refreshed: result=%+v err=%v requests=%v", result, err, requests)
+	}
+	failImage = true
+	for _, refresh := range []bool{true, false} {
+		if result, err := s.Get(context.Background(), "image", refresh); err == nil || result != nil {
+			t.Fatalf("image failure reused a catalog: result=%+v err=%v", result, err)
+		}
+	}
+	result, err = s.Get(context.Background(), "video", false)
+	if err != nil || !result.Cached || requests[ImageScene] != 4 || requests[VideoScene] != 1 {
+		t.Fatalf("image refresh invalidated video: result=%+v err=%v requests=%v", result, err, requests)
+	}
+}
+
+func TestImageCatalogValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, scene, models string
+		valid               bool
+	}{
+		{"empty", ImageScene, `[]`, true},
+		{"image", ImageScene, `[{"key":"dynamic-image","kind":"image"}]`, true},
+		{"wrong scene", VideoScene, `[{"key":"x","kind":"image"}]`, false},
+		{"wrong kind", ImageScene, `[{"key":"x","kind":"video"}]`, false},
+		{"duplicate", ImageScene, `[{"key":"x","kind":"image"},{"key":"x","kind":"image"}]`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newTestService(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"` + tc.scene + `","config_key":"key","config":{"models":` + tc.models + `}}}`))
+			})
+			result, err := s.Get(context.Background(), "image", false)
+			if (err == nil) != tc.valid {
+				t.Fatalf("result=%+v err=%v valid=%v", result, err, tc.valid)
+			}
+		})
 	}
 }
