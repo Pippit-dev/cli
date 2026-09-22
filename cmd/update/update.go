@@ -101,7 +101,8 @@ func installSkills(root string, stderr io.Writer) error {
 	} else if !info.IsDir() {
 		return fmt.Errorf("%s 不是目录", filepath.Join(root, "skills"))
 	}
-	if err := runInherit(stderr, "npx", "-y", "skills", "add", root, "-g", "-y", "--skill", "*"); err != nil {
+	// Override inherited npm global mode without changing skills add's -g scope.
+	if err := runInherit(stderr, "npx", "--global=false", "-y", "skills", "add", root, "-g", "-y", "--skill", "*"); err != nil {
 		return err
 	}
 	return cleanupLegacyGlobalSkills(defaultGlobalSkillsDir())
