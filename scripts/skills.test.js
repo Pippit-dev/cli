@@ -16,9 +16,14 @@ function readRequiredFile(filePath) {
 }
 
 function assertFrontmatterName(content, expectedName) {
-  const match = content.match(/^---\n[\s\S]*?^name:\s*([^\n]+)$/m);
+  const match = content.match(/^---\r?\n[\s\S]*?^name:\s*([^\n]+)$/m);
   assert.ok(match, `missing frontmatter name for ${expectedName}`);
   assert.strictEqual(match[1].trim(), expectedName);
+}
+
+for (const newline of ["\n", "\r\n"]) {
+  assertFrontmatterName(["---", "name: xyq-skill", "---", ""].join(newline), "xyq-skill");
+  assert.throws(() => assertFrontmatterName(["---", "description: test", "---", ""].join(newline), "xyq-skill"), /missing frontmatter name/);
 }
 
 const generalSkill = readRequiredFile(generalSkillPath);
