@@ -7,6 +7,7 @@ const { cleanupLegacyGlobalSkills } = require("./skills");
 const repoRoot = path.resolve(__dirname, "..");
 const generalSkillPath = path.join(repoRoot, "skills", "xyq-nest-skill", "SKILL.md");
 const shortDramaSkillPath = path.join(repoRoot, "skills", "short-drama", "SKILL.md");
+const marketingSkillPath = path.join(repoRoot, "skills", "xyq-marketing-skill", "SKILL.md");
 const readmePath = path.join(repoRoot, "README.md");
 
 function readRequiredFile(filePath) {
@@ -22,10 +23,12 @@ function assertFrontmatterName(content, expectedName) {
 
 const generalSkill = readRequiredFile(generalSkillPath);
 const shortDramaSkill = readRequiredFile(shortDramaSkillPath);
+const marketingSkill = readRequiredFile(marketingSkillPath);
 const readme = readRequiredFile(readmePath);
 
 assertFrontmatterName(generalSkill, "xyq-skill");
 assertFrontmatterName(shortDramaSkill, "xyq-short-drama-skill");
+assertFrontmatterName(marketingSkill, "xyq-marketing-skill");
 assert.ok(generalSkill.includes("user-invocable: true"), "xyq-skill must remain user-invocable");
 assert.ok(
   shortDramaSkill.includes("user-invocable: true"),
@@ -117,6 +120,22 @@ for (const folder of ["commands", "workflows", "examples", "scripts"]) {
     }
   }
 }
+
+// The marketing Skill must also work when installed by itself.
+const marketingRoot = path.dirname(marketingSkillPath);
+const marketingDocuments = collectSkillDocuments(marketingSkillPath);
+for (const folder of ["references", "examples"]) {
+  for (const file of fs.readdirSync(path.join(marketingRoot, folder))) {
+    if (file.endsWith(".md")) assert(marketingDocuments.has(path.join(marketingRoot, folder, file)), `Unreachable marketing document: ${file}`);
+  }
+}
+readRequiredFile(path.join(marketingRoot, "scripts", "marketing.js"));
+const marketingDiscovery = path.join(repoRoot, ".agents", "skills", "xyq-marketing-skill");
+// Git on Windows may check out a symlink as a file containing its target.
+const discoveryTarget = fs.lstatSync(marketingDiscovery).isSymbolicLink()
+  ? fs.readlinkSync(marketingDiscovery) : readRequiredFile(marketingDiscovery).trim();
+assert.strictEqual(path.resolve(path.dirname(marketingDiscovery), discoveryTarget), marketingRoot);
+
 for (const requiredText of ["request_user_input", "ask_user_question", "credits"]) {
   assert.ok(
     shortDramaDocuments.includes(requiredText),
@@ -127,6 +146,7 @@ for (const requiredText of ["request_user_input", "ask_user_question", "credits"
 for (const requiredText of [
   "skills/xyq-nest-skill/",
   "skills/short-drama/",
+  "skills/xyq-marketing-skill/",
   "pippit-tool-cli generate-video",
   "request_user_input",
   "ask_user_question",
@@ -151,6 +171,7 @@ for (const skillName of [
   "xyq-nest-skill",
   "xyq-short-drama-skill",
   "xyq-skill",
+  "xyq-marketing-skill",
 ]) {
   fs.mkdirSync(path.join(globalSkillsDir, skillName));
 }
@@ -161,5 +182,6 @@ assert.strictEqual(fs.existsSync(path.join(globalSkillsDir, "pippit-short-drama-
 assert.strictEqual(fs.existsSync(path.join(globalSkillsDir, "xyq-nest-skill")), false);
 assert.strictEqual(fs.existsSync(path.join(globalSkillsDir, "xyq-short-drama-skill")), true);
 assert.strictEqual(fs.existsSync(path.join(globalSkillsDir, "xyq-skill")), true);
+assert.strictEqual(fs.existsSync(path.join(globalSkillsDir, "xyq-marketing-skill")), true);
 
 fs.rmSync(globalSkillsDir, { force: true, recursive: true });
