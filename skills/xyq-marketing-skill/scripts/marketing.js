@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Documented Xiaoyunque marketing API; Node.js >= 16, no dependencies.
+// Marketing orchestration; authenticated API calls stay inside pippit-tool-cli.
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
-const { Readable } = require('stream');
+const { spawn } = require('child_process');
 const { pipeline } = require('stream/promises');
 
 const BASE = 'https://xyq.jianying.com';
@@ -63,7 +63,64 @@ function checkResponse(action, result, body) {
   return result;
 }
 
-function createClient({ key = process.env.XYQ_ACCESS_KEY, request = https.request, timeout = 60000 } = {}) {
+function resolveCLI({ platform = process.platform, searchPath = process.env.PATH || '', packageRoot = path.resolve(__dirname, '../../..') } = {}) {
+  const binaryName = platform === 'win32' ? 'pippit-tool-cli.exe' : 'pippit-tool-cli';
+  function fromPackage(root) {
+    const manifest = path.join(root, 'package.json');
+    if (!fs.existsSync(manifest) || JSON.parse(fs.readFileSync(manifest, 'utf8')).name !== '@pippit-dev/cli') return null;
+    const command = path.join(root, 'bin', binaryName);
+    requireValue(fs.existsSync(command), 'CLI 原生程序缺失，请重新安装 @pippit-dev/cli；无需提供 access_token');
+    return { command, args: [] };
+  }
+  // Run the native binary directly so deadlines also stop the API process.
+  const bundled = fromPackage(packageRoot);
+  if (bundled) return bundled;
+  for (const dir of searchPath.split(path.delimiter).filter(Boolean)) {
+    const binary = path.join(dir, binaryName);
+    if (fs.existsSync(binary)) {
+      const resolved = fs.realpathSync(binary);
+      const npmPackage = fromPackage(path.resolve(path.dirname(resolved), '..'));
+      return npmPackage || { command: binary, args: [] };
+    }
+    if (platform === 'win32') {
+      const npmPackage = fromPackage(path.join(dir, 'node_modules/@pippit-dev/cli'));
+      if (npmPackage) return npmPackage;
+    }
+  }
+  throw new Error('请先安装或更新 @pippit-dev/cli，并运行 pippit-tool-cli login；无需提供 access_token');
+}
+
+function invokeCLI(args, input, timeout, invocation = resolveCLI()) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(invocation.command, [...invocation.args, ...args], {
+      shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '', failure;
+    const stop = message => { failure = new Error(message); child.kill(); };
+    const timer = setTimeout(() => stop('CLI 请求超时；提交结果可能不明确，请勿自动重提'), timeout);
+    child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+    child.stdout.on('data', chunk => {
+      stdout += chunk;
+      if (Buffer.byteLength(stdout) > 8 * 1024 * 1024) stop('CLI 响应超出 8 MiB 限制');
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+      if (Buffer.byteLength(stderr) > 1024 * 1024) stop('CLI 错误输出过大');
+    });
+    child.once('error', () => { clearTimeout(timer); reject(new Error('无法启动 pippit-tool-cli，请检查安装；无需提供 access_token')); });
+    child.stdin.on('error', error => { if (error.code !== 'EPIPE') failure = new Error('无法写入 CLI 请求'); });
+    child.once('close', code => {
+      clearTimeout(timer);
+      if (failure) return reject(failure);
+      if (code !== 0) return reject(new Error(`CLI 调用失败：${stderr.trim() || `退出码 ${code}`}；请求未重试。若不支持 marketing 命令，请更新 CLI。`));
+      try { resolve(JSON.parse(stdout)); }
+      catch (_) { reject(new Error('CLI 未返回有效 JSON；提交结果可能不明确，请勿自动重提')); }
+    });
+    child.stdin.end(input);
+  });
+}
+
+function createClient({ request = https.request, timeout = 60000, invoke = invokeCLI } = {}) {
   function open(url, method, headers, body) {
     return new Promise((resolve, reject) => {
       const target = new URL(url);
@@ -84,42 +141,23 @@ function createClient({ key = process.env.XYQ_ACCESS_KEY, request = https.reques
     });
   }
 
-  async function api(action, body, headers = { 'Content-Type': 'application/json' }) {
-    requireValue(nonempty(key) && !/[\r\n]/.test(key), '请在本机环境设置 XYQ_ACCESS_KEY，不要在聊天中发送密钥；CLI 登录不会设置此变量');
-    const wire = headers['Content-Type'] === 'application/json' ? JSON.stringify(body) : body;
-    const res = await open(BASE + PATHS[action], 'POST', { ...headers, Accept: 'application/json', Authorization: `Bearer ${key}` }, wire);
-    // Never follow API redirects or automatically retry a POST.
-    if (res.statusCode < 200 || res.statusCode >= 300) {
-      res.resume();
-      throw new Error(`HTTP ${res.statusCode}；请求未重试，生成结果可能不明确`);
+  async function api(action, body) {
+    requireValue(['generate', 'query', 'balance'].includes(action), '无效营销 API 操作');
+    const args = ['marketing', action, '--timeout', `${timeout}ms`];
+    let input;
+    if (action === 'generate') {
+      validate(body);
+      args.push('--request', '-', '--execute');
+      input = JSON.stringify(body);
     }
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of res) {
-      size += chunk.length;
-      requireValue(size <= 8 * 1024 * 1024, 'API 响应超出 8 MiB 限制');
-      chunks.push(chunk);
-    }
-    let result;
-    try { result = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-    catch (_) { throw new Error('API 未返回有效 JSON；提交结果可能不明确，请勿自动重提'); }
-    return checkResponse(action, result, body);
+    if (action === 'query') args.push('--thread-id', body.thread_id, '--run-id', body.run_id);
+    return checkResponse(action, await invoke(args, input, timeout), body);
   }
 
   async function upload(file) {
     const stat = await fs.promises.stat(file);
     requireValue(stat.isFile() && stat.size > 0 && stat.size < 500000000, '上传需要非空文件且小于 500 MB');
-    const boundary = 'xyq-' + crypto.randomBytes(16).toString('hex');
-    const name = path.basename(file).replace(/["\r\n\\]/g, '_');
-    const mime = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.mp4': 'video/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav' }[path.extname(file).toLowerCase()] || 'application/octet-stream';
-    const head = Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\nContent-Type: ${mime}\r\n\r\n`);
-    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-    const body = Readable.from((async function* () {
-      yield head;
-      for await (const chunk of fs.createReadStream(file)) yield chunk;
-      yield tail;
-    })());
-    return api('upload', body, { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': head.length + stat.size + tail.length });
+    return checkResponse('upload', await invoke(['marketing', 'upload', '--file', path.resolve(file), '--timeout', `${timeout}ms`], undefined, timeout));
   }
 
   async function download(url, destination) {
@@ -159,7 +197,7 @@ const HELP = `小云雀营销 Skill（Node.js >= 16）
   node marketing.js upload --file product.png
   node marketing.js query --thread-id ID --run-id ID [--wait] [--max-wait 900] [--output-dir DIR]
   node marketing.js balance
-所有 API 调用从环境读取 XYQ_ACCESS_KEY；generate 默认仅预览。
+所有 API 调用复用 pippit-tool-cli 登录态；未登录先运行 pippit-tool-cli login，无需提供 access_token。generate 默认仅预览。
 --timeout 秒数：单请求总时限，默认 60；--max-wait：轮询总时限，默认 900。
 query 输出 API 原始响应；有 --output-dir 时成功结果附带 downloaded_files。
 退出码：0 成功/单次查询进行中；1 输入或接口错误；2 生成失败/取消/无视频；3 等待超时；4 等待用户交互；5 未知或未指定状态。
@@ -189,7 +227,7 @@ function parseArgs(argv) {
   return { action, options };
 }
 
-async function main(argv, { env = process.env, out = console.log, clientFactory = createClient, now = Date.now, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+async function main(argv, { out = console.log, clientFactory = createClient, now = Date.now, pause = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
   if (!argv.length || argv.includes('--help') || argv.includes('-h')) { out(HELP); return 0; }
   const { action, options } = parseArgs(argv);
   let body = {};
@@ -203,13 +241,13 @@ async function main(argv, { env = process.env, out = console.log, clientFactory 
     body = { thread_id: options['thread-id'], run_id: options['run-id'] };
   }
   if (action === 'upload') requireValue(nonempty(options.file), 'upload 需要 --file');
-  const client = clientFactory({ key: env.XYQ_ACCESS_KEY, timeout: options.timeout * 1000 });
+  const client = clientFactory({ timeout: options.timeout * 1000 });
   let result;
   const deadline = now() + options['max-wait'] * 1000;
   do {
     // A poll request cannot overrun the remaining wait budget.
     const pollClient = action === 'query' && options.wait
-      ? clientFactory({ key: env.XYQ_ACCESS_KEY, timeout: Math.min(options.timeout * 1000, Math.max(1, deadline - now())) }) : client;
+      ? clientFactory({ timeout: Math.min(options.timeout * 1000, Math.max(1, deadline - now())) }) : client;
     result = action === 'upload' ? await client.upload(options.file) : await pollClient.api(action, body);
     if (action !== 'query' || !options.wait || !WAIT_STATES.includes(String(result.data.run_state))) break;
     if (now() >= deadline) {
@@ -265,4 +303,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { BASE, PATHS, validate, checkResponse, createClient, parseArgs, main };
+module.exports = { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, parseArgs, main };
