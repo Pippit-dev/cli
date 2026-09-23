@@ -4,11 +4,11 @@
 
 ## Endpoints
 
-Base URL：`https://xyq.jianying.com`。全部使用 POST，认证为 `Authorization: Bearer <Access Key>`，`Accept: application/json`。
+Base URL：`https://xyq.jianying.com`。全部使用 POST，`Accept: application/json`。CLI 的统一认证层从现有登录态注入 Authorization 请求头；营销脚本不接触凭据，不要求用户提供 token。
 
 | 操作 | 路径 | 请求体 |
 | --- | --- | --- |
-| 上传单文件 | `/api/biz/v1/skill/upload_file` | multipart/form-data，字段 `file`，boundary 由脚本生成 |
+| 上传单文件 | `/api/biz/v1/skill/upload_file` | multipart/form-data，字段 `file`，boundary 由 CLI 生成 |
 | 营销成片 | `/api/biz/v1/agent/submit_marketing_run` | JSON，字段见下表 |
 | 查询结果 | `/api/biz/v1/agent/query_generate_video_result` | JSON：真实 `thread_id`、`run_id` |
 | 查询积分 | `/api/biz/v1/skill/get_credit_balance` | JSON：`{}` |

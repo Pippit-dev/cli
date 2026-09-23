@@ -2,6 +2,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const vm = require("vm");
 const { cleanupLegacyGlobalSkills } = require("./skills");
 
 const repoRoot = path.resolve(__dirname, "..");
@@ -9,6 +10,37 @@ const generalSkillPath = path.join(repoRoot, "skills", "xyq-nest-skill", "SKILL.
 const shortDramaSkillPath = path.join(repoRoot, "skills", "short-drama", "SKILL.md");
 const marketingSkillPath = path.join(repoRoot, "skills", "xyq-marketing-skill", "SKILL.md");
 const readmePath = path.join(repoRoot, "README.md");
+
+// An npm lifecycle can inherit global=true; npx must override it before the
+// command name while retaining skills add's own global installation flag.
+const installTestRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pippit skills install "));
+try {
+  const source = path.join(installTestRoot, "package");
+  fs.mkdirSync(path.join(source, "skills"), { recursive: true });
+  const inheritedEnv = { npm_config_global: "true", NPM_CONFIG_GLOBAL: "true" };
+  const loaded = { exports: {} };
+  let calls = 0;
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "skills.js"), "utf8"), {
+    module: loaded,
+    process: { env: inheritedEnv },
+    require(name) {
+      if (name !== "./platform") return require(name);
+      return {
+        run(command, args, options) {
+          calls++;
+          assert.strictEqual(command, "npx");
+          assert.deepStrictEqual(Array.from(args), ["--global=false", "-y", "skills", "add", source, "-g", "-y", "--skill", "*"]);
+          assert.strictEqual(options.timeout, 120000);
+        },
+      };
+    },
+  }, { filename: "skills.js" });
+  loaded.exports.installSkillsFromRoot(source, { globalSkillsDir: path.join(installTestRoot, "global-skills") });
+  assert.strictEqual(calls, 1);
+  assert.deepStrictEqual(inheritedEnv, { npm_config_global: "true", NPM_CONFIG_GLOBAL: "true" });
+} finally {
+  fs.rmSync(installTestRoot, { recursive: true, force: true });
+}
 
 function readRequiredFile(filePath) {
   assert.strictEqual(fs.existsSync(filePath), true, `missing required file: ${filePath}`);

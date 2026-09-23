@@ -46,7 +46,17 @@ func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuth
 	return newHTTPClient(baseURL, timeout, authorizer)
 }
 
-func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
+// NewNonRedirectingHTTPClient keeps one-shot submissions from being replayed.
+// Authentication and request handling still use the shared CLI client.
+func NewNonRedirectingHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
+	client := newHTTPClient(baseURL, timeout, authorizer)
+	client.httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return fmt.Errorf("拒绝营销 API 重定向；请求未重试")
+	}
+	return client
+}
+
+func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) *httpClient {
 	client := &httpClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		headers:    make(http.Header),

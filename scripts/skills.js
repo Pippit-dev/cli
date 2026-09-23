@@ -28,7 +28,8 @@ function installSkillsFromRoot(root, opts = {}) {
   if (!fs.existsSync(skillsDir)) {
     throw new Error(`skills directory not found: ${skillsDir}`);
   }
-  run("npx", ["-y", "skills", "add", source, "-g", "-y", "--skill", "*"], {
+  // Override npm install -g's inherited mode; the later -g belongs to skills.
+  run("npx", ["--global=false", "-y", "skills", "add", source, "-g", "-y", "--skill", "*"], {
     timeout: opts.timeout || 120000,
   });
   cleanupLegacyGlobalSkills(opts.globalSkillsDir);
