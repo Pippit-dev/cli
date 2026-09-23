@@ -2,7 +2,7 @@
 
 用户示例：“用这张保温杯商品图做一个 15 秒竖屏达人带货视频，不要字幕，用 Seedance 2.0 VIP，1080p。”
 
-1. 确认当前进程已配置 `XYQ_ACCESS_KEY`，然后上传用户给出的真实文件：
+1. 先检查 `pippit-tool-cli marketing --help` 与 `pippit-tool-cli status`；未登录时执行 `pippit-tool-cli login` 并等待浏览器授权成功，无需用户提供 token。随后上传用户给出的真实文件：
 
    ```bash
    node scripts/marketing.js upload --file /path/to/cup.png

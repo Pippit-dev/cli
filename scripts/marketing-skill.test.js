@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawnSync } = require('child_process');
-const { BASE, PATHS, validate, createClient, main } = require('../skills/xyq-marketing-skill/scripts/marketing');
+const { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, main } = require('../skills/xyq-marketing-skill/scripts/marketing');
 
 async function test() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xyq-marketing-'));
@@ -23,7 +23,9 @@ async function test() {
     targets.push(url.href);
     return http.request({ hostname: '127.0.0.1', port: server.address().port, path: url.pathname + url.search, ...opts }, callback);
   };
-  const client = createClient({ key: 'test-secret', request, timeout: 1000 });
+  const calls = [];
+  let cliResult;
+  const client = createClient({ request, timeout: 1000, invoke: async (...args) => { calls.push(args); return cliResult; } });
   const json = value => { respond = (_, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); }; };
   const ids = { thread_id: 'marketing-thread', run_id: 'marketing-run' };
   const response = (state, extra = {}) => ({ ret: '0', data: { ...ids, run_state: state, ...extra } });
@@ -57,55 +59,62 @@ async function test() {
     await assert.rejects(main(['query', '--thread-id', ids.thread_id]), /run-id/);
     await assert.rejects(main(['query', '--thread-id', ids.thread_id, '--run-id', ids.run_id, '--timeout', '0']), /timeout/);
     await assert.rejects(main(['generate', '--request', file, '--source', 'codex']), /无效/);
-    await assert.rejects(createClient({ key: '', request }).api('balance', {}), /XYQ_ACCESS_KEY/);
     assert.strictEqual(received.length, 0);
 
-    json({ ret: 0, log_id: 'log-submit', data: { run: { ...ids, state: 1 }, web_thread_link: 'https://xyq.jianying.com/task' } });
+    cliResult = { ret: 0, log_id: 'log-submit', data: { run: { ...ids, state: 1 } } };
     assert.strictEqual(await main(['generate', '--request', file, '--execute'], { out: () => {}, clientFactory: () => client }), 0);
-    assert.strictEqual(received.length, 1);
-    assert.deepStrictEqual(JSON.parse(received[0].body), body);
-    assert.strictEqual(received[0].url, PATHS.generate);
-    assert.strictEqual(received[0].headers.authorization, 'Bearer test-secret');
-    assert.strictEqual(targets[0], BASE + PATHS.generate);
-
-    const uploadFile = path.join(dir, '商品.png');
-    const imageBytes = Buffer.from([0, 1, 2, 255, 13, 10]);
-    fs.writeFileSync(uploadFile, imageBytes);
-    json({ ret: '0', data: { pippit_asset_id: 'asset-real' } });
+    assert.deepStrictEqual(calls[0][0], ['marketing', 'generate', '--timeout', '1000ms', '--request', '-', '--execute']);
+    assert.deepStrictEqual(JSON.parse(calls[0][1]), body);
+    assert(!calls[0][0].includes(body.message), 'request must use stdin, not command arguments');
+    assert.strictEqual(received.length, 0, 'Node must never make authenticated API requests');
+    const uploadFile = path.join(dir, '商品 with spaces.png');
+    fs.writeFileSync(uploadFile, Buffer.from([0, 1, 2, 255]));
+    cliResult = { ret: '0', data: { pippit_asset_id: 'asset-real' } };
     assert.strictEqual((await client.upload(uploadFile)).data.pippit_asset_id, 'asset-real');
-    const upload = received[received.length - 1];
-    assert.strictEqual(upload.url, PATHS.upload);
-    assert(upload.body.includes(imageBytes));
-    assert(upload.body.includes(Buffer.from('name="file"')));
-    assert(upload.headers['content-type'].startsWith('multipart/form-data; boundary='));
-    assert.strictEqual(Number(upload.headers['content-length']), upload.body.length);
-    assert(!upload.body.includes(Buffer.from('test-secret')));
+    assert.deepStrictEqual(calls[calls.length - 1][0], ['marketing', 'upload', '--file', uploadFile, '--timeout', '1000ms']);
     await assert.rejects(client.upload(dir), /非空文件/);
-
-    json({ ret: '0', data: { total_remain_amount: '0' } });
+    cliResult = { ret: '0', data: { total_remain_amount: '0' } };
     assert.strictEqual((await client.api('balance', {})).data.total_remain_amount, '0');
-    json({ ret: '12004', errmsg: 'permission denied', log_id: 'log-failure' });
-    await assert.rejects(client.api('generate', body), /12004.*permission denied.*log-failure/);
-    json({ ret: '0', data: { run: { thread_id: ids.thread_id } } });
-    await assert.rejects(client.api('generate', body), /禁止自动重提/);
-    json({ ret: false, data: {} });
-    await assert.rejects(client.api('balance', {}), /API 失败/);
-    json(response('3', { run_id: 'different' }));
-    await assert.rejects(client.api('query', ids), /不一致/);
-    json(response('unknown'));
-    await assert.rejects(client.api('query', ids), /run_state 缺失或格式异常/);
-    respond = (_, res) => { res.writeHead(302, { Location: 'https://other.example/secret' }); res.end(); };
-    let before = received.length;
-    await assert.rejects(client.api('generate', body), /HTTP 302/);
-    assert.strictEqual(received.length - before, 1, 'API redirect must not be followed');
-    respond = (_, res) => { res.writeHead(504); res.end(); };
-    before = received.length;
-    await assert.rejects(client.api('generate', body), /HTTP 504/);
-    assert.strictEqual(received.length - before, 1, 'submission must not retry');
-    respond = (_, res) => res.end('<html>not json</html>');
-    await assert.rejects(client.api('generate', body), /有效 JSON/);
-    respond = () => {};
-    await assert.rejects(createClient({ key: 'test-secret', request, timeout: 20 }).api('generate', body), /超时/);
+    cliResult = response('3', { video_urls: ['https://cdn.example/final.mp4'] });
+    await client.api('query', ids);
+    assert.deepStrictEqual(calls[calls.length - 1][0], ['marketing', 'query', '--timeout', '1000ms', '--thread-id', ids.thread_id, '--run-id', ids.run_id]);
+    assert.throws(() => checkResponse('generate', { ret: '0', data: { run: {} } }), /禁止自动重提/);
+    assert.throws(() => checkResponse('query', response('unknown'), ids), /run_state/);
+    assert.throws(() => checkResponse('query', response(3, { run_id: 'other' }), ids), /不一致/);
+    assert.throws(() => checkResponse('balance', { ret: false, data: {} }), /API 失败/);
+    let failedCalls = 0;
+    const failedClient = createClient({ invoke: async () => { failedCalls++; throw new Error('请先运行 pippit-tool-cli login'); } });
+    await assert.rejects(failedClient.api('generate', body), /pippit-tool-cli login/);
+    assert.strictEqual(failedCalls, 1, 'failed submission must never retry');
+
+    // Installed npm layouts must work without cmd.exe/shell interpolation.
+    for (const platform of ['linux', 'win32']) {
+      const prefix = path.join(dir, platform);
+      const packageRoot = path.join(prefix, 'node_modules/@pippit-dev/cli');
+      const binary = path.join(packageRoot, 'bin', platform === 'win32' ? 'pippit-tool-cli.exe' : 'pippit-tool-cli');
+      fs.mkdirSync(path.dirname(binary), { recursive: true });
+      fs.writeFileSync(path.join(packageRoot, 'package.json'), JSON.stringify({ name: '@pippit-dev/cli' }));
+      fs.writeFileSync(binary, 'fixture');
+      assert.strictEqual(resolveCLI({ platform, packageRoot, searchPath: '' }).command, binary);
+      if (platform === 'win32') {
+        assert.strictEqual(resolveCLI({ platform, packageRoot: dir, searchPath: prefix }).command, binary);
+      }
+    }
+    assert.throws(() => resolveCLI({ packageRoot: dir, searchPath: '' }), /pippit-tool-cli login/);
+
+    // Real subprocess bridge: stdin, arguments, bounded wait and login guidance.
+    const fixture = path.join(dir, 'fake cli.js');
+    fs.writeFileSync(fixture, `let input = ''; process.stdin.on('data', c => input += c); process.stdin.on('end', () => console.log(JSON.stringify({args: process.argv.slice(2), input})));`);
+    const invocation = { command: process.execPath, args: [fixture] };
+    const bridge = await invokeCLI(['marketing', 'generate', '--request', '-'], JSON.stringify(body), 3000, invocation);
+    assert.deepStrictEqual(bridge.args, ['marketing', 'generate', '--request', '-']);
+    assert.deepStrictEqual(JSON.parse(bridge.input), body);
+    fs.writeFileSync(fixture, `console.error('请先运行 pippit-tool-cli login'); process.exitCode = 1;`);
+    await assert.rejects(invokeCLI(['marketing', 'balance'], undefined, 3000, invocation), /pippit-tool-cli login/);
+    fs.writeFileSync(fixture, `console.log('invalid JSON');`);
+    await assert.rejects(invokeCLI(['marketing', 'balance'], undefined, 3000, invocation), /未返回有效 JSON/);
+    fs.writeFileSync(fixture, `setInterval(() => {}, 1000);`);
+    await assert.rejects(invokeCLI(['marketing', 'balance'], undefined, 50, invocation), /超时/);
 
     const queryArgs = ['query', '--thread-id', ids.thread_id, '--run-id', ids.run_id];
     const seenActions = [];
@@ -163,7 +172,7 @@ async function test() {
       if (req.url === '/redirect') { res.writeHead(302, { Location: 'https://cdn.example/final.mp4' }); res.end(); }
       else { res.setHeader('Content-Type', 'video/mp4'); res.end(media); }
     };
-    before = received.length;
+    let before = received.length;
     const dest = path.join(dir, 'video.mp4');
     await client.download('https://cdn.example/redirect', dest);
     assert.deepStrictEqual(fs.readFileSync(dest), media);
@@ -180,10 +189,8 @@ async function test() {
     assert(!fs.existsSync(emptyFile));
 
     // Exercise query + download orchestration and preserve raw IDs before delivery.
-    respond = (req, res) => {
-      if (req.url === PATHS.query) res.end(JSON.stringify(response('3', { video_urls: ['https://cdn.example/v.mp4'], image_urls: ['https://cdn.example/i.png'] })));
-      else { res.setHeader('Content-Type', 'application/octet-stream'); res.end(media); }
-    };
+    cliResult = response('3', { video_urls: ['https://cdn.example/v.mp4'], image_urls: ['https://cdn.example/i.png'] });
+    respond = (_, res) => { res.setHeader('Content-Type', 'application/octet-stream'); res.end(media); };
     const delivery = [];
     assert.strictEqual(await main([...queryArgs, '--output-dir', path.join(dir, 'results')], { out: line => delivery.push(JSON.parse(line)), clientFactory: () => client }), 0);
     assert.strictEqual(delivery[0].data.run_id, ids.run_id);
@@ -194,7 +201,7 @@ async function test() {
     const help = spawnSync(process.execPath, [executable, '--help'], { encoding: 'utf8', env: { ...process.env, XYQ_ACCESS_KEY: '' } });
     assert.strictEqual(help.status, 0);
     assert(help.stdout.includes('generate --request'));
-    console.log('Marketing Skill: validation, multipart, API errors, no replay, polling and media delivery passed');
+    console.log('Marketing Skill: CLI login reuse, stdin transport, no replay, polling and media delivery passed');
   } finally {
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(dir, { recursive: true, force: true });

@@ -28,7 +28,7 @@
 npx skills add Pippit-dev/cli --skill xyq-marketing-skill
 ```
 
-需要 Node.js 16+，使用 Skill 内自包含脚本，无额外 npm 依赖。脚本从当前进程读取 `XYQ_ACCESS_KEY`；API 与 CLI 可使用同一 Access Key，但 CLI 浏览器登录不会设置此环境变量。密钥在本机安全配置，不写入请求 JSON 或命令参数。
+需要 Node.js 16+ 和支持 `marketing` 命令的 CLI。Skill 脚本通过原生 `marketing` 命令复用 CLI 登录态；先运行 `pippit-tool-cli status`，未登录时执行 `pippit-tool-cli login` 完成浏览器授权，无需用户提供 access_token 或 Access Key。生成请求通过 stdin 传入原生 CLI，凭据仅在 CLI 内用于鉴权。
 
 ```bash
 # 从仓库根目录执行；营销请求字段见接口契约，默认只预览
