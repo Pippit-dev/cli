@@ -289,6 +289,7 @@ func TestImageCatalogValidation(t *testing.T) {
 		{"image", ImageScene, `[{"key":"dynamic-image","name":"图片测试模型","kind":"image"}]`, true},
 		{"missing name", ImageScene, `[{"key":"x","kind":"image"}]`, false},
 		{"blank name", ImageScene, `[{"key":"x","kind":"image","name":" "}]`, false},
+		{"unknown enum is not a display name", ImageScene, `[{"key":"future_code","name":"future_code","kind":"image"}]`, false},
 		{"duplicate name", ImageScene, `[{"key":"x","kind":"image","name":"名称"},{"key":"y","kind":"image","name":" 名称 "}]`, false},
 		{"wrong scene", VideoScene, `[{"key":"x","kind":"image"}]`, false},
 		{"wrong kind", ImageScene, `[{"key":"x","kind":"video"}]`, false},

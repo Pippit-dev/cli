@@ -218,6 +218,8 @@ pippit-tool-cli generate-image \
 
 命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交 HTTP 请求时，`agent_name` 固定为 `pippit_nest_agent`，参考图会使用上传接口返回的 `pippit_asset_id` 写入顶层 `asset_ids`，生图模型写入 `general_agent_settings.image_model`，比例写入 `general_agent_settings.ratio`，生图数量写入 `general_agent_settings.generate_image_count`。`--model` 为必填参数，填写 `model list --type image` 返回的完整名称，例如 `"智能图片V2.5 Fast"`。CLI 在上传素材前查询或复用有效缓存，解析名称后仅在提交请求中填写服务端模型标识；名称缺失、重复或未找到时停止，不猜测模型。
 
+图片 `model list/search/describe` 返回给宿主的是 API 下发的展示名称 `name`，例如 `美学模型 8.2`。生成时填写 `--model "美学模型 8.2"`，CLI 仅在提交请求中使用该条目对应的 `key`。名称、可用模型和参数均由接口动态提供，不维护静态名称映射。
+
 `--ratio` 可选，只接受服务端 `Ratio` 数字枚举，例如 `--ratio 3` 表示 `9:16`。通过 `model describe "模型名称" --type image` 查看当前可用的数字 `options/default`，`option_labels` 说明每个数字对应的比例。CLI 校验整数格式，模型是否支持该枚举由服务端决定。常用枚举值含义如下：
 
 | ratio 参数 | IDL 枚举 | 含义 |

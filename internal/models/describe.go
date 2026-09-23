@@ -58,9 +58,14 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	delete(out, "config_key")
 	delete(out, "is_default") // A server default does not authorize model selection.
 	if source.Kind == "image" {
-		delete(out, "key")
-		delete(out, "report_name")
-		out["name"] = strings.TrimSpace(source.Name)
+		// Billing maps and other Web-only metadata can contain wire model names.
+		// Keep them in the raw catalog, not in host-facing command output.
+		out = map[string]any{"name": strings.TrimSpace(source.Name), "kind": source.Kind}
+		for _, key := range []string{"description", "parameter_config", "creation_mode_config"} {
+			if value, exists := fields[key]; exists {
+				out[key] = value
+			}
+		}
 	}
 	warnings := []string{}
 	warn := func(message string) { warnings = append(warnings, message) }

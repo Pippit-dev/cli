@@ -10,8 +10,6 @@ metadata:
 
 通过 CLI 完成生成、处理、结果下载与媒体交付。支持下表中的操作；不提供多轮会话续写或自动拆分剧本、分镜并编排成片的能力。复杂需求先确认能由所列命令完成的具体操作，不承诺未覆盖的流程。
 
-商品图文营销一键成片（剧情广告、品牌大片、达人带货）由独立的 `xyq-marketing-skill` 提供，不用普通生视频代替营销编排；未安装该 Skill 时先说明当前能力边界。
-
 ## 开始执行
 
 1. 画布任务运行 `node "{baseDir}/scripts/ensure-cli.js" --canvas`，其他任务运行 `node "{baseDir}/scripts/ensure-cli.js"`。保存返回的 `cli_path`；Canvas 还需保存 `canvas_entry`。文档中的 `pippit-tool-cli` 替换为带引号的 `cli_path`；画布语义命令按模块说明通过 Node 入口执行。同一任务复用，安装细节见 [安装说明](scripts/install.md)。

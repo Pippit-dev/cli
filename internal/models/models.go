@@ -216,8 +216,8 @@ func validateCatalog(catalog *Catalog, scene string) error {
 		seen[model.Key] = true
 		if kind == "image" {
 			name := strings.TrimSpace(model.Name)
-			if name == "" || seenNames[name] {
-				return fmt.Errorf("图片模型名称缺失或重复，请刷新模型列表")
+			if name == "" || strings.EqualFold(name, strings.TrimSpace(model.Key)) || seenNames[name] {
+				return fmt.Errorf("图片模型展示名称缺失、与模型标识相同或重复，请刷新模型列表")
 			}
 			seenNames[name] = true
 		}
@@ -297,10 +297,18 @@ func (c *Catalog) ImageModelKey(name string) (string, error) {
 func (c *Catalog) ImageDisplayMessage(message string) string {
 	var models []Summary
 	for _, raw := range c.Config.Models {
-		var model Summary
+		var model struct {
+			Summary
+			ReportName string `json:"report_name"`
+		}
 		_ = json.Unmarshal(raw, &model)
-		if model.Kind == "image" && model.Key != "" && strings.TrimSpace(model.Name) != "" {
-			models = append(models, model)
+		name := strings.TrimSpace(model.Name)
+		if model.Kind == "image" && name != "" {
+			for _, value := range []string{model.Key, model.ReportName} {
+				if value != "" && value != name {
+					models = append(models, Summary{Key: value, Name: name})
+				}
+			}
 		}
 	}
 	// A key can be a prefix of another key. Replace the longer one first.

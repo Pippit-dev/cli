@@ -205,7 +205,7 @@ func TestImageModelNameFromDiscoveryToSubmission(t *testing.T) {
 		switch r.URL.Path {
 		case config.GetAvailableModelListPath:
 			queries++
-			_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"private-image-fast","name":"智能图片V2.5 Fast","kind":"image"}]}}}`))
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"ali_midjourney_8_2","name":"美学模型 8.2","benefit_map_by_combination":{"ali_midjourney_8_2":{"resource_id":"ali_midjourney_8_2"}},"kind":"image"}]}}}`))
 		case config.SubmitRunPath:
 			submits++
 			var body struct {
@@ -214,10 +214,10 @@ func TestImageModelNameFromDiscoveryToSubmission(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
 			}
-			if string(body.Settings["image_model"]) != `"private-image-fast"` || len(body.Settings) != 1 {
+			if string(body.Settings["image_model"]) != `"ali_midjourney_8_2"` || len(body.Settings) != 1 {
 				t.Errorf("wire model not resolved or unrequested defaults filled: %v", body.Settings)
 			}
-			_, _ = w.Write([]byte(`{"ret":"1","errmsg":"private-image-fast 暂时不可用","log_id":"image-log"}`))
+			_, _ = w.Write([]byte(`{"ret":"1","errmsg":"ali_midjourney_8_2 暂时不可用","log_id":"image-log"}`))
 		default:
 			t.Errorf("unexpected request: %s", r.URL.Path)
 		}
@@ -239,12 +239,15 @@ func TestImageModelNameFromDiscoveryToSubmission(t *testing.T) {
 		t.Fatalf("list=%s err=%v", list, err)
 	}
 	name := output.Models[0].Name
+	if name != "美学模型 8.2" {
+		t.Fatalf("unexpected display name: %q", name)
+	}
 	detail, _, err := execute("model", "describe", name, "--type", "image")
-	if err != nil || !strings.Contains(detail, name) || strings.Contains(list+detail, "private-image-fast") {
+	if err != nil || !strings.Contains(detail, name) || strings.Contains(list+detail, "ali_midjourney_8_2") {
 		t.Fatalf("user-facing identity changed: list=%s detail=%s err=%v", list, detail, err)
 	}
 	stdout, stderr, err := execute("generate-image", "--prompt", "一张猫咪图片", "--model", name)
-	if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "image-log") || strings.Contains(stdout+stderr+err.Error(), "private-image-fast") {
+	if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "image-log") || strings.Contains(stdout+stderr+err.Error(), "ali_midjourney_8_2") {
 		t.Fatalf("server rejection must keep name and log ID: stdout=%s stderr=%s err=%v", stdout, stderr, err)
 	}
 	if queries != 1 || submits != 1 {
