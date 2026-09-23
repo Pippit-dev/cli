@@ -6,17 +6,15 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-)
 
-// Mirrors capcut_business_common.Ratio and the Skill API's skillVideoRatio.
-// Custom (1) has no corresponding generate-video --ratio value.
-var ratioValues = map[int64]string{
-	0: "adaptive", 1: "", 2: "16:9", 3: "9:16", 4: "4:3", 5: "3:4", 6: "1:1",
-	7: "2:1", 8: "2.35:1", 9: "1.85:1", 10: "1.125:2.436", 11: "3:2", 12: "2:3", 13: "21:9",
-}
+	"github.com/Pippit-dev/pippit-cli/internal/common"
+)
 
 type dimensionConfig struct {
 	Key          string  `json:"key"`
+	Label        string  `json:"label"`
+	Description  string  `json:"description"`
+	Required     *bool   `json:"required_field"`
 	DefaultValue *string `json:"default_value"`
 	OptionList   []struct {
 		Value    string `json:"value"`
@@ -36,6 +34,8 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	var source struct {
 		Key       string  `json:"key"`
+		Name      string  `json:"name"`
+		Kind      string  `json:"kind"`
 		Ratios    []int64 `json:"supported_ratio_list"`
 		Default   *int64  `json:"default_ratio"`
 		Parameter struct {
@@ -57,18 +57,27 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	}
 	delete(out, "config_key")
 	delete(out, "is_default") // A server default does not authorize model selection.
+	if source.Kind == "image" {
+		// Billing maps and other Web-only metadata can contain wire model names.
+		// Keep them in the raw catalog, not in host-facing command output.
+		out = map[string]any{"name": strings.TrimSpace(source.Name), "kind": source.Kind}
+		for _, key := range []string{"description", "parameter_config", "creation_mode_config"} {
+			if value, exists := fields[key]; exists {
+				out[key] = value
+			}
+		}
+	}
 	warnings := []string{}
 	warn := func(message string) { warnings = append(warnings, message) }
-	ratios := make([]string, 0, len(source.Ratios))
+	ratios := make([]any, 0, len(source.Ratios))
 	for _, value := range source.Ratios {
-		// Unknown enums and Custom cannot be submitted as CLI ratio strings.
-		if value := ratioValues[value]; value != "" && !slices.Contains(ratios, value) {
+		if value, ok := cliRatioValue(value, source.Kind); ok && !slices.Contains(ratios, value) {
 			ratios = append(ratios, value)
 		}
 	}
 	ratio := map[string]any{"options": ratios}
 	if source.Default != nil {
-		if value := ratioValues[*source.Default]; value != "" {
+		if value, ok := cliRatioValue(*source.Default, source.Kind); ok {
 			if slices.Contains(ratios, value) {
 				ratio["default"] = value
 			} else {
@@ -84,17 +93,37 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 
 	seen := make(map[string]bool)
 	for _, dimension := range source.Parameter.Dimensions {
-		if dimension == nil || (dimension.Key != "resolution" && dimension.Key != "duration") {
+		if dimension == nil {
+			continue
+		}
+		if source.Kind == "image" {
+			if dimension.Key != "resolution" && dimension.Key != "ratio" && dimension.Key != "effort" {
+				continue
+			}
+		} else if dimension.Key != "resolution" && dimension.Key != "duration" {
 			continue
 		}
 		if seen[dimension.Key] {
 			return nil, fmt.Errorf("模型配置包含重复 %s 维度，请 --refresh 重试", dimension.Key)
 		}
 		seen[dimension.Key] = true
-		out[dimension.Key] = describeDimension(dimension, warn)
+		out[dimension.Key] = describeDimension(dimension, source.Kind, warn)
 	}
-	// Keep unrelated parameter dimensions and combination constraints as supplied.
-	if parameterRaw, ok := fields["parameter_config"]; ok && string(parameterRaw) != "null" {
+	if source.Kind == "image" {
+		if imageRatio, ok := out["ratio"].(map[string]any); ok {
+			if options, ok := imageRatio["options"].([]any); ok {
+				labels := make(map[string]string, len(options))
+				for _, option := range options {
+					value := option.(int64)
+					labels[strconv.FormatInt(value, 10)] = common.RatioValue(value)
+				}
+				imageRatio["option_labels"] = labels
+			}
+		}
+	}
+	// Image dimensions retain their complete source metadata and combination rules.
+	// Video descriptions keep the existing compact representation.
+	if parameterRaw, ok := fields["parameter_config"]; source.Kind != "image" && ok && string(parameterRaw) != "null" {
 		var parameter map[string]json.RawMessage
 		if err := json.Unmarshal(parameterRaw, &parameter); err != nil {
 			return nil, err
@@ -146,7 +175,7 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	if len(limits) > 0 {
 		out["material_limits"] = limits
 	}
-	if source.Creation != nil {
+	if source.Creation != nil && source.Kind != "image" {
 		modes := make([]map[string]any, 0, len(source.Creation.Modes))
 		for _, rawMode := range source.Creation.Modes {
 			if string(rawMode) == "null" {
@@ -181,7 +210,7 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 			case "", "inherit":
 				entry["ratio"] = ratio
 				if mode.Key == "text_to_video" && (source.Key == "MiniMax-H3" || source.Key == "MiniMax-H3-Max") {
-					fixed := make([]string, 0, len(ratios))
+					fixed := make([]any, 0, len(ratios))
 					for _, value := range ratios {
 						if value != "adaptive" {
 							fixed = append(fixed, value)
@@ -210,7 +239,7 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 		}
 		out["creation_modes"] = modes
 	}
-	if (source.Key == "MiniMax-H3" || source.Key == "MiniMax-H3-Max") && slices.Contains(ratios, "adaptive") {
+	if source.Kind != "image" && (source.Key == "MiniMax-H3" || source.Key == "MiniMax-H3-Max") && slices.Contains(ratios, "adaptive") {
 		out["notes"] = []string{"MiniMax 使用 adaptive 需要参考图片或视频；纯文生视频请选择固定比例。创作模式的比例策略优先于模型级选项。"}
 	}
 	if len(warnings) > 0 {
@@ -219,8 +248,29 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 	return json.Marshal(out)
 }
 
-func describeDimension(d *dimensionConfig, warn func(string)) map[string]any {
+// Image generation accepts wire enums; video generation accepts ratio strings.
+func cliRatioValue(value int64, kind string) (any, bool) {
+	label := common.RatioValue(value)
+	if label == "" {
+		return nil, false
+	}
+	if kind == "image" {
+		return value, true
+	}
+	return label, true
+}
+
+func describeDimension(d *dimensionConfig, kind string, warn func(string)) map[string]any {
 	out := map[string]any{}
+	if d.Label != "" {
+		out["label"] = d.Label
+	}
+	if d.Description != "" {
+		out["description"] = d.Description
+	}
+	if d.Required != nil {
+		out["required_field"] = *d.Required
+	}
 	if len(d.ActiveWhenAny) > 0 {
 		out["active_when_any"] = d.ActiveWhenAny
 	}
@@ -229,6 +279,16 @@ func describeDimension(d *dimensionConfig, warn func(string)) map[string]any {
 		if d.Key == "duration" {
 			number, err := strconv.ParseInt(value, 10, 32)
 			return number, err == nil && number > 0
+		}
+		if d.Key == "ratio" {
+			number, err := strconv.ParseInt(value, 10, 64)
+			if err != nil {
+				return nil, false
+			}
+			return cliRatioValue(number, kind)
+		}
+		if kind == "image" && d.Key == "resolution" {
+			return strings.ToUpper(value), value != ""
 		}
 		return strings.ToLower(value), value != ""
 	}

@@ -1,6 +1,7 @@
 package generate_image
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -19,10 +20,10 @@ func TestValidateOptionsRequiresModel(t *testing.T) {
 	}
 }
 
-func TestValidateOptionsAllowsServerDecidedModel(t *testing.T) {
+func TestValidateOptionsAllowsDynamicModelName(t *testing.T) {
 	opts := &Options{
 		Prompt: "x",
-		Model:  "seedream_3.0",
+		Model:  "图片测试模型",
 	}
 
 	if err := ValidateOptions(opts); err != nil {
@@ -33,7 +34,7 @@ func TestValidateOptionsAllowsServerDecidedModel(t *testing.T) {
 func TestValidateOptionsAllowsServerDecidedRatio(t *testing.T) {
 	opts := &Options{
 		Prompt: "x",
-		Model:  "seedream_4.5",
+		Model:  "图片测试模型",
 		Ratio:  "99",
 	}
 
@@ -45,7 +46,7 @@ func TestValidateOptionsAllowsServerDecidedRatio(t *testing.T) {
 func TestValidateOptionsAllowsServerDecidedResolution(t *testing.T) {
 	opts := &Options{
 		Prompt:     "x",
-		Model:      "seedream_4.5",
+		Model:      "图片测试模型",
 		Resolution: "8K",
 	}
 
@@ -58,7 +59,7 @@ func TestValidateOptionsRejectsNegativeGenerateImageCount(t *testing.T) {
 	count := -1
 	opts := &Options{
 		Prompt:             "x",
-		Model:              "seedream_4.5",
+		Model:              "图片测试模型",
 		GenerateImageCount: &count,
 	}
 
@@ -83,6 +84,13 @@ func TestParseRatioSupportsVisibleEnumValues(t *testing.T) {
 		{ratio: "4", want: 4},
 		{ratio: "5", want: 5},
 		{ratio: "6", want: 6},
+		{ratio: "7", want: 7},
+		{ratio: "8", want: 8},
+		{ratio: "9", want: 9},
+		{ratio: "10", want: 10},
+		{ratio: "11", want: 11},
+		{ratio: "12", want: 12},
+		{ratio: "99", want: 99},
 	}
 
 	for _, tt := range cases {
@@ -98,20 +106,55 @@ func TestParseRatioSupportsVisibleEnumValues(t *testing.T) {
 	}
 }
 
-func TestParseRatioRejectsNonInteger(t *testing.T) {
-	_, err := parseRatio("1:1")
-	if err == nil {
-		t.Fatal("parseRatio() error = nil, want integer validation")
+func TestImageOptionalParametersAndEffortPassThrough(t *testing.T) {
+	for _, effort := range []string{"", " HIGH ", "future-effort"} {
+		opts := &Options{Prompt: "image", Model: "未来图片模型", Effort: effort}
+		if err := ValidateOptions(opts); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := json.Marshal(buildSubmitRunBody(opts, "future-image-model", nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var body struct {
+			Settings map[string]json.RawMessage `json:"general_agent_settings"`
+		}
+		if err := json.Unmarshal(raw, &body); err != nil {
+			t.Fatal(err)
+		}
+		for _, key := range []string{"ratio", "resolution", "generate_image_count"} {
+			if _, exists := body.Settings[key]; exists {
+				t.Fatalf("unspecified %s was filled: %s", key, raw)
+			}
+		}
+		if effort == "" {
+			if _, exists := body.Settings["image_effort"]; exists {
+				t.Fatalf("unspecified effort was filled: %s", raw)
+			}
+		} else {
+			var got string
+			if err := json.Unmarshal(body.Settings["image_effort"], &got); err != nil || got != strings.ToLower(strings.TrimSpace(effort)) {
+				t.Fatalf("effort not forwarded: %s, %v", raw, err)
+			}
+		}
 	}
-	if !strings.Contains(err.Error(), `ratio "1:1" 必须是整数枚举值`) {
-		t.Fatalf("error = %q, want integer validation", err)
+}
+
+func TestParseRatioRejectsNonInteger(t *testing.T) {
+	for _, ratio := range []string{"9:16", "adaptive", "17:11", "3.0"} {
+		t.Run(ratio, func(t *testing.T) {
+			err := ValidateOptions(&Options{Prompt: "image", Model: "未来图片模型", Ratio: ratio})
+			if err == nil || !strings.Contains(err.Error(), "必须是整数枚举值") {
+				t.Fatalf("ratio %q: error = %v, want integer enum validation", ratio, err)
+			}
+		})
 	}
 }
 
 func TestValidateOptionsRejectsUnsupportedImageExtension(t *testing.T) {
 	opts := &Options{
 		Prompt:     "x",
-		Model:      "seedream_4.5",
+		Model:      "图片测试模型",
 		ImagePaths: []string{"ref.tiff"},
 	}
 
@@ -128,13 +171,13 @@ func TestBuildSubmitRunBodyWithGeneralAgentSettings(t *testing.T) {
 	count := 2
 	opts := &Options{
 		Prompt:             "  生成小猫海报  ",
-		Model:              " seedream_5.0_pro ",
+		Model:              " Seedream 5.0 Pro ",
 		Ratio:              "6",
 		Resolution:         " 4k ",
 		GenerateImageCount: &count,
 	}
 
-	body := buildSubmitRunBody(opts, []string{"asset_1"})
+	body := buildSubmitRunBody(opts, "seedream_5.0_pro", []string{"asset_1"})
 	if body["agent_name"] != agentNameNest {
 		t.Fatalf("agent_name = %v, want nest agent", body["agent_name"])
 	}

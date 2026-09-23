@@ -51,7 +51,7 @@ node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
 | 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
-| 查看可用视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
+| 查看可用图片/视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
@@ -205,20 +205,22 @@ pippit-tool-cli canvas command run xyq.generation.update_prompt \
 
 ## 生图 CLI
 
-`generate-image` 会上传本地参考图片，然后向综合 Nest Agent 提交生图请求：
+`generate-image` 使用图片模型的展示名称；先查询当前列表并选择模型，再上传本地参考图片并提交生图请求。以下假设列表包含该名称：
 
 ```bash
 pippit-tool-cli generate-image \
   --prompt "生成一张小猫海报" \
   --image "~/images/cat.png" \
-  --model "seedream_4.5" \
+  --model "智能图片V2.5 Fast" \
   --ratio 6 \
   --generate-image-count 2
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交 HTTP 请求时，`agent_name` 固定为 `pippit_nest_agent`，参考图会使用上传接口返回的 `pippit_asset_id` 写入顶层 `asset_ids`，生图模型写入 `general_agent_settings.image_model`，比例写入 `general_agent_settings.ratio`，生图数量写入 `general_agent_settings.generate_image_count`。`--model` 为必填参数，CLI 只做非空校验，具体模型值是否可用由服务端决定。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交 HTTP 请求时，`agent_name` 固定为 `pippit_nest_agent`，参考图会使用上传接口返回的 `pippit_asset_id` 写入顶层 `asset_ids`，生图模型写入 `general_agent_settings.image_model`，比例写入 `general_agent_settings.ratio`，生图数量写入 `general_agent_settings.generate_image_count`。`--model` 为必填参数，填写 `model list --type image` 返回的完整名称，例如 `"智能图片V2.5 Fast"`。CLI 在上传素材前查询或复用有效缓存，解析名称后仅在提交请求中填写服务端模型标识；名称缺失、重复或未找到时停止，不猜测模型。
 
-`--ratio` 可选，填写服务端 `Ratio` 枚举值。CLI 只做整数格式解析，不检查枚举值是否在下表范围内；具体值是否可用由服务端决定。常用枚举值含义如下：
+图片 `model list/search/describe` 返回给宿主的是 API 下发的展示名称 `name`，例如 `美学模型 8.2`。生成时填写 `--model "美学模型 8.2"`，CLI 仅在提交请求中使用该条目对应的 `key`。名称、可用模型和参数均由接口动态提供，不维护静态名称映射。
+
+`--ratio` 可选，只接受服务端 `Ratio` 数字枚举，例如 `--ratio 3` 表示 `9:16`。通过 `model describe "模型名称" --type image` 查看当前可用的数字 `options/default`，`option_labels` 说明每个数字对应的比例。CLI 校验整数格式，模型是否支持该枚举由服务端决定。常用枚举值含义如下：
 
 | ratio 参数 | IDL 枚举 | 含义 |
 | ---: | --- | --- |
@@ -232,18 +234,27 @@ pippit-tool-cli generate-image \
 
 `--generate-image-count` 可选，填写生图数量，对应 IDL 字段 `GeneralSettingsPart.GenerateImageCount` / JSON 字段 `generate_image_count`。CLI 只校验不能为负数；具体数量范围由服务端决定。
 
-图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 整数格式、generate-image-count 非负和文件后缀。
+`--resolution` 写入 `general_agent_settings.resolution`（转大写），新增 `--effort` 写入 `general_agent_settings.image_effort`（转小写）。分辨率和推理强度选项都来自该模型的动态配置；没有 `effort` 维度的模型不展示推理强度选择。只传用户指定的参数，未指定时省略，不自动补查询默认值。
 
-## 视频模型发现
+图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`。CLI 会在提交前校验 prompt、model 必填、ratio 格式、generate-image-count 非负和文件后缀；不新增模型或参数组合白名单。
+
+## 图片与视频模型发现
 
 ```bash
+# 图片模型及可选参数
+pippit-tool-cli model list --type image
+pippit-tool-cli model search "智能图片" --type image
+pippit-tool-cli model describe "智能图片V2.5 Fast" --type image
+pippit-tool-cli model list --type image --refresh
+
+# 省略 --type 保持查询视频
 pippit-tool-cli model list
 pippit-tool-cli model search MiniMax
 pippit-tool-cli model describe MiniMax-H3
 pippit-tool-cli model list --refresh
 ```
 
-使用当前登录凭证查询服务端；成功结果按账号和环境隔离缓存 5 分钟，`--refresh` 强制刷新。失败时提示重试，不回退静态列表或过期缓存。`describe` 将比例枚举转换为可直接传给 `--ratio` 的字符串，并整理分辨率、时长和素材限制；不展示内部 `config_key`，未知比例枚举跳过。生成仍由服务端校验。详见 [模型发现](skills/xyq-nest-skill/commands/model.md)。
+使用当前个人登录凭证查询服务端 Skill 模型接口；图片 scene 为 `web_image_agent`，视频为 `web_turbo_video_generator`，不传 TeamID。成功结果按账号、环境和场景隔离缓存 5 分钟，`--refresh` 强制刷新。失败时提示重试，不回退静态列表或过期缓存。`describe` 提供可直接传给生成命令的参数：图片比例保留数字枚举并附比例说明，视频比例转换为字符串，同时整理分辨率、图片推理强度、视频时长和素材限制；不展示内部 `config_key`，未知比例枚举跳过。图片列表和详情仅用 `name` 标识模型，不展示底层模型枚举；搜索、详情查询和 `generate-image --model` 均使用名称，包含空格时加引号。图片详情保留原始 `parameter_config`，包括条件、必选标记、选项说明和参数组合约束。生成仍由服务端校验；服务端尚未开放图片场景或提交参数时会返回错误，不回退静态模型清单。详见 [模型发现](skills/xyq-nest-skill/commands/model.md)。
 
 ## 生视频 CLI
 

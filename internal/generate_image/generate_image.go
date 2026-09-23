@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
+	"github.com/Pippit-dev/pippit-cli/internal/models"
 )
 
 const (
@@ -19,7 +20,7 @@ var (
 	allowedImageExtensions    = common.StringSet(allowedImageExtensionList)
 )
 
-const ratioUsage = "enum values: 0=原始比例/自动, 2=16:9(横屏), 13=21:9(电影), 3=9:16(竖屏), 4=4:3, 5=3:4, 6=1:1"
+const ratioUsage = "integer enum from 'model describe \"MODEL_NAME\" --type image' (e.g. 0=adaptive, 2=16:9, 3=9:16, 6=1:1)"
 
 // Options is the stable command-facing request shape for generate-image.
 type Options struct {
@@ -29,6 +30,7 @@ type Options struct {
 	Model              string
 	Ratio              string
 	Resolution         string
+	Effort             string
 	GenerateImageCount *int
 }
 
@@ -36,6 +38,7 @@ type generalAgentSettings struct {
 	ImageModel         string `json:"image_model"`
 	Ratio              *int   `json:"ratio,omitempty"`
 	Resolution         string `json:"resolution,omitempty"`
+	ImageEffort        string `json:"image_effort,omitempty"`
 	GenerateImageCount *int   `json:"generate_image_count,omitempty"`
 }
 
@@ -53,23 +56,31 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 	if err := ValidateOptions(opts); err != nil {
 		return nil, err
 	}
+	catalog, err := models.NewService(runner).Get(ctx, "image", false)
+	if err != nil {
+		return nil, err
+	}
+	modelKey, err := catalog.Catalog.ImageModelKey(opts.Model)
+	if err != nil {
+		return nil, err
+	}
 
 	imageAssetIDs, err := uploadImageList(ctx, opts.ImagePaths, runner)
 	if err != nil {
 		return nil, fmt.Errorf("上传图片失败: %w", err)
 	}
 
-	body := buildSubmitRunBody(opts, imageAssetIDs)
+	body := buildSubmitRunBody(opts, modelKey, imageAssetIDs)
 
 	var resp common.SubmitRunResponse
 	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
-		return nil, fmt.Errorf("提交 generate-image 请求失败: %w", err)
+		return nil, fmt.Errorf("提交 generate-image 请求失败: %s", catalog.Catalog.ImageDisplayMessage(err.Error()))
 	}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, common.NewLogIDError(fmt.Sprintf("generate-image 请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		return nil, common.NewLogIDError(fmt.Sprintf("generate-image 请求返回失败: ret=%s errmsg=%s", resp.Ret, catalog.Catalog.ImageDisplayMessage(resp.Errmsg)), resp.LogID)
 	}
 	if resp.Data.Run.ThreadID == "" {
 		return nil, fmt.Errorf("generate-image 响应缺少 data.run.thread_id")
@@ -137,15 +148,16 @@ func uploadImageList(ctx context.Context, paths []string, runner *common.Runner)
 	return assetIDs, nil
 }
 
-func buildSubmitRunBody(opts *Options, imageAssetIDs []string) map[string]any {
+func buildSubmitRunBody(opts *Options, modelKey string, imageAssetIDs []string) map[string]any {
 	ratio, _ := parseRatio(opts.Ratio)
 	body := map[string]any{
 		"agent_name": agentNameNest,
 		"message":    strings.TrimSpace(opts.Prompt),
 		"general_agent_settings": generalAgentSettings{
-			ImageModel:         strings.TrimSpace(opts.Model),
+			ImageModel:         modelKey,
 			Ratio:              ratio,
 			Resolution:         strings.ToUpper(strings.TrimSpace(opts.Resolution)),
+			ImageEffort:        strings.ToLower(strings.TrimSpace(opts.Effort)),
 			GenerateImageCount: opts.GenerateImageCount,
 		},
 	}
@@ -162,7 +174,7 @@ func parseRatio(raw string) (*int, error) {
 	}
 	value, err := strconv.Atoi(ratio)
 	if err != nil {
-		return nil, fmt.Errorf("ratio %q 必须是整数枚举值；可参考：%s", ratio, ratioUsage)
+		return nil, fmt.Errorf("ratio %q 必须是整数枚举值（如 3 表示 9:16）；请用 model describe \"模型名称\" --type image 查询", ratio)
 	}
 	return &value, nil
 }

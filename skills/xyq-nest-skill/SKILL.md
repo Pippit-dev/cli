@@ -10,8 +10,6 @@ metadata:
 
 通过 CLI 完成生成、处理、结果下载与媒体交付。支持下表中的操作；不提供多轮会话续写或自动拆分剧本、分镜并编排成片的能力。复杂需求先确认能由所列命令完成的具体操作，不承诺未覆盖的流程。
 
-商品图文营销一键成片（剧情广告、品牌大片、达人带货）由独立的 `xyq-marketing-skill` 提供，不用普通生视频代替营销编排；未安装该 Skill 时先说明当前能力边界。
-
 ## 开始执行
 
 1. 画布任务运行 `node "{baseDir}/scripts/ensure-cli.js" --canvas`，其他任务运行 `node "{baseDir}/scripts/ensure-cli.js"`。保存返回的 `cli_path`；Canvas 还需保存 `canvas_entry`。文档中的 `pippit-tool-cli` 替换为带引号的 `cli_path`；画布语义命令按模块说明通过 Node 入口执行。同一任务复用，安装细节见 [安装说明](scripts/install.md)。
@@ -29,7 +27,7 @@ metadata:
 | 查看登录状态、登录、退出或切换账号 | `status` / `login` / `logout` | [授权](commands/auth.md) |
 | 创建或查询小云雀个人画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
-| 查询当前可用的视频模型、参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
+| 查询当前可用的图片/视频模型、比例、分辨率及推理强度等参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
 | 生成视频，使用图/视频/音频参考，首尾帧生视频 | `generate-video` | [生视频](commands/generate-video.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
@@ -45,6 +43,7 @@ metadata:
 ## 执行总则
 
 - 保留用户原始 prompt，不擅自扩写、润色、翻译或增加风格词；参数转换按对应命令文档执行。生成和视频处理只传用户给定的可选创作参数，缺少必填项先询问。画布输入还需使用实际查询的 ID、版本和当前 schema。模型和参数最终合法性由服务端判断。
+- 图片模型对用户只展示服务端返回的名称；列表、选择、详情与生成命令均使用完整名称，不解释或展示对应底层枚举。名称到提交标识由 CLI 解析，详见 [模型发现](commands/model.md)。
 - 用户明确要求生成或处理，即可在该范围内执行；仅咨询用法、费用或方案时不提交。范围、必填信息或消耗 credits 的授权不明确时，先确认，不重复索要已给出的授权。
 - 提问优先使用宿主实际提供且当前模式允许的工具：Codex 的 `request_user_input` 或 `request_user_input_async`，WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。需要答案时等待答复。
 - 素材参数接收本地文件路径，CLI 内部上传。远程链接不能冒充本地路径；缺少可访问文件时先解决素材获取。单文件必须小于 500 MB（500000000 字节）。

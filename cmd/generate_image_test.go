@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,18 +11,29 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/bytedance/sonic"
 )
 
 func TestGenerateImage(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LocalAppData", t.TempDir())
 	var uploaded bool
+	var modelQueried bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
 		}
 		switch r.URL.Path {
+		case "/api/biz/v1/skill/get_available_model_list":
+			modelQueried = true
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"seedream_5.0_pro","name":"Seedream 5.0 Pro","kind":"image"}]}}}`))
 		case "/api/biz/v1/skill/upload_file":
+			if !modelQueried {
+				t.Fatal("image name must be resolved before uploading")
+			}
 			if r.Method != http.MethodPost {
 				t.Fatalf("upload method = %s, want POST", r.Method)
 			}
@@ -100,7 +112,7 @@ func TestGenerateImage(t *testing.T) {
 		"generate-image",
 		"--prompt", "生成小猫海报",
 		"--image", image,
-		"--model", "seedream_5.0_pro",
+		"--model", "Seedream 5.0 Pro",
 		"--ratio", "6",
 		"--resolution", "4K",
 		"--generate-image-count", "2",
@@ -135,5 +147,142 @@ func TestGenerateImageRequiresModel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "缺少必填参数 --model") {
 		t.Fatalf("error = %q, want model validation", err)
+	}
+}
+
+func TestGenerateImageDynamicParameters(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LocalAppData", t.TempDir())
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.URL.Path == "/api/biz/v1/skill/get_available_model_list" {
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"future-image-model","name":"未来图片模型","kind":"image"}]}}}`))
+			return
+		}
+		if r.URL.Path != "/api/biz/v1/skill/submit_run" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var body struct {
+			AgentName string `json:"agent_name"`
+			Settings  struct {
+				Model      string `json:"image_model"`
+				Ratio      int    `json:"ratio"`
+				Resolution string `json:"resolution"`
+				Effort     string `json:"image_effort"`
+			} `json:"general_agent_settings"`
+		}
+		if err := sonic.Unmarshal(raw, &body); err != nil {
+			t.Error(err)
+			return
+		}
+		if body.AgentName != "pippit_nest_agent" || body.Settings.Model != "future-image-model" || body.Settings.Ratio != 13 || body.Settings.Resolution != "8K" || body.Settings.Effort != "future-effort" {
+			t.Errorf("incorrect request mapping: %s", raw)
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"image-thread","run_id":"image-run"}}}`))
+	}))
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{"generate-image", "--prompt", "image", "--model", "未来图片模型", "--ratio", "13", "--resolution", "8k", "--effort", " FUTURE-EFFORT "})
+	if err := root.Execute(); err != nil || requests != 2 {
+		t.Fatalf("Execute: err=%v requests=%d", err, requests)
+	}
+}
+
+func TestImageModelNameFromDiscoveryToSubmission(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("LocalAppData", t.TempDir())
+	queries, submits := 0, 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case config.GetAvailableModelListPath:
+			queries++
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":[{"key":"ali_midjourney_8_2","name":"美学模型 8.2","benefit_map_by_combination":{"ali_midjourney_8_2":{"resource_id":"ali_midjourney_8_2"}},"kind":"image"}]}}}`))
+		case config.SubmitRunPath:
+			submits++
+			var body struct {
+				Settings map[string]json.RawMessage `json:"general_agent_settings"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Error(err)
+			}
+			if string(body.Settings["image_model"]) != `"ali_midjourney_8_2"` || len(body.Settings) != 1 {
+				t.Errorf("wire model not resolved or unrequested defaults filled: %v", body.Settings)
+			}
+			_, _ = w.Write([]byte(`{"ret":"1","errmsg":"ali_midjourney_8_2 暂时不可用","log_id":"image-log"}`))
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+	execute := func(args ...string) (string, string, error) {
+		var stdout, stderr bytes.Buffer
+		root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+		root.SetArgs(args)
+		err := root.Execute()
+		return stdout.String(), stderr.String(), err
+	}
+	list, _, err := execute("model", "list", "--type", "image")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output struct{ Models []struct{ Name string } }
+	if err := json.Unmarshal([]byte(list), &output); err != nil || len(output.Models) != 1 {
+		t.Fatalf("list=%s err=%v", list, err)
+	}
+	name := output.Models[0].Name
+	if name != "美学模型 8.2" {
+		t.Fatalf("unexpected display name: %q", name)
+	}
+	detail, _, err := execute("model", "describe", name, "--type", "image")
+	if err != nil || !strings.Contains(detail, name) || strings.Contains(list+detail, "ali_midjourney_8_2") {
+		t.Fatalf("user-facing identity changed: list=%s detail=%s err=%v", list, detail, err)
+	}
+	stdout, stderr, err := execute("generate-image", "--prompt", "一张猫咪图片", "--model", name)
+	if err == nil || !strings.Contains(err.Error(), name) || !strings.Contains(err.Error(), "image-log") || strings.Contains(stdout+stderr+err.Error(), "ali_midjourney_8_2") {
+		t.Fatalf("server rejection must keep name and log ID: stdout=%s stderr=%s err=%v", stdout, stderr, err)
+	}
+	if queries != 1 || submits != 1 {
+		t.Fatalf("expected shared cache and no submit retry: queries=%d submits=%d", queries, submits)
+	}
+}
+
+func TestImageNameFailureStopsBeforeUploadAndSubmit(t *testing.T) {
+	for _, tc := range []struct{ name, selection, models string }{
+		{"unknown name", "不存在", `[{"key":"private-image","name":"图片模型","kind":"image"}]`},
+		{"wire key", "private-image", `[{"key":"private-image","name":"图片模型","kind":"image"}]`},
+		{"missing name", "图片模型", `[{"key":"private-image","kind":"image"}]`},
+		{"duplicate name", "图片模型", `[{"key":"private-image","name":"图片模型","kind":"image"},{"key":"private-image-2","name":"图片模型","kind":"image"}]`},
+		{"empty list", "图片模型", `[]`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("XDG_CACHE_HOME", t.TempDir())
+			t.Setenv("LocalAppData", t.TempDir())
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				if r.URL.Path != config.GetAvailableModelListPath {
+					t.Errorf("must not upload or submit: %s", r.URL.Path)
+				}
+				_, _ = w.Write([]byte(`{"ret":"0","data":{"scene":"web_image_agent","config_key":"image-key","config":{"models":` + tc.models + `}}}`))
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs([]string{"generate-image", "--prompt", "image", "--model", tc.selection, "--image", "/missing.png"})
+			err := root.Execute()
+			if err == nil || requests != 1 || strings.Contains(stdout.String()+stderr.String()+err.Error(), "private-image") {
+				t.Fatalf("invalid name accepted or exposed: requests=%d stdout=%s stderr=%s err=%v", requests, stdout.String(), stderr.String(), err)
+			}
+		})
 	}
 }
