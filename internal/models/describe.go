@@ -204,6 +204,14 @@ func describeModel(raw json.RawMessage) (json.RawMessage, error) {
 			case "first_last_frame":
 				entry["generate_type"] = 1
 			}
+			switch mode.Key {
+			case "reference_generation":
+				entry["task_type"] = "reference"
+			case "video_edit":
+				entry["task_type"] = "edit"
+			case "video_extend":
+				entry["task_type"] = "extend"
+			}
 			switch mode.RatioPolicy.ValueMode {
 			case "smart":
 				entry["ratio"] = map[string]any{"options": []string{"adaptive"}, "default": "adaptive"}
