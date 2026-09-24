@@ -274,7 +274,7 @@ pippit-tool-cli generate-video \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。当前可用模型通过 `model list` 查询，参数详情通过 `model describe MODEL_KEY` 查询。CLI 会在提交前校验 prompt 和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。当前可用模型通过 `model list` 查询，参数详情通过 `model describe MODEL_KEY` 查询。CLI 会在提交前校验 prompt 和文件后缀，仅传入非空 `--draft-task-id` 时允许省略 prompt；模型、比例、分辨率等语义校验由服务端处理。
 
 首尾帧生视频时，按首帧、尾帧的顺序传入两次 `--image`，并设置 `--generate-type 1`：
 
@@ -291,6 +291,25 @@ pippit-tool-cli generate-video \
 ```
 
 `--generate-type` 可选，填写后原样写入 `video_part_tool_param.generate_type`；值 `1` 表示首尾帧生成。CLI 保持图片上传和请求中的输入顺序，不在本地校验该参数的枚举值，具体能力与约束由服务端决定。
+
+### Seedance 2.5 Draft
+
+复用 `generate-video` 分两次提交。需要目标服务端支持 Draft 协议和无 prompt 的成片请求。
+
+```bash
+# 样片
+pippit-tool-cli generate-video --model Seedance_2.5_draft --draft \
+  --prompt "小猫钓鱼视频" --task-type reference --duration 10 --ratio 16:9
+pippit-tool-cli query-result --thread-id DRAFT_THREAD_ID --run-id DRAFT_RUN_ID --download-dir ./draft
+
+# 用户预览后要求生成成片：使用 videos[].draft_task_id 原值
+pippit-tool-cli generate-video --model Seedance_2.5_draft --draft-task-id DRAFT_TASK_ID
+pippit-tool-cli query-result --thread-id FINAL_THREAD_ID --run-id FINAL_RUN_ID --download-dir ./final
+```
+
+`query-result` 在视频结果中保留可选的 `draft`、`draft_task_id`，继续返回 `download_url` 和 `output_path`。两阶段分别计费，下游固定生成 480p 样片和 1080p 成片；样片创建后 7 天内可转成片。CLI 不自动续跑，不要求重复提示词和素材。
+
+新增 `--task-type`、`--seed` 透传生成模式与 seed。完整参数与两阶段示例见 [生视频命令](skills/xyq-nest-skill/commands/generate-video.md)。
 
 ## 视频处理工具 CLI
 

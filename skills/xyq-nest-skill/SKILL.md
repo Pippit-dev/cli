@@ -28,7 +28,7 @@ metadata:
 | 创建或查询小云雀个人画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
 | 查询当前可用的图片/视频模型、比例、分辨率及推理强度等参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
-| 生成视频，使用图/视频/音频参考，首尾帧生视频 | `generate-video` | [生视频](commands/generate-video.md) |
+| 生成视频、参考生成、视频编辑、视频延长、首尾帧生成、Draft 样片及转成片 | `generate-video` | [生视频](commands/generate-video.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
