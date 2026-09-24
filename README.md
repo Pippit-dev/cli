@@ -369,9 +369,9 @@ npx @pippit-dev/cli install --source HOST
 pippit-tool-cli update --source HOST
 ```
 
-直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。install/update 的显式 `--source` 优先于此环境变量；首尾空白去除，显式空值清空来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
+直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。安装和更新均按显式 `--source`（命令支持时）、`PIPPIT_CLI_SOURCE`、已核实宿主运行标记的顺序识别来源；首尾空白去除，显式空值清空来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
 
-`report_telemetry` 新增可选请求字段 `host_platform` 上报宿主标识；原有 `source` 保留 `npm_install`、`npx_install`、`cli_update`，`event` 区分 install/update，`platform` 仍表示操作系统。当前仅完成 CLI 字段上报，服务端协议和指标接收仍需适配。帮助不安装也不上报，`PIPPIT_CLI_DISABLE_TELEMETRY=1` 仍可关闭上报。内部 `install-cli.js` 仅安装二进制，沿用不安装 Skill、不上报的原有行为。
+`report_telemetry` 新增可选请求字段 `host_platform` 上报宿主标识；原有 `source` 保留 `npm_install`、`npx_install`、`cli_update`，`event` 区分 install/update，`platform` 仍表示操作系统。服务端通过独立的 `host_platform` 指标标签统计宿主来源。帮助不安装也不上报，`PIPPIT_CLI_DISABLE_TELEMETRY=1` 仍可关闭上报。内部 `install-cli.js` 仅安装二进制，沿用不安装 Skill、不上报的原有行为。
 
 ### 宿主来源统计
 

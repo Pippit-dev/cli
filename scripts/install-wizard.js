@@ -21,7 +21,7 @@ PIPPIT_CLI_INSTALL_PACKAGE can override the package/version to install.
 
 Options:
   --source HOST  Real host identifier reported as host_platform; unknown hosts omit it
-                 Defaults to PIPPIT_CLI_SOURCE when unset; an explicit empty value omits host_platform
+                 Defaults to PIPPIT_CLI_SOURCE, then known host runtime markers; an explicit empty value omits host_platform
   -h, --help  Show this help without installing, updating, or sending telemetry
 `;
 
@@ -67,7 +67,7 @@ function main(args = process.argv.slice(2)) {
     console.log(INSTALL_HELP);
     return;
   }
-  let source = process.env.PIPPIT_CLI_SOURCE || '';
+  let source;
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--source' && i + 1 < args.length && !args[i + 1].startsWith('--')) {
       source = args[++i];
@@ -79,7 +79,7 @@ function main(args = process.argv.slice(2)) {
       return;
     }
   }
-  source = source.trim();
+  if (source !== undefined) source = source.trim();
   const pkg = installPackage();
   const installed = getGloballyInstalledVersion();
   if (installed) {
