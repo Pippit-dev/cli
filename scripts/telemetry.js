@@ -19,10 +19,26 @@ function telemetryBaseURL() {
   return DEFAULT_BASE_URL;
 }
 
+// Keep the same attribution rules as native CLI common.DetectHostSource.
+function resolveHostSource(explicit) {
+  if (explicit !== undefined) return explicit.trim();
+  if ((process.env.PIPPIT_CLI_SOURCE || "").trim()) return process.env.PIPPIT_CLI_SOURCE.trim();
+  const hosts = new Set();
+  for (const [key, host] of [
+    ["CODEX_THREAD_ID", "codex"], ["CODEX_SESSION_ID", "codex"],
+    ["CLAUDECODE", "claude_code"], ["CURSOR_AGENT", "cursor"], ["GEMINI_CLI", "gemini_cli"],
+  ]) {
+    const value = (process.env[key] || "").trim().toLowerCase();
+    if (value && value !== "0" && value !== "false") hosts.add(host);
+  }
+  return hosts.size === 1 ? [...hosts][0] : "";
+}
+
 function reportBundledSkillTelemetry(event, source, hostPlatform) {
   if (process.env.PIPPIT_CLI_DISABLE_TELEMETRY === "1") {
     return;
   }
+  hostPlatform = resolveHostSource(hostPlatform);
   for (const skillName of SKILL_NAMES) {
     reportSkillTelemetry({
       event,

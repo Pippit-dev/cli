@@ -21,7 +21,7 @@ function load(file, { modules = {}, process: overrides = {}, dirname, main = fal
   const req = (name) => Object.prototype.hasOwnProperty.call(modules, name) ? modules[name] : require(name);
   req.main = main ? module : null;
   vm.runInNewContext(fs.readFileSync(file, "utf8"), {
-    require: req, module, process: proc, Buffer,
+    require: req, module, process: proc, Buffer, URL,
     __dirname: dirname || path.dirname(file),
     console: { log: (s) => output.push(s), warn: (s) => errors.push(s), error: (s) => errors.push(s) },
   }, { filename: file });
@@ -39,6 +39,16 @@ function checkInstaller() {
   const packageDir = path.join(root, "package");
   fs.mkdirSync(packageDir);
   const effects = [];
+  const payloads = [];
+  const environment = { CODEX_THREAD_ID: 'private-id' };
+  const telemetry = load(path.join(repository, "scripts/telemetry.js"), {
+    process: { env: environment },
+    modules: {
+      "../package.json": { version: "9.9.9" },
+      http: { request: () => ({ on() {}, end: body => payloads.push(JSON.parse(body)) }) },
+      https: { request: () => ({ on() {}, end: body => payloads.push(JSON.parse(body)) }) },
+    },
+  });
   const archive = Buffer.from("verified archive fixture");
   const mockPlatform = {
     isWindows: process.platform === "win32",
@@ -58,6 +68,7 @@ function checkInstaller() {
   };
   const installer = load(path.join(repository, "scripts/install.js"), {
     dirname: path.join(packageDir, "scripts"),
+    process: { env: environment },
     modules: {
       "../package.json": { version: "9.9.9" },
       "./platform": mockPlatform,
@@ -65,7 +76,10 @@ function checkInstaller() {
         installSkillsFromRoot: () => effects.push("install-skills"),
         cleanupLegacyGlobalSkills: () => effects.push("cleanup-skills"),
       },
-      "./telemetry": { reportBundledSkillTelemetry: () => effects.push("telemetry") },
+      "./telemetry": { reportBundledSkillTelemetry: (...args) => {
+        effects.push("telemetry");
+        telemetry.api.reportBundledSkillTelemetry(...args);
+      } },
     },
   });
   const hash = crypto.createHash("sha256").update(archive).digest("hex");
@@ -85,9 +99,18 @@ function checkInstaller() {
   delete installer.proc.env.PIPPIT_CLI_SKIP_SKILLS;
   installer.api.install();
   assert.deepStrictEqual(effects.splice(0), ["install-skills", "telemetry"]);
+  assert.strictEqual(payloads.length, 2);
+  for (const payload of payloads.splice(0)) {
+    assert.strictEqual(payload.host_platform, "codex");
+    assert.strictEqual(payload.source, "npm_install");
+    assert.strictEqual(payload.event, "install");
+    assert.strictEqual(payload.platform, process.platform);
+    assert(!JSON.stringify(payload).includes("private-id"));
+  }
   installer.proc.env.PIPPIT_CLI_SKIP_SKILLS = "1";
   installer.api.install();
   assert.deepStrictEqual(effects.splice(0), ["cleanup-skills"]);
+  assert.strictEqual(payloads.length, 0);
 
   fs.writeFileSync(checksumFile, `${"0".repeat(64)}  ${installer.api.archiveName}\n`);
   const failed = load(path.join(repository, "scripts/install-cli.js"), {

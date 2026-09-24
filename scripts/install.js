@@ -137,7 +137,7 @@ function install({ cliOnly = false } = {}) {
     if (!cliOnly) {
       if (process.env.PIPPIT_CLI_SKIP_SKILLS !== "1") {
         installSkillsFromRoot(ROOT);
-        reportBundledSkillTelemetry("install", "npm_install", process.env.PIPPIT_CLI_SOURCE);
+        reportBundledSkillTelemetry("install", "npm_install");
       } else {
         cleanupLegacyGlobalSkills();
       }

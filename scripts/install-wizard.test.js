@@ -15,9 +15,9 @@ assert.strictEqual(installPackage(), `${DEFAULT_PKG}@0.0.26`);
 // Exercise install attribution without npm, Skill writes, or network requests.
 const fs = require('fs');
 const vm = require('vm');
-function installFixture(args, source, retry = false) {
-  const reports = [], installs = [];
-  const proc = { argv: [], env: source === undefined ? {} : { PIPPIT_CLI_SOURCE: source } };
+function installFixture(args, source, retry = false, environment = {}) {
+  const reports = [], installs = [], payloads = [];
+  const proc = { argv: [], env: { ...environment, ...(source === undefined ? {} : { PIPPIT_CLI_SOURCE: source }) } };
   const module = { exports: {} };
   let skillCalls = 0;
   const modules = {
@@ -30,14 +30,17 @@ function installFixture(args, source, retry = false) {
     './skills': { DEFAULT_PKG, installGlobalPackageSkills: () => {
       if (retry && skillCalls++ === 0) throw new Error('missing skills');
     } },
-    './telemetry': { reportBundledSkillTelemetry: (...args) => reports.push(args) },
+    './telemetry': { reportBundledSkillTelemetry: (event, source, host) => {
+      loadTelemetry(proc.env, payloads).reportBundledSkillTelemetry(event, source, host);
+      reports.push([event, source, payloads[0].host_platform || '']);
+    } },
   };
   vm.runInNewContext(fs.readFileSync(require.resolve('./install-wizard'), 'utf8'), {
     module, process: proc, console: { log() {}, error() {} },
     require: name => modules[name] || require(name),
   });
   module.exports.main(args);
-  return { reports, installs, proc };
+  return { reports, installs, proc, payloads };
 }
 for (const [args, env, want] of [
   [[], undefined, ''], [[], ' workbuddy ', 'workbuddy'],
@@ -57,16 +60,20 @@ for (const args of [['--help'], ['--source'], ['--unknown']]) {
 }
 
 // Verify the HTTP payload, including omission and telemetry opt-out.
-function telemetryFixture(source, disabled) {
-  const payloads = [];
+function loadTelemetry(env, payloads) {
   const request = () => ({ on() {}, end: body => payloads.push(JSON.parse(body)) });
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(require.resolve('./telemetry'), 'utf8'), {
     module, URL, Buffer, console,
-    process: { env: { PIPPIT_CLI_DISABLE_TELEMETRY: disabled } },
+    process: { env },
     require: name => ['http', 'https'].includes(name) ? { request } : require(name),
   });
-  module.exports.reportBundledSkillTelemetry('install', 'npm_install', source);
+  return module.exports;
+}
+function telemetryFixture(source, disabled) {
+  const payloads = [];
+  loadTelemetry({ PIPPIT_CLI_DISABLE_TELEMETRY: disabled }, payloads)
+    .reportBundledSkillTelemetry('install', 'npm_install', source);
   return payloads;
 }
 for (const source of [undefined, '', '  ', ' workbuddy ', 'another-host']) {
@@ -81,3 +88,31 @@ for (const source of [undefined, '', '  ', ' workbuddy ', 'another-host']) {
 }
 assert.strictEqual(telemetryFixture('workbuddy', '1').length, 0);
 console.log('Install source forwarding, precedence, omission, retry and telemetry payload checks passed');
+
+// Exercise the actual install entry through JSON serialization; no real installation/network.
+for (const [args, env, want] of [
+  [[], { CODEX_THREAD_ID: 'private-id' }, 'codex'],
+  [[], { CODEX_SESSION_ID: 'private-id', CODEX_THREAD_ID: 'another-id' }, 'codex'],
+  [[], { CLAUDECODE: '1' }, 'claude_code'],
+  [[], { CURSOR_AGENT: '1' }, 'cursor'],
+  [[], { GEMINI_CLI: 'true' }, 'gemini_cli'],
+  [[], { PIPPIT_CLI_SOURCE: ' workbuddy ', CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
+  [['--source= doubao_office '], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
+  [['--source', ''], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, undefined],
+  [['--source=  '], { CODEX_THREAD_ID: 'private-id' }, undefined],
+  [[], { PIPPIT_CLI_SOURCE: '  ', CODEX_THREAD_ID: 'private-id' }, 'codex'],
+  [[], { CODEX_THREAD_ID: 'private-id', CLAUDECODE: '1' }, undefined],
+  [[], { CLAUDECODE: '0', CURSOR_AGENT: ' FALSE ', GEMINI_CLI: '' }, undefined],
+  [[], {}, undefined],
+]) {
+  const { payloads } = installFixture(args, undefined, false, env);
+  assert.strictEqual(payloads.length, 2);
+  for (const payload of payloads) {
+    assert.strictEqual(payload.host_platform, want);
+    assert.strictEqual(payload.source, 'npx_install');
+    assert.strictEqual(payload.event, 'install');
+    assert.strictEqual(payload.platform, process.platform);
+    assert(!JSON.stringify(payload).includes('private-id'));
+  }
+}
+console.log('Install runtime attribution and serialized payload regression checks passed');
