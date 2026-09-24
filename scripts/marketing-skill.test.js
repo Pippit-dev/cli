@@ -4,9 +4,23 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const { spawnSync } = require('child_process');
-const { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, main } = require('../skills/xyq-marketing-skill/scripts/marketing');
+const { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, resolveHostSource, main } = require('../skills/xyq-marketing-skill/scripts/marketing');
 
 async function test() {
+  for (const key of ['PIPPIT_CLI_SOURCE', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CLAUDECODE', 'CURSOR_AGENT', 'GEMINI_CLI']) delete process.env[key];
+  for (const [explicit, env, want] of [
+    [undefined, {}, ''],
+    [' workbuddy ', { CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
+    ['', { PIPPIT_CLI_SOURCE: 'codex' }, ''],
+    [undefined, { PIPPIT_CLI_SOURCE: ' doubao_office ', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
+    [undefined, { CODEX_THREAD_ID: 'private-id', CODEX_SESSION_ID: 'private-session' }, 'codex'],
+    [undefined, { CLAUDECODE: '1' }, 'claude_code'],
+    [undefined, { CURSOR_AGENT: '1' }, 'cursor'],
+    [undefined, { GEMINI_CLI: '1' }, 'gemini_cli'],
+    [undefined, { CODEX_THREAD_ID: 'private-id', CURSOR_AGENT: '1' }, ''],
+    [undefined, { CLAUDECODE: '0', GEMINI_CLI: 'false', TERM_PROGRAM: 'vscode' }, ''],
+  ]) assert.strictEqual(resolveHostSource(explicit, env), want);
+
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xyq-marketing-'));
   const received = [];
   let respond;
@@ -25,7 +39,7 @@ async function test() {
   };
   const calls = [];
   let cliResult;
-  const client = createClient({ request, timeout: 1000, invoke: async (...args) => { calls.push(args); return cliResult; } });
+  const client = createClient({ request, timeout: 1000, invoke: async (...args) => { calls.push(args); return args[0].includes('--help') ? '  --source string  Host identifier\n' : cliResult; } });
   const json = value => { respond = (_, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); }; };
   const ids = { thread_id: 'marketing-thread', run_id: 'marketing-run' };
   const response = (state, extra = {}) => ({ ret: '0', data: { ...ids, run_state: state, ...extra } });
@@ -58,7 +72,12 @@ async function test() {
     await assert.rejects(main(['generate', '--request', file, '--execute', '--dry-run']), /不能同时/);
     await assert.rejects(main(['query', '--thread-id', ids.thread_id]), /run-id/);
     await assert.rejects(main(['query', '--thread-id', ids.thread_id, '--run-id', ids.run_id, '--timeout', '0']), /timeout/);
-    await assert.rejects(main(['generate', '--request', file, '--source', 'codex']), /无效/);
+    for (const source of [' codex ', '', '  ']) {
+      const preview = [];
+      await main(['generate', '--request', file, '--source', source], { out: line => preview.push(JSON.parse(line)), clientFactory: () => { throw new Error('dry-run contacted API'); } });
+      assert.deepStrictEqual(preview[0].body, source.trim() ? { ...body, platform: source.trim() } : body);
+    }
+    await assert.rejects(main(['balance', '--source', 'codex']), /无效/);
     assert.strictEqual(received.length, 0);
 
     cliResult = { ret: 0, log_id: 'log-submit', data: { run: { ...ids, state: 1 } } };
@@ -67,6 +86,19 @@ async function test() {
     assert.deepStrictEqual(JSON.parse(calls[0][1]), body);
     assert(!calls[0][0].includes(body.message), 'request must use stdin, not command arguments');
     assert.strictEqual(received.length, 0, 'Node must never make authenticated API requests');
+    await main(['generate', '--request', file, '--source', ' codex ', '--execute'], { out: () => {}, clientFactory: () => client });
+    assert.deepStrictEqual(calls[calls.length - 1][0], ['marketing', 'generate', '--timeout', '1000ms', '--request', '-', '--execute', '--source', 'codex']);
+    assert.deepStrictEqual(JSON.parse(calls[calls.length - 1][1]), body);
+    process.env.PIPPIT_CLI_SOURCE = ' workbuddy ';
+    const inferredPreview = [];
+    await main(['generate', '--request', file], { out: line => inferredPreview.push(JSON.parse(line)) });
+    assert.strictEqual(inferredPreview[0].body.platform, 'workbuddy');
+    await main(['generate', '--request', file, '--execute'], { out: () => {}, clientFactory: () => client });
+    assert.deepStrictEqual(calls[calls.length - 1][0].slice(-2), ['--source', 'workbuddy']);
+    await main(['generate', '--request', file, '--source', '', '--execute'], { out: () => {}, clientFactory: () => client });
+    assert.deepStrictEqual(calls[calls.length - 1][0].slice(-2), ['--source', '']);
+    delete process.env.PIPPIT_CLI_SOURCE;
+
     const uploadFile = path.join(dir, '商品 with spaces.png');
     fs.writeFileSync(uploadFile, Buffer.from([0, 1, 2, 255]));
     cliResult = { ret: '0', data: { pippit_asset_id: 'asset-real' } };
@@ -109,6 +141,36 @@ async function test() {
     const bridge = await invokeCLI(['marketing', 'generate', '--request', '-'], JSON.stringify(body), 3000, invocation);
     assert.deepStrictEqual(bridge.args, ['marketing', 'generate', '--request', '-']);
     assert.deepStrictEqual(JSON.parse(bridge.input), body);
+    // Standalone Skill + old CLI: probe help, omit unsupported attribution, never replay.
+    for (const support of ['new', 'old', 'help-failed']) {
+      fs.writeFileSync(fixture, `
+        if (process.argv.includes('--help')) {
+          if (${JSON.stringify(support)} === 'help-failed') process.exit(1);
+          console.log(${JSON.stringify(support === 'new' ? '  --source string  Host identifier' : '  --request string  Request JSON')});
+        } else if (${JSON.stringify(support)} !== 'new' && process.argv.includes('--source')) {
+          console.error('unknown flag: --source'); process.exitCode = 1;
+        } else {
+          process.stdin.resume();
+          process.stdin.on('end', () => console.log(JSON.stringify({ret: 0, data: {run: ${JSON.stringify(ids)}}})));
+        }
+      `);
+      process.env.CODEX_THREAD_ID = 'fixture-session';
+      for (const sourceArgs of [[], ['--source', 'workbuddy'], ['--source', '']]) {
+        const legacyCalls = [];
+        const legacyClient = createClient({ invoke: async (...args) => {
+          legacyCalls.push(args);
+          return invokeCLI(...args, invocation);
+        } });
+        assert.strictEqual(await main(['generate', '--request', file, '--execute', ...sourceArgs], { out: () => {}, clientFactory: () => legacyClient }), 0);
+        assert.strictEqual(legacyCalls.length, 2, 'one help probe and exactly one submission');
+        assert.deepStrictEqual(legacyCalls[0][0], ['marketing', 'generate', '--help']);
+        const submitted = legacyCalls[1];
+        assert.strictEqual(submitted[0].includes('--source'), support === 'new');
+        if (support === 'new') assert.deepStrictEqual(submitted[0].slice(-2), ['--source', sourceArgs.length ? sourceArgs[1] : 'codex']);
+        assert.deepStrictEqual(JSON.parse(submitted[1]), body);
+      }
+      delete process.env.CODEX_THREAD_ID;
+    }
     fs.writeFileSync(fixture, `console.error('请先运行 pippit-tool-cli login'); process.exitCode = 1;`);
     await assert.rejects(invokeCLI(['marketing', 'balance'], undefined, 3000, invocation), /pippit-tool-cli login/);
     fs.writeFileSync(fixture, `console.log('invalid JSON');`);

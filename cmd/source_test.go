@@ -16,6 +16,10 @@ import (
 )
 
 func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
+	for _, key := range []string{"PIPPIT_CLI_SOURCE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI"} {
+		t.Setenv(key, "")
+	}
+
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("LocalAppData", t.TempDir())
@@ -121,6 +125,26 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 					}
 				})
 			}
+			t.Run("host_environment", func(t *testing.T) {
+				t.Setenv("CODEX_THREAD_ID", "session-must-not-be-reported")
+				execute()
+				if received["platform"] != "codex" {
+					t.Errorf("runtime host not detected: %#v", received["platform"])
+				}
+				t.Setenv("PIPPIT_CLI_SOURCE", " workbuddy ")
+				execute()
+				if received["platform"] != "workbuddy" {
+					t.Error("explicit environment must win")
+				}
+				execute("--source", "doubao_office")
+				if received["platform"] != "doubao_office" {
+					t.Error("explicit flag must win")
+				}
+				execute("--source", "")
+				if _, exists := received["platform"]; exists {
+					t.Error("explicit empty must suppress attribution")
+				}
+			})
 			// A fresh invocation without source must not reuse previous attribution.
 			execute()
 			if _, exists := received["platform"]; exists {

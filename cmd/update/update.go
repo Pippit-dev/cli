@@ -42,17 +42,22 @@ var telemetryHTTPClient = &http.Client{Timeout: telemetryWaitTimeout}
 
 // NewCommand builds the update command.
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
+	var source string
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Update pippit-tool-cli and bundled skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runUpdate(stdout, stderr)
+			if !cmd.Flags().Changed("source") {
+				source = os.Getenv("PIPPIT_CLI_SOURCE")
+			}
+			return runUpdate(stdout, stderr, source)
 		},
 	}
+	cmd.Flags().StringVar(&source, "source", "", "optional real host identifier reported as host_platform; defaults to PIPPIT_CLI_SOURCE when unset")
 	return cmd
 }
 
-func runUpdate(stdout, stderr io.Writer) error {
+func runUpdate(stdout, stderr io.Writer, source string) error {
 	pkg := os.Getenv("PIPPIT_CLI_INSTALL_PACKAGE")
 	if pkg == "" {
 		pkg = defaultPackage + "@latest"
@@ -78,7 +83,7 @@ func runUpdate(stdout, stderr io.Writer) error {
 		return fmt.Errorf("更新 pippit-tool-cli skills 失败: %w", err)
 	}
 
-	reportBundledSkillTelemetry("update", "cli_update", stderr)
+	reportBundledSkillTelemetry("update", "cli_update", source, stderr)
 	fmt.Fprintln(stdout, "pippit-tool-cli and skills updated")
 	return nil
 }
@@ -129,27 +134,29 @@ func cleanupLegacyGlobalSkills(globalSkillsDir string) error {
 }
 
 type telemetryPayload struct {
-	Event      string `json:"event"`
-	SkillName  string `json:"skill_name"`
-	Source     string `json:"source"`
-	CliVersion string `json:"cli_version"`
-	Platform   string `json:"platform"`
-	Arch       string `json:"arch"`
+	Event        string `json:"event"`
+	SkillName    string `json:"skill_name"`
+	Source       string `json:"source"`
+	HostPlatform string `json:"host_platform,omitempty"`
+	CliVersion   string `json:"cli_version"`
+	Platform     string `json:"platform"`
+	Arch         string `json:"arch"`
 }
 
-func reportBundledSkillTelemetry(event string, source string, stderr io.Writer) {
+func reportBundledSkillTelemetry(event, source, hostPlatform string, stderr io.Writer) {
 	if os.Getenv("PIPPIT_CLI_DISABLE_TELEMETRY") == "1" {
 		return
 	}
 	var wg sync.WaitGroup
 	for _, skillName := range telemetrySkillNames {
 		payload := telemetryPayload{
-			Event:      event,
-			SkillName:  skillName,
-			Source:     source,
-			CliVersion: telemetryCliVersion(),
-			Platform:   runtime.GOOS,
-			Arch:       runtime.GOARCH,
+			Event:        event,
+			SkillName:    skillName,
+			Source:       source,
+			HostPlatform: strings.TrimSpace(hostPlatform),
+			CliVersion:   telemetryCliVersion(),
+			Platform:     runtime.GOOS,
+			Arch:         runtime.GOARCH,
 		}
 		wg.Add(1)
 		go func(payload telemetryPayload) {

@@ -359,11 +359,33 @@ pippit-tool-cli query-result \
 
 CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。会话提交和查询共享上述凭据。
 
+### 安装与更新来源统计
+
+宿主执行安装/更新时，按可信运行环境静默传入真实稳定标识，未知时省略；不固定为某个平台，不询问用户。以下 `HOST` 是占位符：
+
+```bash
+pippit-tool-cli install --source HOST
+npx @pippit-dev/cli install --source HOST
+pippit-tool-cli update --source HOST
+```
+
+直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。install/update 的显式 `--source` 优先于此环境变量；首尾空白去除，显式空值清空来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
+
+`report_telemetry` 新增可选请求字段 `host_platform` 上报宿主标识；原有 `source` 保留 `npm_install`、`npx_install`、`cli_update`，`event` 区分 install/update，`platform` 仍表示操作系统。当前仅完成 CLI 字段上报，服务端协议和指标接收仍需适配。帮助不安装也不上报，`PIPPIT_CLI_DISABLE_TELEMETRY=1` 仍可关闭上报。内部 `install-cli.js` 仅安装二进制，沿用不安装 Skill、不上报的原有行为。
+
 ### 宿主来源统计
 
-调用 Skill 提交接口的命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`。
+生成提交命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
 
-由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；未提供/空值时不发送该字段。不会自动读取环境变量、持久化来源或影响查询、上传、下载、Canvas 命令。
+由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源或显式空值时不发送该字段。省略 `--source` 时，CLI 按以下顺序尽力补齐来源：
+
+1. 宿主显式设置的 `PIPPIT_CLI_SOURCE`。
+2. 运行标记：`CODEX_THREAD_ID` / `CODEX_SESSION_ID` → `codex`，`CLAUDECODE` → `claude_code`，`CURSOR_AGENT` → `cursor`，`GEMINI_CLI` → `gemini_cli`。
+3. 标记缺失、为 0/false 或不同宿主标记冲突时不猜测，省略来源。
+
+显式 `--source` 始终优先，显式空值可关闭本次归因。仅消费环境标记是否存在，不上传会话标识，不根据 API Key、已安装软件、普通终端名或用户 prompt 猜来源，也不持久化。查询、上传、下载、Canvas 不附加来源。营销脚本的预览与提交采用相同规则；原生 update 也复用该解析，仍写入 `host_platform`，保留旧 source。豆包办公、WorkBuddy 等尚无已核实运行标记的宿主，应优先主动传参或设置上述环境变量。
+
+Cursor 标记依据：[官方终端文档](https://docs.cursor.com/en/agent/terminal)；Gemini 标记依据：[官方命令文档](https://geminicli.com/docs/reference/commands/)。Codex 标记已在本机运行环境核实；Claude Code 标记已在本机安装产物核实。
 
 ```bash
 pippit-tool-cli generate-video --prompt "小猫在花园散步" --model Seedance_2.0_mini --source workbuddy
