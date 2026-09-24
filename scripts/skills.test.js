@@ -122,7 +122,8 @@ for (const [moduleName, commands] of Object.entries(commandModules)) {
   }
 }
 const documentedCommands = [...new Set([...skillDocuments.matchAll(/\bpippit-tool-cli ([a-z][a-z-]*)\b/g)].map((match) => match[1]))].sort();
-assert.deepStrictEqual(documentedCommands, Object.values(commandModules).flat().sort(), "Skill must document exactly its supported CLI commands");
+// The npm launcher install command is documented in scripts/install.md, not a command module.
+assert.deepStrictEqual(documentedCommands, [...Object.values(commandModules).flat(), "install"].sort(), "Skill must document exactly its supported CLI commands");
 for (const requiredText of ["XYQ_ACCESS_KEY", "web_thread_link", "request_user_input", "ask_user_question"]) {
   assert(skillDocuments.includes(requiredText), `xyq-skill missing contract: ${requiredText}`);
 }
