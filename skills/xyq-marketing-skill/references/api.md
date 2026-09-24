@@ -22,6 +22,8 @@ Base URL：`https://xyq.jianying.com`。全部使用 POST，`Accept: application
 | `general_agent_settings` | object | 必传，且必须包含非空 `video_model` |
 | `thread_id` | string | 可选，只在继续已有营销会话时使用 |
 
+来源统计由生成命令的可选 `--source HOST` 提供，CLI 在提交及预览的请求体中映射为 `platform` 字符串；不传或去除首尾空白后为空时省略。请求文件仍只填写上表中的创作字段，不直接添加 `source` 或 `platform`。
+
 设置块必须传对象，且 `video_model` 必填。2026-09-22 实际调用及服务端 `validateMarketingGeneralAgentSettings` 均确认：`{}` 或仅有比例/时长会返回 `ret=2`、缺少 `video_model`。不再按文档中的默认策略说明发送空对象；预览和提交都先本地校验。用户未指定模型时先询问，已有明确选择授权时按授权选择，不隐式降级。
 
 | 设置字段 | 类型 | 含义 |

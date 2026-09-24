@@ -17,7 +17,7 @@ func TestSubmitRunCommandPreservesScriptContract(t *testing.T) {
 		t.Run(map[bool]string{false: "new", true: "existing_with_assets"}[existing], func(t *testing.T) {
 			message := "  根据参考素材生成视频\n保留原文  "
 			want := map[string]any{"message": message}
-			args := []string{"submit-run", "--message", message}
+			args := []string{"submit-run", "--message", message, "--source", ""}
 			if existing {
 				want["thread_id"] = "skill_original_thread"
 				want["asset_ids"] = []any{"asset_original_1", "asset_original_2"}

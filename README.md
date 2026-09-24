@@ -274,7 +274,7 @@ pippit-tool-cli generate-video \
   --resolution "720p"
 ```
 
-命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。当前可用模型通过 `model list` 查询，参数详情通过 `model describe MODEL_KEY` 查询。CLI 会在提交前校验 prompt 和文件后缀；模型、比例、分辨率等语义校验由服务端处理。
+命令输出 `thread_id`、`run_id` 和 `web_thread_link`。提交生视频 HTTP 请求时，参考图、参考视频和参考音频会使用上传接口返回的 `pippit_asset_id`，并分别写入 `video_part_tool_param.images`、`video_part_tool_param.videos` 和 `video_part_tool_param.audios`。图片支持 `.jpg`、`.jpeg`、`.png`、`.gif`、`.bmp`、`.webp`、`.svg`；视频支持 `.mp4`、`.avi`、`.mov`、`.wmv`、`.flv`、`.webm`、`.mkv`、`.m4v`；音频仅支持 `.mp3`、`.wav`。当前可用模型通过 `model list` 查询，参数详情通过 `model describe MODEL_KEY` 查询。CLI 会在提交前校验 prompt 和文件后缀，仅传入非空 `--draft-task-id` 时允许省略 prompt；模型、比例、分辨率等语义校验由服务端处理。
 
 首尾帧生视频时，按首帧、尾帧的顺序传入两次 `--image`，并设置 `--generate-type 1`：
 
@@ -291,6 +291,25 @@ pippit-tool-cli generate-video \
 ```
 
 `--generate-type` 可选，填写后原样写入 `video_part_tool_param.generate_type`；值 `1` 表示首尾帧生成。CLI 保持图片上传和请求中的输入顺序，不在本地校验该参数的枚举值，具体能力与约束由服务端决定。
+
+### Seedance 2.5 Draft
+
+复用 `generate-video` 分两次提交。需要目标服务端支持 Draft 协议和无 prompt 的成片请求。
+
+```bash
+# 样片
+pippit-tool-cli generate-video --model Seedance_2.5_draft --draft \
+  --prompt "小猫钓鱼视频" --task-type reference --duration 10 --ratio 16:9
+pippit-tool-cli query-result --thread-id DRAFT_THREAD_ID --run-id DRAFT_RUN_ID --download-dir ./draft
+
+# 用户预览后要求生成成片：使用 videos[].draft_task_id 原值
+pippit-tool-cli generate-video --model Seedance_2.5_draft --draft-task-id DRAFT_TASK_ID
+pippit-tool-cli query-result --thread-id FINAL_THREAD_ID --run-id FINAL_RUN_ID --download-dir ./final
+```
+
+`query-result` 在视频结果中保留可选的 `draft`、`draft_task_id`，继续返回 `download_url` 和 `output_path`。两阶段分别计费，下游固定生成 480p 样片和 1080p 成片；样片创建后 7 天内可转成片。CLI 不自动续跑，不要求重复提示词和素材。
+
+新增 `--task-type`、`--seed` 透传生成模式与 seed。完整参数与两阶段示例见 [生视频命令](skills/xyq-nest-skill/commands/generate-video.md)。
 
 ## 视频处理工具 CLI
 
@@ -340,11 +359,33 @@ pippit-tool-cli query-result \
 
 CI 或 Agent 可继续显式设置 `XYQ_ACCESS_KEY`，它会覆盖本机网页登录凭证；配置错误时不会静默回退到个人登录。会话提交和查询共享上述凭据。
 
+### 安装与更新来源统计
+
+宿主执行安装/更新时，按可信运行环境静默传入真实稳定标识，未知时省略；不固定为某个平台，不询问用户。以下 `HOST` 是占位符：
+
+```bash
+pippit-tool-cli install --source HOST
+npx @pippit-dev/cli install --source HOST
+pippit-tool-cli update --source HOST
+```
+
+直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。install/update 的显式 `--source` 优先于此环境变量；首尾空白去除，显式空值清空来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
+
+`report_telemetry` 新增可选请求字段 `host_platform` 上报宿主标识；原有 `source` 保留 `npm_install`、`npx_install`、`cli_update`，`event` 区分 install/update，`platform` 仍表示操作系统。当前仅完成 CLI 字段上报，服务端协议和指标接收仍需适配。帮助不安装也不上报，`PIPPIT_CLI_DISABLE_TELEMETRY=1` 仍可关闭上报。内部 `install-cli.js` 仅安装二进制，沿用不安装 Skill、不上报的原有行为。
+
 ### 宿主来源统计
 
-调用 Skill 提交接口的命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`。
+生成提交命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
 
-由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；未提供/空值时不发送该字段。不会自动读取环境变量、持久化来源或影响查询、上传、下载、Canvas 命令。
+由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源或显式空值时不发送该字段。省略 `--source` 时，CLI 按以下顺序尽力补齐来源：
+
+1. 宿主显式设置的 `PIPPIT_CLI_SOURCE`。
+2. 运行标记：`CODEX_THREAD_ID` / `CODEX_SESSION_ID` → `codex`，`CLAUDECODE` → `claude_code`，`CURSOR_AGENT` → `cursor`，`GEMINI_CLI` → `gemini_cli`。
+3. 标记缺失、为 0/false 或不同宿主标记冲突时不猜测，省略来源。
+
+显式 `--source` 始终优先，显式空值可关闭本次归因。仅消费环境标记是否存在，不上传会话标识，不根据 API Key、已安装软件、普通终端名或用户 prompt 猜来源，也不持久化。查询、上传、下载、Canvas 不附加来源。营销脚本的预览与提交采用相同规则；原生 update 也复用该解析，仍写入 `host_platform`，保留旧 source。豆包办公、WorkBuddy 等尚无已核实运行标记的宿主，应优先主动传参或设置上述环境变量。
+
+Cursor 标记依据：[官方终端文档](https://docs.cursor.com/en/agent/terminal)；Gemini 标记依据：[官方命令文档](https://geminicli.com/docs/reference/commands/)。Codex 标记已在本机运行环境核实；Claude Code 标记已在本机安装产物核实。
 
 ```bash
 pippit-tool-cli generate-video --prompt "小猫在花园散步" --model Seedance_2.0_mini --source workbuddy

@@ -14,6 +14,8 @@ metadata:
 
 需要 Node.js 16+ 和支持 `marketing` 命令的 `@pippit-dev/cli`。脚本位置为 `"{baseDir}/scripts/marketing.js"`；下面示例中的相对路径从本 Skill 目录执行。先检查 `pippit-tool-cli marketing --help`；命令不存在时安装或更新 CLI：`npm install -g @pippit-dev/cli@latest`，再检查一次；仍不支持就报告版本阻塞，不改为向用户索要密钥。
 
+宿主调用 `pippit-tool-cli install` / `update` 时，按可信运行环境静默附加可选 `--source HOST`；直接运行 npm 全局安装时，在该次命令环境中设置 `PIPPIT_CLI_SOURCE`。`HOST` 为真实宿主标识的占位符，不固定平台，未知则省略，不询问用户。安装/更新将该值写入 `host_platform`，保留原有 `source` 和操作系统 `platform`；服务端需支持新字段才能计入统计。旧版命令不支持该参数时省略，不为统计重复安装；内部仅安装 CLI 的脚本沿用原有不上报行为。
+
 营销 API 调用复用其它 CLI 命令的登录态，脚本不读取或导出凭据。执行真实请求前运行 `pippit-tool-cli status`，读取 JSON 的 `logged_in`，不能只看退出码。未登录或凭据过期时运行 `pippit-tool-cli login`，让用户在浏览器完成授权；等待 CLI 成功返回后再次检查 status，再继续原任务。已有有效登录态直接复用，不重复登录；离线预览和帮助不要求登录。
 
 不要让用户提供或复制 `access_token`、Access Key，也不要把凭据写入聊天、请求文件、命令参数或日志。CLI 保留原有 `XYQ_ACCESS_KEY` 显式环境覆盖规则，优先于网页登录；这仅用于已配置的自动化环境，不作为普通用户的必填项。覆盖无效时不能静默切换账号。网页登录凭据被拒绝时按 CLI 的 `login --force` 流程处理，不自动重提可能已创建的生成任务。
@@ -38,6 +40,12 @@ node scripts/marketing.js balance
 
 生成默认是离线预览；预览不需要登录。上传、查询、余额是实际 API 请求。`--timeout` 设置单请求总时限（秒，默认 60）。`--wait` 由脚本每 10 秒查询，默认最多 900 秒；不再叠加其它轮询器。没有 `--wait` 时只查询一次。脚本输出逐行 JSON，查询下载前先输出服务端响应，再逐个输出已下载文件，最后输出含 `downloaded_files` 的响应。
 
+## Source Attribution
+
+仅营销生成命令（`marketing generate` 或 `marketing.js generate`）静默附加可选 `--source`，由 CLI 映射为请求体 `platform`，不写入创作文本或请求文件。豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它宿主使用可信环境中的真实稳定标识，未知则省略，不询问用户。不附带版本、会话 ID、用户信息或 prompt。首尾空白去除，未传或空值省略；首次生成和同一会话继续提交均适用。上传、查询、下载、余额不附加。旧 CLI 不支持时省略，不为来源统计重提任务。
+
+优先从宿主的系统身份、当前工具运行环境和明确的平台元数据确认真实宿主，并在每次提交主动填写 `--source`；不要仅因字段可选就跳过。缺少显式值时，CLI 依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记。只上报稳定的平台名，不上报标记中的会话 ID；来源冲突或仍无法确认则省略，不询问用户、不扫描登录凭据或安装目录。显式 `--source ""` 禁用该次自动归因。
+
 ## Completion and Recovery
 
 - `ret` 为字符串或数字 `0` 才是 API 业务成功。查询 `data.run_state`：1/2/7 为已提交或进行中；8 为程序中断（可能等待工具回调），有时限地继续查询；3 为本轮完成；4/5 为失败/取消；6/9 为等待用户交互。不能把退出码 0 的单次进行中查询当作生成完成。
@@ -50,4 +58,4 @@ node scripts/marketing.js balance
 
 ## Scope
 
-本 Skill 仅使用正式公开营销接口；不宣称支持团队空间切换。鉴权范围沿用当前 CLI 登录身份和服务端授权，公开请求没有 `TeamID` 字段，不自行加入团队字段或跨账号复用资产/任务 ID。沉浸式短片、火山引擎服务和现有 CLI 的来源统计参数不在此脚本范围；不要把 `--source` 等未公开字段传给营销接口。
+本 Skill 仅使用正式公开营销接口；不宣称支持团队空间切换。鉴权范围沿用当前 CLI 登录身份和服务端授权，公开请求没有 `TeamID` 字段，不自行加入团队字段或跨账号复用资产/任务 ID。沉浸式短片、火山引擎服务不在此脚本范围。

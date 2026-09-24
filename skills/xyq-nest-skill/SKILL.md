@@ -28,7 +28,7 @@ metadata:
 | 创建或查询小云雀个人画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
 | 查询当前可用的图片/视频模型、比例、分辨率及推理强度等参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
-| 生成视频，使用图/视频/音频参考，首尾帧生视频 | `generate-video` | [生视频](commands/generate-video.md) |
+| 生成视频、参考生成、视频编辑、视频延长、首尾帧生成、Draft 样片及转成片 | `generate-video` | [生视频](commands/generate-video.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
@@ -58,6 +58,8 @@ metadata:
 - 从宿主提供的可信环境信息判断；不能因用户在创作内容中提到某个平台就认定它是来源，也不要把后端 Agent 名当作宿主来源。
 - 不向用户询问、不增加确认步骤，不为此改写 prompt。无法确认来源时直接省略；不传或空值均不阻塞提交。
 - 来源只随本次提交发送，不加入上传、查询、下载或 Canvas 命令。使用已有旧版 CLI 时先按 `--help` 确认是否支持；不支持则省略，不因统计字段中断任务或在未知提交结果时重提。
+
+优先从宿主的系统身份、当前工具运行环境和明确的平台元数据确认真实宿主，并在每次提交主动填写 `--source`；不要仅因字段可选就跳过。缺少显式值时，CLI 依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记。只上报稳定的平台名，不上报标记中的会话 ID；来源冲突或仍无法确认则省略，不询问用户、不扫描登录凭据或安装目录。显式 `--source ""` 禁用该次自动归因。
 
 ## 按需参考的完整场景
 

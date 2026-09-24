@@ -113,6 +113,7 @@ function invokeCLI(args, input, timeout, invocation = resolveCLI()) {
       clearTimeout(timer);
       if (failure) return reject(failure);
       if (code !== 0) return reject(new Error(`CLI 调用失败：${stderr.trim() || `退出码 ${code}`}；请求未重试。若不支持 marketing 命令，请更新 CLI。`));
+      if (args.includes('--help')) return resolve(stdout);
       try { resolve(JSON.parse(stdout)); }
       catch (_) { reject(new Error('CLI 未返回有效 JSON；提交结果可能不明确，请勿自动重提')); }
     });
@@ -141,13 +142,19 @@ function createClient({ request = https.request, timeout = 60000, invoke = invok
     });
   }
 
-  async function api(action, body) {
+  async function api(action, body, source) {
     requireValue(['generate', 'query', 'balance'].includes(action), '无效营销 API 操作');
     const args = ['marketing', action, '--timeout', `${timeout}ms`];
     let input;
     if (action === 'generate') {
       validate(body);
       args.push('--request', '-', '--execute');
+      if (source !== undefined) {
+        // Probe before submitting; optional attribution must not break older CLIs.
+        let help = '';
+        try { help = await invoke(['marketing', 'generate', '--help'], undefined, timeout); } catch (_) {}
+        if (typeof help === 'string' && /(?:^|\s)--source(?:[=\s,]|$)/m.test(help)) args.push('--source', source.trim());
+      }
       input = JSON.stringify(body);
     }
     if (action === 'query') args.push('--thread-id', body.thread_id, '--run-id', body.run_id);
@@ -193,28 +200,44 @@ function createClient({ request = https.request, timeout = 60000, invoke = invok
 }
 
 const HELP = `小云雀营销 Skill（Node.js >= 16）
-  node marketing.js generate --request request.json [--dry-run | --execute]
+  node marketing.js generate --request request.json [--source HOST] [--dry-run | --execute]
   node marketing.js upload --file product.png
   node marketing.js query --thread-id ID --run-id ID [--wait] [--max-wait 900] [--output-dir DIR]
   node marketing.js balance
 所有 API 调用复用 pippit-tool-cli 登录态；未登录先运行 pippit-tool-cli login，无需提供 access_token。generate 默认仅预览。
+--source HOST：仅生成提交使用，映射为请求体 platform；去除首尾空白，空值省略。
 --timeout 秒数：单请求总时限，默认 60；--max-wait：轮询总时限，默认 900。
 query 输出 API 原始响应；有 --output-dir 时成功结果附带 downloaded_files。
 退出码：0 成功/单次查询进行中；1 输入或接口错误；2 生成失败/取消/无视频；3 等待超时；4 等待用户交互；5 未知或未指定状态。
 `;
+
+// Keep runtime marker semantics aligned with internal/common/host_source.go.
+function resolveHostSource(explicit, env = process.env) {
+  if (explicit !== undefined) return explicit.trim();
+  if ((env.PIPPIT_CLI_SOURCE || '').trim()) return env.PIPPIT_CLI_SOURCE.trim();
+  const hosts = new Set();
+  for (const [key, host] of [
+    ['CODEX_THREAD_ID', 'codex'], ['CODEX_SESSION_ID', 'codex'],
+    ['CLAUDECODE', 'claude_code'], ['CURSOR_AGENT', 'cursor'], ['GEMINI_CLI', 'gemini_cli'],
+  ]) {
+    const value = (env[key] || '').trim().toLowerCase();
+    if (value && value !== '0' && value !== 'false') hosts.add(host);
+  }
+  return hosts.size === 1 ? [...hosts][0] : '';
+}
 
 function parseArgs(argv) {
   const [action, ...rest] = argv;
   requireValue(Object.hasOwnProperty.call(PATHS, action), '操作必须是 generate/upload/query/balance');
   const options = {};
   const flags = ['execute', 'dry-run', 'wait'];
-  const allowed = { generate: ['request', 'execute', 'dry-run'], upload: ['file'], query: ['thread-id', 'run-id', 'wait', 'max-wait', 'output-dir'], balance: [] }[action].concat('timeout');
+  const allowed = { generate: ['request', 'execute', 'dry-run', 'source'], upload: ['file'], query: ['thread-id', 'run-id', 'wait', 'max-wait', 'output-dir'], balance: [] }[action].concat('timeout');
   for (let i = 0; i < rest.length; i++) {
     const name = rest[i].replace(/^--/, '');
     requireValue(rest[i].startsWith('--') && allowed.includes(name) && !(name in options), `无效或重复参数：${rest[i]}`);
     if (flags.includes(name)) options[name] = true;
     else {
-      requireValue(nonempty(rest[i + 1]) && !rest[i + 1].startsWith('--'), `${name} 缺少值`);
+      requireValue(typeof rest[i + 1] === 'string' && (name === 'source' || nonempty(rest[i + 1])) && !rest[i + 1].startsWith('--'), `${name} 缺少值`);
       options[name] = rest[++i];
     }
   }
@@ -232,9 +255,15 @@ async function main(argv, { out = console.log, clientFactory = createClient, now
   const { action, options } = parseArgs(argv);
   let body = {};
   if (action === 'generate') {
+    const source = resolveHostSource(options.source);
+    if (options.source !== undefined || source) options.source = source;
     requireValue(options.request, 'generate 需要 --request JSON 文件');
     body = validate(JSON.parse(await fs.promises.readFile(options.request, 'utf8')));
-    if (!options.execute) { out(JSON.stringify({ dry_run: true, url: BASE + PATHS.generate, body })); return 0; }
+    if (!options.execute) {
+      const source = (options.source || '').trim();
+      out(JSON.stringify({ dry_run: true, url: BASE + PATHS.generate, body: source ? { ...body, platform: source } : body }));
+      return 0;
+    }
   }
   if (action === 'query') {
     requireValue(nonempty(options['thread-id']) && nonempty(options['run-id']), 'query 需要 thread-id 和 run-id');
@@ -248,7 +277,7 @@ async function main(argv, { out = console.log, clientFactory = createClient, now
     // A poll request cannot overrun the remaining wait budget.
     const pollClient = action === 'query' && options.wait
       ? clientFactory({ timeout: Math.min(options.timeout * 1000, Math.max(1, deadline - now())) }) : client;
-    result = action === 'upload' ? await client.upload(options.file) : await pollClient.api(action, body);
+    result = action === 'upload' ? await client.upload(options.file) : await pollClient.api(action, body, options.source);
     if (action !== 'query' || !options.wait || !WAIT_STATES.includes(String(result.data.run_state))) break;
     if (now() >= deadline) {
       out(JSON.stringify({ ...result, wait_timed_out: true })); return 3;
@@ -303,4 +332,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, parseArgs, main };
+module.exports = { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, resolveHostSource, parseArgs, main };

@@ -39,6 +39,8 @@ type QueryResultResult struct {
 type QueryResultVideo struct {
 	DownloadURL string `json:"download_url"`
 	OutputPath  string `json:"output_path"`
+	Draft       *bool  `json:"draft,omitempty"`
+	DraftTaskID string `json:"draft_task_id,omitempty"`
 }
 
 // QueryResultImage describes a downloaded image from query-result.
@@ -83,6 +85,8 @@ type queryContentData struct {
 
 type queryVideo struct {
 	DownloadURL string `json:"download_url"`
+	Draft       *bool  `json:"draft"`
+	DraftTaskID string `json:"draft_task_id"`
 	Title       string `json:"title"`
 	VID         string `json:"vid"`
 	AssetID     string `json:"asset_id"`
@@ -173,6 +177,8 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		resultVideos = append(resultVideos, QueryResultVideo{
 			DownloadURL: video.DownloadURL,
 			OutputPath:  actualOutputPath,
+			Draft:       video.Draft,
+			DraftTaskID: video.DraftTaskID,
 		})
 	}
 

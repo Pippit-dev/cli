@@ -19,7 +19,7 @@ function telemetryBaseURL() {
   return DEFAULT_BASE_URL;
 }
 
-function reportBundledSkillTelemetry(event, source) {
+function reportBundledSkillTelemetry(event, source, hostPlatform) {
   if (process.env.PIPPIT_CLI_DISABLE_TELEMETRY === "1") {
     return;
   }
@@ -28,6 +28,7 @@ function reportBundledSkillTelemetry(event, source) {
       event,
       skill_name: skillName,
       source,
+      ...((hostPlatform || "").trim() ? { host_platform: hostPlatform.trim() } : {}),
       cli_version: VERSION,
       platform: os.platform(),
       arch: os.arch(),

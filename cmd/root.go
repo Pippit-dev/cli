@@ -62,6 +62,17 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Only commands already exposing --source receive attribution. Explicit empty
+	// flags suppress fallback, and no source is persisted between CLI processes.
+	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		flag := cmd.Flags().Lookup("source")
+		if flag != nil && !flag.Changed {
+			if source := common.DetectHostSource(); source != "" {
+				return cmd.Flags().Set("source", source)
+			}
+		}
+		return nil
+	}
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.SetOut(stdout)

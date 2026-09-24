@@ -93,7 +93,7 @@ pippit-tool-cli model describe MiniMax-H3 --refresh
 - `Seedance_2.0_mini`、`Seedance_2.0_mini_lite` 的生成请求可以省略 `--resolution`，服务端默认 `720p`。查询未返回分辨率维度时，不因此要求用户补填，也不在查询结果中伪造选项。
 - `duration` 来自参数维度：范围输出 `min/max/step`，选项输出数字 `options`，均以秒为单位，不把选项枚举号当秒数。若只下发旧 `supported_duration_list`，暂保留该原始字段并明确提示不能直接用于 `--duration`。
 - `material_limits` 保留数量字段；大小字段使用 `max_image_size_bytes`，视频时长字段使用 `min_video_duration_ms/max_video_duration_ms/max_total_video_duration_ms`。字段未返回与值为 `0` 保持区别。
-- `creation_modes` 保留 `enabled`、素材校验等服务端策略，并为文本/参考/首尾帧模式标注对应 `generate_type`。`smart` 比例策略显示 `adaptive`；其他可识别模式继承模型比例。MiniMax 的文本模式排除 `adaptive`，纯文生视频使用固定比例。原始模式 key 不是生成参数，未标注 `generate_type` 的模式不代表 CLI 已接入。
+- `creation_modes` 保留 `enabled`、素材校验等服务端策略，并为文本/参考/首尾帧模式标注对应 `generate_type`。按服务端下发的模式 key，为 `reference_generation`、`video_edit`、`video_extend` 分别输出 `task_type: reference/edit/extend`，可直接用于 `--task-type`；首尾帧使用 `generate_type: 1`，不传 `task_type`。`creation_modes.key` 本身不是提交值。`smart` 比例策略显示 `adaptive`；其他可识别模式继承模型比例。MiniMax 的文本模式排除 `adaptive`，纯文生视频使用固定比例。素材和参数要求见[生成说明](generate-video.md#seedance-25-四种模式)，实际可用性仍以目标服务端开放情况为准。
 - 条件维度的 `active_when_any`、参数组合约束及其他未转换字段保留；模型级选项不保证任意组合都可用。配置不一致时通过 `warnings` 提示刷新，未知比例枚举直接跳过。
 
 内部 `config_key` 不输出。缓存仍保存服务端原始配置，列表/详情展示时转换。图片模型标识仅在提交时从名称解析，视频请求契约保持不变，不新增静态模型准入限制。生成参数格式见 [生视频命令](generate-video.md)。

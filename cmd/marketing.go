@@ -36,7 +36,7 @@ func newMarketingCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra
 }
 
 func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
-	var requestFile, file, threadID, runID string
+	var requestFile, file, threadID, runID, source string
 	var execute bool
 	var timeout time.Duration
 	command := &cobra.Command{Use: action, Args: cobra.NoArgs, Short: "Call marketing " + action}
@@ -45,6 +45,7 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 	command.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "request deadline (e.g. 60s)")
 	switch action {
 	case "generate":
+		command.Flags().StringVar(&source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
 		command.Flags().StringVar(&requestFile, "request", "", "request JSON file, or - for stdin")
 		command.Flags().BoolVar(&execute, "execute", false, "submit generation; otherwise preview only")
 	case "query":
@@ -95,6 +96,9 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 			}
 			if json.Unmarshal(value["general_agent_settings"], &settings) != nil || strings.TrimSpace(settings.VideoModel) == "" {
 				return fmt.Errorf("general_agent_settings.video_model 必填")
+			}
+			if platform := strings.TrimSpace(source); platform != "" {
+				value["platform"], _ = json.Marshal(platform)
 			}
 			body = value
 			if !execute {

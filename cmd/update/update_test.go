@@ -93,12 +93,13 @@ func TestReportSkillTelemetry(t *testing.T) {
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL+"/")
 	err := reportSkillTelemetry(telemetryPayload{
-		Event:      "update",
-		SkillName:  "xyq-skill",
-		Source:     "cli_update",
-		CliVersion: "0.0.26",
-		Platform:   "darwin",
-		Arch:       "arm64",
+		Event:        "update",
+		SkillName:    "xyq-skill",
+		Source:       "cli_update",
+		HostPlatform: "workbuddy",
+		CliVersion:   "0.0.26",
+		Platform:     "darwin",
+		Arch:         "arm64",
 	})
 	if err != nil {
 		t.Fatalf("reportSkillTelemetry() error = %v", err)
@@ -106,7 +107,7 @@ func TestReportSkillTelemetry(t *testing.T) {
 	if gotAuth != telemetryAuthHeader {
 		t.Fatalf("Authorization = %q, want %q", gotAuth, telemetryAuthHeader)
 	}
-	if gotPayload.Event != "update" || gotPayload.SkillName != "xyq-skill" || gotPayload.Source != "cli_update" {
+	if gotPayload.Event != "update" || gotPayload.SkillName != "xyq-skill" || gotPayload.Source != "cli_update" || gotPayload.HostPlatform != "workbuddy" {
 		t.Fatalf("payload = %#v", gotPayload)
 	}
 }
@@ -120,7 +121,7 @@ func TestReportBundledSkillTelemetryWaitsBriefly(t *testing.T) {
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
 	start := time.Now()
-	reportBundledSkillTelemetry("update", "cli_update", &bytes.Buffer{})
+	reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
 	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
 		t.Fatalf("reportBundledSkillTelemetry() blocked for %v, want <= 1.5s", elapsed)
 	}
@@ -133,13 +134,16 @@ func TestReportBundledSkillTelemetryReportsBothSkills(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatalf("decode request body: %v", err)
 		}
+		if payload.Source != "cli_update" || payload.HostPlatform != "workbuddy" || payload.Platform != runtime.GOOS {
+			t.Errorf("unexpected attribution: %#v", payload)
+		}
 		skillNames <- payload.SkillName
 		_, _ = w.Write([]byte(`{"ret":"0","errmsg":""}`))
 	}))
 	defer server.Close()
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
-	reportBundledSkillTelemetry("update", "cli_update", &bytes.Buffer{})
+	reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
 
 	got := map[string]bool{}
 	for i := 0; i < len(telemetrySkillNames); i++ {
@@ -255,4 +259,14 @@ func parseEnvironment(environment string) map[string]string {
 		}
 	}
 	return result
+}
+
+func TestTelemetryOmitsUnknownHostPlatform(t *testing.T) {
+	body, err := json.Marshal(telemetryPayload{Event: "update", Source: "cli_update"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(`"host_platform"`)) {
+		t.Fatalf("unknown host_platform must be omitted: %s", body)
+	}
 }

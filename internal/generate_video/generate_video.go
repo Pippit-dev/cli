@@ -28,6 +28,10 @@ type Options struct {
 	Model        string
 	Resolution   string
 	GenerateType *int64
+	TaskType     string
+	Seed         *int64
+	Draft        *bool
+	DraftTaskID  string
 }
 
 // Result is the JSON envelope printed by `pippit-tool-cli generate-video`.
@@ -70,7 +74,7 @@ func ValidateOptions(opts *Options) error {
 	if opts == nil {
 		return fmt.Errorf("缺少必填参数 --prompt")
 	}
-	if strings.TrimSpace(opts.Prompt) == "" {
+	if strings.TrimSpace(opts.DraftTaskID) == "" && strings.TrimSpace(opts.Prompt) == "" {
 		return fmt.Errorf("缺少必填参数 --prompt")
 	}
 	if err := validateMediaExtensions("图片", opts.ImagePaths, allowedImageExtensions, allowedImageExtensionList); err != nil {
@@ -123,6 +127,10 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []s
 		Model:        strings.TrimSpace(opts.Model),
 		Resolution:   strings.TrimSpace(opts.Resolution),
 		GenerateType: opts.GenerateType,
+		TaskType:     strings.TrimSpace(opts.TaskType),
+		Seed:         opts.Seed,
+		Draft:        opts.Draft,
+		DraftTaskID:  strings.TrimSpace(opts.DraftTaskID),
 	}
 
 	return common.WithSubmitRunSource(map[string]any{

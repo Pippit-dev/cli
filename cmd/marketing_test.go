@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -49,6 +50,15 @@ func TestMarketingUsesSharedBrowserAuth(t *testing.T) {
 				if bytes.Contains(data, []byte("browser-secret")) {
 					t.Error("credential leaked into payload")
 				}
+				if action == "generate" {
+					var body map[string]any
+					if err := json.Unmarshal(data, &body); err != nil || body["platform"] != "codex" || body["message"] != "make an ad" {
+						t.Errorf("unexpected marketing payload: %s", data)
+					}
+					if _, ok := body["source"]; ok {
+						t.Error("source must be sent as platform")
+					}
+				}
 				if action == "upload" && !bytes.Contains(data, []byte(`name="file"`)) {
 					t.Error("missing multipart file")
 				}
@@ -66,7 +76,7 @@ func TestMarketingUsesSharedBrowserAuth(t *testing.T) {
 			args := []string{"marketing", action}
 			switch action {
 			case "generate":
-				args = append(args, "--request", "-", "--execute")
+				args = append(args, "--request", "-", "--execute", "--source", " codex ")
 				root.SetIn(strings.NewReader(marketingRequest))
 			case "query":
 				args = append(args, "--thread-id", "thread", "--run-id", "run")

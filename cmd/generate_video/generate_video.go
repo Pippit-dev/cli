@@ -14,6 +14,8 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	opts := &internalgen.Options{}
 	var durationSec int
 	var generateType int64
+	var seed int64
+	var draft bool
 
 	cmd := &cobra.Command{
 		Use:   "generate-video",
@@ -25,6 +27,12 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 			}
 			if cmd.Flags().Changed("generate-type") {
 				opts.GenerateType = &generateType
+			}
+			if cmd.Flags().Changed("seed") {
+				opts.Seed = &seed
+			}
+			if cmd.Flags().Changed("draft") {
+				opts.Draft = &draft
 			}
 
 			result, err := internalgen.Run(cmd.Context(), opts, runner)
@@ -43,7 +51,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
 	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
-	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt")
+	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt; may be omitted when rendering a draft")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
 	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos")
 	flags.StringArrayVar(&opts.AudioPaths, "audio", nil, "local reference audio path; repeat for multiple audios")
@@ -52,5 +60,9 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	flags.StringVar(&opts.Model, "model", "", "video model key; use 'model list' to discover available models")
 	flags.StringVar(&opts.Resolution, "resolution", "", "video resolution; optional for Seedance_2.0_mini and Seedance_2.0_mini_lite (server defaults to 720p); use 'model describe <key>' for current configuration")
 	flags.Int64Var(&generateType, "generate-type", 0, "generation type passed to the service; set 1 for first-and-last-frame generation and provide --image values in first-frame, last-frame order; MiniMax and Wan also accept a single first-frame image in this mode")
+	flags.StringVar(&opts.TaskType, "task-type", "", "video task type passed to the service: auto, reference, edit, extend")
+	flags.Int64Var(&seed, "seed", 0, "custom generation seed; omitted when not supplied")
+	flags.BoolVar(&draft, "draft", false, "generate a Seedance_2.5_draft preview; --draft=false explicitly requests a final video")
+	flags.StringVar(&opts.DraftTaskID, "draft-task-id", "", "original draft_task_id returned by query-result, used to render a final video")
 	return cmd
 }

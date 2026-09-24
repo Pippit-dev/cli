@@ -189,6 +189,82 @@ func TestGenerateVideoRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestGenerateVideoDraftParameters(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		args   []string
+		want   map[string]any
+		absent []string
+	}{
+		{
+			name:   "preview with explicit zero values",
+			args:   []string{"--draft", "--prompt", "cat", "--seed", "0", "--generate-type", "0", "--task-type", "reference"},
+			want:   map[string]any{"draft": true, "prompt": "cat", "seed": float64(0), "generate_type": float64(0), "task_type": "reference"},
+			absent: []string{"draft_task_id", "resolution", "ratio", "duration_sec"},
+		},
+		{
+			name:   "final with ID only",
+			args:   []string{"--draft-task-id", "cgt-example-draft"},
+			want:   map[string]any{"draft_task_id": "cgt-example-draft", "prompt": ""},
+			absent: []string{"draft", "resolution", "ratio", "duration_sec", "seed", "task_type", "generate_type", "images", "videos", "audios"},
+		},
+		{
+			name:   "explicit false",
+			args:   []string{"--draft=false", "--draft-task-id", "cgt-example-draft", "--seed", "-1"},
+			want:   map[string]any{"draft": false, "draft_task_id": "cgt-example-draft", "seed": float64(-1)},
+			absent: []string{"resolution", "ratio", "duration_sec"},
+		},
+		{
+			name: "conflicting parameters are left to the service",
+			args: []string{"--draft", "--draft-task-id", "cgt-example-draft", "--task-type", "future-mode", "--duration", "-1", "--ratio", "adaptive"},
+			want: map[string]any{"draft": true, "draft_task_id": "cgt-example-draft", "task_type": "future-mode", "duration_sec": float64(-1), "ratio": "adaptive"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			submitted := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/biz/v1/skill/submit_run" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				data, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := decodeJSON(t, data)
+				param, ok := body["video_part_tool_param"].(map[string]any)
+				if !ok {
+					t.Fatalf("missing video_part_tool_param: %#v", body)
+				}
+				if param["model"] != "Seedance_2.5_draft" || body["agent_name"] != "pippit_video_part_agent" {
+					t.Fatalf("unexpected route/model: %#v", body)
+				}
+				for key, want := range tt.want {
+					if param[key] != want {
+						t.Fatalf("%s = %#v, want %#v", key, param[key], want)
+					}
+				}
+				for _, key := range tt.absent {
+					if _, exists := param[key]; exists {
+						t.Fatalf("%s must stay omitted: %#v", key, param)
+					}
+				}
+				submitted = true
+				_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread_123","run_id":"run_456"}}}`))
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs(append([]string{"generate-video", "--model", "Seedance_2.5_draft"}, tt.args...))
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute(): %v, stderr=%s", err, stderr.String())
+			}
+			if !submitted {
+				t.Fatal("request not submitted")
+			}
+		})
+	}
+}
+
 func TestGenerateVideoAcceptsReferencesBeyondFormerLimits(t *testing.T) {
 	cwd := chdirTemp(t)
 	args := []string{"generate-video", "--prompt", "x"}
@@ -430,12 +506,61 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 	if video["download_url"] != downloadURL || video["output_path"] != outputPath {
 		t.Fatalf("video = %#v, want download_url/output_path", video)
 	}
-	for _, unwanted := range []string{"vid", "asset_id", "title"} {
+	for _, unwanted := range []string{"vid", "asset_id", "title", "draft", "draft_task_id"} {
 		if _, ok := video[unwanted]; ok {
 			t.Fatalf("video = %#v, should not contain %s", video, unwanted)
 		}
 	}
 	assertFileContent(t, outputPath, "video-data")
+}
+
+func TestQueryResultPreservesDraftMetadata(t *testing.T) {
+	for _, draft := range []bool{true, false} {
+		t.Run(map[bool]string{true: "preview", false: "final"}[draft], func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/biz/v1/skill/get_thread":
+					videoJSON, err := sonic.Marshal(map[string]any{"video": map[string]any{
+						"download_url": serverURL(r) + "/video.mp4",
+						"draft":        draft, "draft_task_id": "cgt-example-draft",
+					}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					// Agent parts carry their data as a JSON string.
+					encoded, err := sonic.Marshal(string(videoJSON))
+					if err != nil {
+						t.Fatal(err)
+					}
+					_, _ = w.Write([]byte(`{"ret":"0","data":{"thread":{"thread_id":"draft_thread","run_list":[{"run_id":"draft_run","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_video","data":` + string(encoded) + `}]}}]}]}}}`))
+				case "/video.mp4":
+					_, _ = w.Write([]byte("video-data"))
+				default:
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs([]string{"query-result", "--thread-id", "draft_thread", "--run-id", "draft_run", "--download-dir", t.TempDir()})
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute(): %v", err)
+			}
+			got := decodeJSON(t, stdout.Bytes())
+			if got["completed"] != true || got["error_message"] != "" {
+				t.Fatalf("unexpected result: %#v", got)
+			}
+			videos, ok := got["videos"].([]any)
+			if !ok || len(videos) != 1 {
+				t.Fatalf("unexpected videos: %#v", got)
+			}
+			video := videos[0].(map[string]any)
+			if video["draft"] != draft || video["draft_task_id"] != "cgt-example-draft" {
+				t.Fatalf("draft metadata was lost: %#v", video)
+			}
+			assertFileContent(t, video["output_path"].(string), "video-data")
+		})
+	}
 }
 
 func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {

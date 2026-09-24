@@ -16,6 +16,10 @@ type VideoPartToolParam struct {
 	Model         string              `json:"model,omitempty"`
 	Resolution    string              `json:"resolution,omitempty"`
 	GenerateType  *int64              `json:"generate_type,omitempty"`
+	TaskType      string              `json:"task_type,omitempty"`
+	Seed          *int64              `json:"seed,omitempty"`
+	Draft         *bool               `json:"draft,omitempty"`
+	DraftTaskID   string              `json:"draft_task_id,omitempty"`
 	MiniToolParam *VideoMiniToolParam `json:"mini_tool_param,omitempty"`
 }
 

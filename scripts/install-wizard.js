@@ -20,6 +20,8 @@ and skill directories. Installs the version of this package by default.
 PIPPIT_CLI_INSTALL_PACKAGE can override the package/version to install.
 
 Options:
+  --source HOST  Real host identifier reported as host_platform; unknown hosts omit it
+                 Defaults to PIPPIT_CLI_SOURCE when unset; an explicit empty value omits host_platform
   -h, --help  Show this help without installing, updating, or sending telemetry
 `;
 
@@ -65,11 +67,19 @@ function main(args = process.argv.slice(2)) {
     console.log(INSTALL_HELP);
     return;
   }
-  if (args.length > 0) {
-    console.error(`Unknown install argument: ${args[0]}. Run pippit-tool-cli install --help.`);
-    process.exitCode = 1;
-    return;
+  let source = process.env.PIPPIT_CLI_SOURCE || '';
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--source' && i + 1 < args.length && !args[i + 1].startsWith('--')) {
+      source = args[++i];
+    } else if (args[i].startsWith('--source=')) {
+      source = args[i].slice('--source='.length);
+    } else {
+      console.error(`Invalid install argument or missing value: ${args[i]}. Run pippit-tool-cli install --help.`);
+      process.exitCode = 1;
+      return;
+    }
   }
+  source = source.trim();
   const pkg = installPackage();
   const installed = getGloballyInstalledVersion();
   if (installed) {
@@ -90,7 +100,7 @@ function main(args = process.argv.slice(2)) {
       throw err;
     }
     console.log('Existing global package does not contain skills; reinstalling...');
-    run('npm', ['install', '-g', pkg], { timeout: 120000 });
+    run('npm', ['install', '-g', pkg], { timeout: 120000, env: { ...process.env, PIPPIT_CLI_SKIP_SKILLS: '1' } });
     installGlobalPackageSkills(DEFAULT_PKG);
   }
 
@@ -102,7 +112,7 @@ function main(args = process.argv.slice(2)) {
   }
 
   console.log(`pippit-tool-cli is ready: ${bin}`);
-  reportBundledSkillTelemetry('install', 'npx_install');
+  reportBundledSkillTelemetry('install', 'npx_install', source);
   console.log('Try: pippit-tool-cli short-drama +submit-run --message "写一个短剧开头"');
 }
 
