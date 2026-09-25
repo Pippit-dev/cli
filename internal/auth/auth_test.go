@@ -196,7 +196,8 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 	var loginURLAtOpen string
 	var loginURLShownBeforeOpen bool
 	credential, err := manager.Login(context.Background(), LoginOptions{
-		Progress: &progress,
+		LegacyLoopback: true,
+		Progress:       &progress,
 		OpenURL: func(rawURL string) error {
 			loginURLAtOpen = rawURL
 			loginURLShownBeforeOpen = strings.Contains(progress.String(), rawURL)
@@ -257,7 +258,8 @@ func TestManagerWaitsForCallbackWhenBrowserOpenFails(t *testing.T) {
 	)
 	var progress bytes.Buffer
 	credential, err := manager.Login(context.Background(), LoginOptions{
-		Progress: &progress,
+		LegacyLoopback: true,
+		Progress:       &progress,
 		OpenURL: func(rawURL string) error {
 			loginURL, parseErr := url.Parse(rawURL)
 			if parseErr != nil {
@@ -304,6 +306,7 @@ func TestManagerReauthenticationPinsAccountAndRequiresRotation(t *testing.T) {
 		store := &memoryCredentialStore{credential: cloneCredential(old)}
 		manager := NewManager(config.Load(), WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 		_, err := manager.Login(context.Background(), LoginOptions{
+			LegacyLoopback:          true,
 			ForceRefresh:            true,
 			ExpectedCredentialScope: old.CredentialScope,
 			OpenURL:                 callbackOpener(t, fixedNow.Add(time.Hour), "account-b", "new-id", "new-ak", true),
@@ -320,6 +323,7 @@ func TestManagerReauthenticationPinsAccountAndRequiresRotation(t *testing.T) {
 		store := &memoryCredentialStore{credential: cloneCredential(old)}
 		manager := NewManager(config.Load(), WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 		_, err := manager.Login(context.Background(), LoginOptions{
+			LegacyLoopback:          true,
 			ForceRefresh:            true,
 			ExpectedCredentialScope: old.CredentialScope,
 			OpenURL:                 callbackOpener(t, fixedNow.Add(time.Hour), old.UID, old.TokenID, old.AccessKey, true),
@@ -336,6 +340,7 @@ func TestManagerReauthenticationPinsAccountAndRequiresRotation(t *testing.T) {
 		store := &memoryCredentialStore{credential: cloneCredential(old)}
 		manager := NewManager(config.Load(), WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 		got, err := manager.Login(context.Background(), LoginOptions{
+			LegacyLoopback:          true,
 			ForceRefresh:            true,
 			ExpectedCredentialScope: old.CredentialScope,
 			OpenURL:                 callbackOpener(t, fixedNow.Add(time.Hour), old.UID, "rotated-id", "rotated-ak", true),
@@ -423,7 +428,8 @@ func TestManagerRejectsExpiredPageCredential(t *testing.T) {
 	store := &memoryCredentialStore{}
 	manager := NewManager(config.Load(), WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 	_, err := manager.Login(context.Background(), LoginOptions{
-		OpenURL: callbackOpener(t, fixedNow.Add(-time.Hour), "user", "id", "ak", false),
+		LegacyLoopback: true,
+		OpenURL:        callbackOpener(t, fixedNow.Add(-time.Hour), "user", "id", "ak", false),
 	})
 	if !errors.Is(err, ErrCredentialExpired) {
 		t.Fatalf("expired callback error = %v", err)
@@ -442,6 +448,7 @@ func TestManagerDerivesExpectedAccountFromDurableScope(t *testing.T) {
 	manager := NewManager(config.Load(), WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
 	expectedScope := credentialScope("durable-user", identity.DeviceID)
 	_, err := manager.Login(context.Background(), LoginOptions{
+		LegacyLoopback:          true,
 		ForceRefresh:            true,
 		ExpectedCredentialScope: expectedScope,
 		OpenURL: func(rawURL string) error {
