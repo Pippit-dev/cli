@@ -9,6 +9,7 @@ import (
 	"time"
 
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
+	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ type logoutResult struct {
 func NewLoginCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var forceRefresh bool
 	command := &cobra.Command{
-		Use:   "login",
+		Use:   commandnames.Login,
 		Short: "通过浏览器登录小云雀 CLI",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -66,7 +67,7 @@ func NewLoginCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 // NewStatusCommand creates the top-level `pippit-tool-cli status` command.
 func NewStatusCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "status",
+		Use:   commandnames.Status,
 		Short: "查看小云雀 CLI 登录状态",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -95,7 +96,7 @@ func NewStatusCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 // modified or revoked by this command.
 func NewLogoutCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "logout",
+		Use:   commandnames.Logout,
 		Short: "清除本机小云雀 CLI 登录（不撤销远程 Access Key）",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {

@@ -11,21 +11,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 type Manager struct {
-	cfg                   *config.Config
-	store                 CredentialStore
-	authBaseURL           *url.URL
-	random                io.Reader
-	now                   func() time.Time
-	credentialMu          sync.Mutex
-	cachedCredential      *Credential
-	credentialCacheLoaded bool
+	localCredentialsEnabled bool
+	cfg                     *config.Config
+	store                   CredentialStore
+	authBaseURL             *url.URL
+	random                  io.Reader
+	now                     func() time.Time
+	credentialMu            sync.Mutex
+	cachedCredential        *Credential
+	credentialCacheLoaded   bool
 }
 
 type ManagerOption func(*Manager)
+
+// WithCLIOptions sets whether local login is allowed at construction. Direct Login calls also check this setting.
+func WithCLIOptions(options adapter.CLIOptions) ManagerOption {
+	return func(manager *Manager) { manager.localCredentialsEnabled = options.LocalCredentialsEnabled }
+}
 
 func WithCredentialStore(store CredentialStore) ManagerOption {
 	return func(manager *Manager) {
@@ -41,11 +48,12 @@ func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {
 	serviceName := config.DefaultAuthStoreServiceName
 	authBaseURL, _ := url.Parse(config.DefaultBaseURL)
 	manager := &Manager{
-		cfg:         cfg,
-		store:       NewDefaultCredentialStore(serviceName),
-		authBaseURL: authBaseURL,
-		random:      rand.Reader,
-		now:         time.Now,
+		localCredentialsEnabled: true,
+		cfg:                     cfg,
+		store:                   NewDefaultCredentialStore(serviceName),
+		authBaseURL:             authBaseURL,
+		random:                  rand.Reader,
+		now:                     time.Now,
 	}
 	for _, option := range options {
 		if option != nil {
@@ -75,6 +83,10 @@ func (m *Manager) ResolveAccessKey(ctx context.Context) (string, error) {
 }
 
 func (m *Manager) Login(ctx context.Context, options LoginOptions) (*Credential, error) {
+	// When local credentials are disabled, reject direct calls before reading credentials or opening a browser, even if command filtering is bypassed.
+	if m != nil && !m.localCredentialsEnabled {
+		return nil, errors.New("当前 CLI 不支持本机网页登录或登录回调，请使用当前运行环境提供的认证方式")
+	}
 	if err := m.validate(); err != nil {
 		return nil, err
 	}

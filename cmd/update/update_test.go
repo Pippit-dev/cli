@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 )
 
 func TestInstallSkillsInstallsAllBundledSkills(t *testing.T) {
@@ -92,7 +94,7 @@ func TestReportSkillTelemetry(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL+"/")
-	err := reportSkillTelemetry(telemetryPayload{
+	err := newUpdater(adapter.Default{}).reportSkillTelemetry(telemetryPayload{
 		Event:        "update",
 		SkillName:    "xyq-skill",
 		Source:       "cli_update",
@@ -121,7 +123,7 @@ func TestReportBundledSkillTelemetryWaitsBriefly(t *testing.T) {
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
 	start := time.Now()
-	reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
+	newUpdater(adapter.Default{}).reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
 	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
 		t.Fatalf("reportBundledSkillTelemetry() blocked for %v, want <= 1.5s", elapsed)
 	}
@@ -143,7 +145,7 @@ func TestReportBundledSkillTelemetryReportsBothSkills(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("PIPPIT_CLI_TELEMETRY_BASE_URL", server.URL)
-	reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
+	newUpdater(adapter.Default{}).reportBundledSkillTelemetry("update", "cli_update", " workbuddy ", &bytes.Buffer{})
 
 	got := map[string]bool{}
 	for i := 0; i < len(telemetrySkillNames); i++ {

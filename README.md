@@ -349,6 +349,35 @@ pippit-tool-cli query-result \
 
 `query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
 
+## Adapter 接入边界
+
+公共接口位于 `internal/adapter`，通过实例注入适用于当前运行环境的命令和 HTTP 请求策略；公共命令与 HTTP 层只依赖接口，不依赖具体实现。接口提供 `CLIOptions`、`PrepareAPIRequest`、`WrapTransport`、`StripSensitiveHeaders` 四个方法，`adapter.Default{}` 提供默认行为。
+
+- 根入口 `main.go` 调用 `cmd.Execute()`，使用完整命令、本机认证和原始 API 路由。
+- 同进程集成可使用 `cmd.NewRootCommandWithAdapter(stdout, stderr, policy)` 或 `common.NewHTTPClientWithAdapter(baseURL, timeout, authorizer, policy)`；传 nil 使用默认 adapter，不存在全局 adapter 注册。
+- 同源判断由公共 HTTP client 按 scheme、hostname、有效端口执行；只有同源 API 请求才调用 `PrepareAPIRequest`。非同源请求清除默认认证和 adapter 管理的敏感字段；API 跨域重定向会被拒绝。
+- `AuthProvided` 只表示 adapter 已附加认证材料，不代表服务端验证通过；失败立即返回，不回退到本机认证。`UseDefaultAuth` 才调用默认认证器，未知决策会被拒绝。
+- CLI 策略与 Cobra 解耦。`DefaultAllowRootCommands` 明确指定是否默认放行一级业务命令；为 false 时只开放 `AllowedRootCommands` 白名单，nil 和空列表都表示没有白名单命令。默认 adapter 将该开关设为 true，本机认证和自更新仍受各自开关控制；标准帮助和版本行为仍由 Cobra 提供。可通过 `auth.WithCLIOptions` 将本机认证能力配置应用于独立 Manager。
+- 业务 client 与更新遥测 client 都在构造时包装 Transport；遥测 client 属于命令实例，避免使用不同 adapter 的实例共享可变客户端。
+
+例如，自定义 adapter 可以复用默认实现，仅调整命令能力，并在自己的程序入口注入：
+
+```go
+type customAdapter struct {
+    adapter.Default
+}
+
+func (customAdapter) CLIOptions() adapter.CLIOptions {
+    options := adapter.Default{}.CLIOptions()
+    options.SelfUpdateEnabled = false
+    return options
+}
+
+// 程序入口：cmd.ExecuteWithAdapter(customAdapter{})
+```
+
+新增业务请求应复用 `Runner.Client`；需要独立 `http.Client` 时，通过所注入策略的 `WrapTransport` 包装。直接创建未包装的客户端不会自动应用策略。
+
 ## HTTP 客户端
 
 命令模块通过 `common.Runner` 发起服务调用。运行时配置，例如基础地址、HTTP 超时时间和接口路径，由 `internal/config` 加载，并在运行器中与 `common.Client` 组合使用。

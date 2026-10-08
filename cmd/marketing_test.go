@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
@@ -33,6 +34,59 @@ func (s *marketingCredentialStore) Load(context.Context) (*auth.Credential, erro
 }
 
 const marketingRequest = `{"message":"make an ad","general_agent_settings":{"video_model":"chosen-model","show_subtitle":false}}`
+
+type marketingTestAdapter struct{}
+
+func (marketingTestAdapter) CLIOptions() adapter.CLIOptions {
+	return adapter.CLIOptions{DefaultAllowRootCommands: true}
+}
+
+func (marketingTestAdapter) PrepareAPIRequest(_ context.Context, req *http.Request) (adapter.AuthDecision, error) {
+	req.Header.Set("X-Test-Adapter-Auth", "present")
+	return adapter.AuthProvided, nil
+}
+
+func (marketingTestAdapter) WrapTransport(next http.RoundTripper) http.RoundTripper {
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	return marketingTestTransport{next: next}
+}
+
+func (marketingTestAdapter) StripSensitiveHeaders(*http.Request) {}
+
+type marketingTestTransport struct{ next http.RoundTripper }
+
+func (t marketingTestTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	cloned := req.Clone(req.Context())
+	cloned.Header.Set("X-Test-Adapter-Transport", "present")
+	return t.next.RoundTrip(cloned)
+}
+
+func TestMarketingUsesRootAdapterForIndependentClient(t *testing.T) {
+	called := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called++
+		if r.Header.Get("X-Test-Adapter-Auth") != "present" || r.Header.Get("X-Test-Adapter-Transport") != "present" {
+			t.Errorf("marketing request bypassed root adapter: %#v", r.Header)
+		}
+		fmt.Fprint(w, `{"ret":"0","data":{}}`)
+	}))
+	defer server.Close()
+
+	cfg := config.Load()
+	cfg.BaseURL = server.URL
+	policy := marketingTestAdapter{}
+	runner := newRootRunnerWithAdapter(cfg, policy)
+	root := newRootCommandWithAdapter(io.Discard, io.Discard, runner, policy)
+	root.SetArgs([]string{"marketing", "balance"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if called != 1 {
+		t.Fatalf("marketing requests = %d, want 1", called)
+	}
+}
 
 func TestMarketingUsesSharedBrowserAuth(t *testing.T) {
 	for _, action := range []string{"generate", "query", "upload", "balance"} {
