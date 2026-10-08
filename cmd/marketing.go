@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -25,17 +26,17 @@ var marketingPaths = map[string]string{
 
 // Marketing uses the same AuthManager as login/status and all other commands.
 // Only fixed public endpoints are exposed; credentials never leave the CLI.
-func newMarketingCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+func newMarketingCommand(stdout, stderr io.Writer, runner *common.Runner, policy adapter.HTTPAdapter) *cobra.Command {
 	root := &cobra.Command{Use: "marketing", Short: "Marketing API using the shared CLI login"}
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	for _, action := range []string{"generate", "query", "upload", "balance"} {
-		root.AddCommand(newMarketingAction(action, stdout, stderr, runner))
+		root.AddCommand(newMarketingAction(action, stdout, stderr, runner, policy))
 	}
 	return root
 }
 
-func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.Runner, policy adapter.HTTPAdapter) *cobra.Command {
 	var requestFile, file, threadID, runID, source string
 	var execute bool
 	var timeout time.Duration
@@ -123,7 +124,7 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 		defer cancel()
-		client := common.NewNonRedirectingHTTPClient(runner.Config.BaseURL, timeout, newRunnerAuthorizer(runner))
+		client := common.NewNonRedirectingHTTPClientWithAdapter(runner.Config.BaseURL, timeout, newRunnerAuthorizer(runner), policy)
 		var result map[string]json.RawMessage
 		var err error
 		if action == "upload" {

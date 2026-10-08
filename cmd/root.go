@@ -14,6 +14,8 @@ import (
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
 	"github.com/Pippit-dev/pippit-cli/cmd/video_tool"
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
+	"github.com/Pippit-dev/pippit-cli/internal/adaptercli"
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
@@ -22,24 +24,36 @@ import (
 )
 
 // Execute runs the pippit-tool-cli command tree.
-func Execute() error {
-	return NewRootCommand(os.Stdout, os.Stderr).Execute()
+func Execute() error { return ExecuteWithAdapter(adapter.Default{}) }
+
+func ExecuteWithAdapter(policy adapter.Adapter) error {
+	return NewRootCommandWithAdapter(os.Stdout, os.Stderr, policy).Execute()
 }
 
 func NewRootCommand(stdout, stderr io.Writer) *cobra.Command {
+	return NewRootCommandWithAdapter(stdout, stderr, adapter.Default{})
+}
+
+func NewRootCommandWithAdapter(stdout, stderr io.Writer, policy adapter.Adapter) *cobra.Command {
+	policy = adapter.OrDefault(policy)
 	cfg := config.Load()
-	runner := newRootRunner(cfg)
-	return newRootCommand(stdout, stderr, runner)
+	runner := newRootRunnerWithAdapter(cfg, policy)
+	return newRootCommandWithAdapter(stdout, stderr, runner, policy)
 }
 
 func newRootRunner(cfg *config.Config) *common.Runner {
+	return newRootRunnerWithAdapter(cfg, adapter.Default{})
+}
+
+func newRootRunnerWithAdapter(cfg *config.Config, policy adapter.Adapter) *common.Runner {
 	runner := common.NewRunner(cfg, nil)
-	runner.Auth = internal_auth.NewManager(cfg)
-	runner.Client = common.NewHTTPClient(
-		cfg.BaseURL,
-		cfg.HTTPTimeout,
-		newRunnerAuthorizer(runner),
-	)
+	var authorizer common.RequestAuthorizer
+	options := policy.CLIOptions()
+	if options.LocalCredentialsEnabled {
+		runner.Auth = internal_auth.NewManager(cfg, internal_auth.WithCLIOptions(options))
+		authorizer = newRunnerAuthorizer(runner)
+	}
+	runner.Client = common.NewHTTPClientWithAdapter(cfg.BaseURL, cfg.HTTPTimeout, authorizer, policy)
 	return runner
 }
 
@@ -53,6 +67,10 @@ func newRunnerAuthorizer(runner *common.Runner) common.RequestAuthorizer {
 }
 
 func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+	return newRootCommandWithAdapter(stdout, stderr, runner, adapter.Default{})
+}
+
+func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, policy adapter.Adapter) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "pippit-tool-cli",
 		Short: "Pippit CLI",
@@ -84,7 +102,7 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetCreditBalanceCommand(stdout, stderr, runner))
 	root.AddCommand(newModelCommand(stdout, stderr, runner))
-	root.AddCommand(newMarketingCommand(stdout, stderr, runner))
+	root.AddCommand(newMarketingCommand(stdout, stderr, runner, policy))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
 	root.AddCommand(newSubmitRunCommand(stdout, stderr, runner))
 	root.AddCommand(newUploadFileCommand(stdout, stderr, runner))
@@ -95,7 +113,8 @@ func newRootCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comm
 	root.AddCommand(video_tool.NewSuperResolutionCommand(stdout, stderr, runner))
 	root.AddCommand(video_tool.NewEraseSubtitleCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))
-	root.AddCommand(updatecmd.NewCommand(stdout, stderr))
+	root.AddCommand(updatecmd.NewCommandWithAdapter(stdout, stderr, policy))
+	adaptercli.Configure(root, policy.CLIOptions())
 	localizeFlagErrors(root)
 	return root
 }

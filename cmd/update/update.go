@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
+	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -38,26 +40,39 @@ var telemetrySkillNames = []string{
 	"xyq-short-drama-skill",
 }
 
-var telemetryHTTPClient = &http.Client{Timeout: telemetryWaitTimeout}
+// Each update command instance owns its HTTP client so instances using different adapters do not affect each other.
+type updater struct{ telemetryHTTPClient *http.Client }
+
+func newUpdater(policy adapter.HTTPAdapter) *updater {
+	return &updater{telemetryHTTPClient: &http.Client{
+		Timeout:   telemetryWaitTimeout,
+		Transport: adapter.HTTPOrDefault(policy).WrapTransport(nil),
+	}}
+}
 
 // NewCommand builds the update command.
 func NewCommand(stdout, stderr io.Writer) *cobra.Command {
+	return NewCommandWithAdapter(stdout, stderr, adapter.Default{})
+}
+
+func NewCommandWithAdapter(stdout, stderr io.Writer, policy adapter.HTTPAdapter) *cobra.Command {
+	updater := newUpdater(policy)
 	var source string
 	cmd := &cobra.Command{
-		Use:   "update",
+		Use:   commandnames.Update,
 		Short: "Update pippit-tool-cli and bundled skills",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if !cmd.Flags().Changed("source") {
 				source = os.Getenv("PIPPIT_CLI_SOURCE")
 			}
-			return runUpdate(stdout, stderr, source)
+			return updater.runUpdate(stdout, stderr, source)
 		},
 	}
 	cmd.Flags().StringVar(&source, "source", "", "optional real host identifier reported as host_platform; defaults to PIPPIT_CLI_SOURCE when unset")
 	return cmd
 }
 
-func runUpdate(stdout, stderr io.Writer, source string) error {
+func (u *updater) runUpdate(stdout, stderr io.Writer, hostPlatform string) error {
 	pkg := os.Getenv("PIPPIT_CLI_INSTALL_PACKAGE")
 	if pkg == "" {
 		pkg = defaultPackage + "@latest"
@@ -83,7 +98,7 @@ func runUpdate(stdout, stderr io.Writer, source string) error {
 		return fmt.Errorf("更新 pippit-tool-cli skills 失败: %w", err)
 	}
 
-	reportBundledSkillTelemetry("update", "cli_update", source, stderr)
+	u.reportBundledSkillTelemetry("update", "cli_update", hostPlatform, stderr)
 	fmt.Fprintln(stdout, "pippit-tool-cli and skills updated")
 	return nil
 }
@@ -143,7 +158,7 @@ type telemetryPayload struct {
 	Arch         string `json:"arch"`
 }
 
-func reportBundledSkillTelemetry(event, source, hostPlatform string, stderr io.Writer) {
+func (u *updater) reportBundledSkillTelemetry(event, source, hostPlatform string, stderr io.Writer) {
 	if os.Getenv("PIPPIT_CLI_DISABLE_TELEMETRY") == "1" {
 		return
 	}
@@ -161,7 +176,7 @@ func reportBundledSkillTelemetry(event, source, hostPlatform string, stderr io.W
 		wg.Add(1)
 		go func(payload telemetryPayload) {
 			defer wg.Done()
-			if err := reportSkillTelemetry(payload); err != nil && os.Getenv("PIPPIT_CLI_DEBUG_TELEMETRY") == "1" {
+			if err := u.reportSkillTelemetry(payload); err != nil && os.Getenv("PIPPIT_CLI_DEBUG_TELEMETRY") == "1" {
 				fmt.Fprintf(stderr, "[pippit-tool-cli] 埋点上报失败: %v\n", err)
 			}
 		}(payload)
@@ -177,7 +192,7 @@ func reportBundledSkillTelemetry(event, source, hostPlatform string, stderr io.W
 	}
 }
 
-func reportSkillTelemetry(payload telemetryPayload) error {
+func (u *updater) reportSkillTelemetry(payload telemetryPayload) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -190,7 +205,7 @@ func reportSkillTelemetry(payload telemetryPayload) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", telemetryAuthHeader)
 
-	resp, err := telemetryHTTPClient.Do(req)
+	resp, err := u.telemetryHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 )
 
 type Client interface {
@@ -40,29 +42,43 @@ type httpClient struct {
 	httpClient *http.Client
 	headers    http.Header
 	authorizer RequestAuthorizer
+	adapter    adapter.HTTPAdapter
 }
 
 func NewHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
-	return newHTTPClient(baseURL, timeout, authorizer)
+	return NewHTTPClientWithAdapter(baseURL, timeout, authorizer, adapter.Default{})
 }
 
-// NewNonRedirectingHTTPClient keeps one-shot submissions from being replayed.
-// Authentication and request handling still use the shared CLI client.
+// NewHTTPClientWithAdapter injects policies for HTTP request authentication, transport wrapping, and sensitive header removal.
+// The common client handles origin checks and redirect protection.
+func NewHTTPClientWithAdapter(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, policy adapter.HTTPAdapter) Client {
+	return newHTTPClientWithAdapter(baseURL, timeout, authorizer, policy)
+}
+
+// NewNonRedirectingHTTPClient prevents one-time submission requests from being replayed on redirects.
 func NewNonRedirectingHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) Client {
-	client := newHTTPClient(baseURL, timeout, authorizer)
+	return NewNonRedirectingHTTPClientWithAdapter(baseURL, timeout, authorizer, adapter.Default{})
+}
+
+// NewNonRedirectingHTTPClientWithAdapter retains the request policy while rejecting all redirects.
+func NewNonRedirectingHTTPClientWithAdapter(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, policy adapter.HTTPAdapter) Client {
+	client := newHTTPClientWithAdapter(baseURL, timeout, authorizer, policy)
 	client.httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return fmt.Errorf("拒绝营销 API 重定向；请求未重试")
 	}
 	return client
 }
 
-func newHTTPClient(baseURL string, timeout time.Duration, authorizer RequestAuthorizer) *httpClient {
+func newHTTPClientWithAdapter(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, policy adapter.HTTPAdapter) *httpClient {
+	policy = adapter.HTTPOrDefault(policy)
 	client := &httpClient{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		headers:    make(http.Header),
 		authorizer: authorizer,
+		adapter:    policy,
 	}
 	client.httpClient = &http.Client{
+		Transport:     policy.WrapTransport(nil),
 		Timeout:       timeout,
 		CheckRedirect: client.checkRedirect,
 	}
@@ -218,20 +234,28 @@ func (c *httpClient) injectHeaders(req *http.Request, headers map[string]string)
 }
 
 func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, headers map[string]string) error {
-	trusted, err := c.isBaseURLOrigin(req.URL)
+	isAPIOrigin, err := c.isBaseURLOrigin(req.URL)
 	if err != nil {
 		return err
 	}
 
 	c.injectHeaders(req, headers)
-	// Authentication is protected. Neither the client's generic headers nor a
-	// caller-provided map may set it; Authorization is rebuilt below only for
-	// the configured API origin.
+	// Rebuild the authentication header only for requests to the configured API origin; general request headers cannot override it.
 	req.Header.Del("Authorization")
-	if !trusted {
-		// Absolute third-party URLs are used for result downloads. Authorization
-		// remains empty outside the API origin.
+	if !isAPIOrigin {
+		c.adapter.StripSensitiveHeaders(req)
 		return nil
+	}
+	decision, err := c.adapter.PrepareAPIRequest(ctx, req)
+	if err != nil {
+		return err
+	}
+	switch decision {
+	case adapter.AuthProvided:
+		return nil
+	case adapter.UseDefaultAuth:
+	default:
+		return fmt.Errorf("adapter 返回了无效认证策略: %d", decision)
 	}
 	if c.authorizer == nil {
 		return fmt.Errorf("授权请求缺少认证器")
@@ -289,6 +313,7 @@ func (c *httpClient) checkRedirect(req *http.Request, via []*http.Request) error
 	}
 	if !trusted {
 		req.Header.Del("Authorization")
+		c.adapter.StripSensitiveHeaders(req)
 	}
 	return nil
 }
