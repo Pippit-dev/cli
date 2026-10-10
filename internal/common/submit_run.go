@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/config"
@@ -12,6 +14,8 @@ import (
 
 // AgentNameVideoPart is the video-part agent used by direct video capabilities.
 const AgentNameVideoPart = "pippit_video_part_agent"
+
+var submitRunPPEEnvPattern = regexp.MustCompile(`^ppe_[A-Za-z0-9_]+$`)
 
 // SubmitRunResult is the shared successful submit_run output.
 type SubmitRunResult struct {
@@ -68,8 +72,12 @@ func submitRun(ctx context.Context, command, path string, body any, runner *Runn
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("%s 运行器客户端缺失", command)
 	}
+	headers, err := SubmitRunHeadersFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	var resp SubmitRunResponse
-	if err := runner.Client.SendRequest(ctx, path, body, &resp); err != nil {
+	if err := runner.Client.SendRequestWithHeaders(ctx, path, body, headers, &resp); err != nil {
 		return nil, fmt.Errorf("提交 %s 请求失败: %w", command, err)
 	}
 	if resp.Ret != "0" {
@@ -98,6 +106,21 @@ func SubmitRunPath(runner *Runner) string {
 		return runner.Config.Paths.SubmitRun
 	}
 	return config.SubmitRunPath
+}
+
+// SubmitRunHeadersFromEnv returns optional routing headers for submit_run-only requests.
+func SubmitRunHeadersFromEnv() (map[string]string, error) {
+	ppeEnv := strings.TrimSpace(os.Getenv(config.EnvPPECliEnv))
+	if ppeEnv == "" {
+		return nil, nil
+	}
+	if !submitRunPPEEnvPattern.MatchString(ppeEnv) {
+		return nil, fmt.Errorf("%s must match ppe_[A-Za-z0-9_]+", config.EnvPPECliEnv)
+	}
+	return map[string]string{
+		"x-use-ppe": "1",
+		"x-tt-env":  ppeEnv,
+	}, nil
 }
 
 // WithSubmitRunSource adds optional host attribution to a newly constructed skill request.
