@@ -46,7 +46,7 @@ func TestSubmitRunCommandPreservesScriptContract(t *testing.T) {
 			if err := root.Execute(); err != nil {
 				t.Fatal(err)
 			}
-			if got := stdout.String(); got != "{\"thread_id\":\"thread_1\",\"run_id\":\"run_1\",\"web_thread_link\":\"https://xyq.jianying.com/thread_1\"}\n" {
+			if got := stdout.String(); got != "{\"team_id\":\"0\",\"thread_id\":\"thread_1\",\"run_id\":\"run_1\",\"web_thread_link\":\"https://xyq.jianying.com/thread_1\"}\n" {
 				t.Fatalf("unexpected output: %s", got)
 			}
 		})

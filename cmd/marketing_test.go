@@ -17,6 +17,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	"github.com/Pippit-dev/pippit-cli/internal/space"
 )
 
 type marketingCredentialStore struct {
@@ -124,6 +125,7 @@ func TestMarketingUsesSharedBrowserAuth(t *testing.T) {
 			cfg.AccessKey = ""
 			store := &marketingCredentialStore{credential: &auth.Credential{AccessKey: "browser-secret", UID: "user", DeviceID: "device", ExpiredAt: time.Now().Add(time.Hour).Unix()}}
 			runner := newRootRunner(cfg)
+			runner.SpaceStore = &space.Store{Dir: t.TempDir()}
 			runner.Auth = auth.NewManager(cfg, auth.WithCredentialStore(store))
 			var output bytes.Buffer
 			root := newRootCommand(&output, io.Discard, runner)
@@ -145,7 +147,7 @@ func TestMarketingUsesSharedBrowserAuth(t *testing.T) {
 			if err := root.Execute(); err != nil {
 				t.Fatal(err)
 			}
-			if calls != 1 || store.loads != 1 {
+			if calls != 1 || store.loads != 2 {
 				t.Fatalf("HTTP calls=%d credential loads=%d", calls, store.loads)
 			}
 			if strings.Contains(output.String(), "browser-secret") || !strings.Contains(output.String(), "log-test") {
@@ -183,7 +185,7 @@ func TestMarketingAuthFailureAndEnvironmentPrecedence(t *testing.T) {
 			root.SetArgs([]string{"marketing", "balance"})
 			err := root.Execute()
 			if scenario == "override" {
-				if err != nil || calls != 1 || store.loads != 0 {
+				if err != nil || calls != 1 || store.loads != 1 {
 					t.Fatalf("override: err=%v calls=%d loads=%d", err, calls, store.loads)
 				}
 			} else if err == nil || !strings.Contains(err.Error(), "pippit-tool-cli login") || calls != 0 {
@@ -193,7 +195,7 @@ func TestMarketingAuthFailureAndEnvironmentPrecedence(t *testing.T) {
 	}
 }
 
-func TestMarketingPreviewAndHelpDoNotReadCredentials(t *testing.T) {
+func TestMarketingOfflineCommandsReadIdentityOnlyWhenNeeded(t *testing.T) {
 	for _, args := range [][]string{{"marketing", "--help"}, {"marketing", "generate", "--request", "-"}, {"marketing", "query"}} {
 		cfg := config.Load()
 		cfg.AccessKey = ""
@@ -210,8 +212,12 @@ func TestMarketingPreviewAndHelpDoNotReadCredentials(t *testing.T) {
 		if args[1] == "query" && err == nil {
 			t.Fatal("missing IDs accepted")
 		}
-		if store.loads != 0 {
-			t.Fatal("offline operation accessed credentials")
+		wantLoads := 1 // Resolve the local account for space selection, without requiring login.
+		if args[1] == "--help" {
+			wantLoads = 0
+		}
+		if store.loads != wantLoads {
+			t.Fatalf("%v: credential loads=%d, want %d", args, store.loads, wantLoads)
 		}
 	}
 }

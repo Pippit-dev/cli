@@ -22,6 +22,11 @@ func detectHostSource(getenv func(string) string) string {
 		{"CLAUDECODE", "claude_code"},
 		{"CURSOR_AGENT", "cursor"},
 		{"GEMINI_CLI", "gemini_cli"},
+		{"OPENCODE", "opencode"},
+		{"QWEN_CODE", "qwen_code"},
+		{"CLINE_ACTIVE", "cline"},
+		{"COPILOT_CLI", "github_copilot_cli"},
+		{"COPILOT_AGENT_SESSION_ID", "github_copilot_cli"},
 	} {
 		value := strings.ToLower(strings.TrimSpace(getenv(marker.key)))
 		if value == "" || value == "0" || value == "false" {

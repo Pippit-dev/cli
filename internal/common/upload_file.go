@@ -20,6 +20,7 @@ type UploadFileOptions struct {
 
 // UploadFileResult is the shared JSON output for media and short-drama uploads.
 type UploadFileResult struct {
+	TeamID  string `json:"team_id"`
 	AssetID string `json:"asset_id"`
 }
 
@@ -102,6 +103,7 @@ func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*U
 	}
 
 	return &UploadFileResult{
+		TeamID:  SpaceTeamID(ctx),
 		AssetID: assetID,
 	}, nil
 }

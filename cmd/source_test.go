@@ -16,7 +16,7 @@ import (
 )
 
 func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
-	for _, key := range []string{"PIPPIT_CLI_SOURCE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI"} {
+	for _, key := range []string{"PIPPIT_CLI_SOURCE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "OPENCODE", "QWEN_CODE", "CLINE_ACTIVE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID"} {
 		t.Setenv(key, "")
 	}
 
@@ -131,6 +131,10 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 				if received["platform"] != "codex" {
 					t.Errorf("runtime host not detected: %#v", received["platform"])
 				}
+				execute("--source", "")
+				if received["platform"] != "codex" {
+					t.Error("explicit empty must allow runtime fallback")
+				}
 				t.Setenv("PIPPIT_CLI_SOURCE", " workbuddy ")
 				execute()
 				if received["platform"] != "workbuddy" {
@@ -140,11 +144,30 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 				if received["platform"] != "doubao_office" {
 					t.Error("explicit flag must win")
 				}
-				execute("--source", "")
-				if _, exists := received["platform"]; exists {
-					t.Error("explicit empty must suppress attribution")
+				for _, flags := range [][]string{{"--source", ""}, {"--source", " \t "}, {"--source="}, {"--source=codex", "--source="}} {
+					execute(flags...)
+					if received["platform"] != "workbuddy" {
+						t.Errorf("blank source must allow environment fallback: %v, got %#v", flags, received["platform"])
+					}
 				}
 			})
+			for _, host := range []struct{ key, want string }{
+				{"OPENCODE", "opencode"}, {"QWEN_CODE", "qwen_code"},
+				{"CLINE_ACTIVE", "cline"}, {"COPILOT_CLI", "github_copilot_cli"},
+				{"COPILOT_AGENT_SESSION_ID", "github_copilot_cli"},
+			} {
+				t.Run(host.key, func(t *testing.T) {
+					t.Setenv(host.key, "session-must-not-be-reported")
+					execute("--source", "")
+					if received["platform"] != host.want {
+						t.Errorf("platform = %#v, want %q", received["platform"], host.want)
+					}
+					delete(received, "platform")
+					if !reflect.DeepEqual(received, wantBody) || query != wantQuery {
+						t.Error("runtime source changed creative request or ROI query")
+					}
+				})
+			}
 			// A fresh invocation without source must not reuse previous attribution.
 			execute()
 			if _, exists := received["platform"]; exists {

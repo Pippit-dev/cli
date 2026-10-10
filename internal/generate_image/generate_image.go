@@ -42,14 +42,7 @@ type generalAgentSettings struct {
 	GenerateImageCount *int   `json:"generate_image_count,omitempty"`
 }
 
-// Result is the JSON envelope printed by `pippit-tool-cli generate-image`.
-type Result struct {
-	ThreadID      string `json:"thread_id"`
-	RunID         string `json:"run_id"`
-	WebThreadLink string `json:"web_thread_link"`
-}
-
-func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, error) {
+func Run(ctx context.Context, opts *Options, runner *common.Runner) (*common.SubmitRunResult, error) {
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("generate-image 运行器客户端缺失")
 	}
@@ -89,7 +82,8 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		return nil, fmt.Errorf("generate-image 响应缺少 data.run.run_id")
 	}
 
-	return &Result{
+	return &common.SubmitRunResult{
+		TeamID:        common.SpaceTeamID(ctx),
 		ThreadID:      resp.Data.Run.ThreadID,
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,

@@ -14,6 +14,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	"github.com/Pippit-dev/pippit-cli/internal/space"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
 	"github.com/bytedance/sonic"
 	"github.com/spf13/cobra"
@@ -965,6 +966,7 @@ func newTestRootCommandWithAccessKey(t *testing.T, stdout, stderr io.Writer, bas
 	client := common.NewHTTPClient(cfg.BaseURL, cfg.HTTPTimeout, common.NewAccessKeyAuthorizer(cfg.AccessKey))
 	runner := common.NewRunner(cfg, client)
 	runner.Auth = auth.NewManager(cfg)
+	runner.SpaceStore = &space.Store{Dir: t.TempDir()}
 	return newRootCommand(stdout, stderr, runner)
 }
 

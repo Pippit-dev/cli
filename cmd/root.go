@@ -80,17 +80,24 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	// Only commands already exposing --source receive attribution. Explicit empty
-	// flags suppress fallback, and no source is persisted between CLI processes.
+	// Only commands already exposing --source receive attribution. Missing or blank
+	// flags allow fallback, and no source is persisted between CLI processes.
+	// 子命令执行 pre hook
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
 		flag := cmd.Flags().Lookup("source")
-		if flag != nil && !flag.Changed {
+		if flag != nil && (!flag.Changed || strings.TrimSpace(flag.Value.String()) == "") {
 			if source := common.DetectHostSource(); source != "" {
-				return cmd.Flags().Set("source", source)
+				if err := cmd.Flags().Set("source", source); err != nil {
+					return err
+				}
 			}
 		}
-		return nil
+		return prepareCommandSpace(cmd, runner, stderr)
 	}
+	// 定义根命令和子命令都能使用的字符串参数
+	root.PersistentFlags().String("team-id", "", "本次业务操作的空间：0 为个人空间，正整数为团队空间；不改变默认空间")
+	root.PersistentFlags().String("space-context", "", "固定跨进程操作的账号、API origin 和空间")
+	_ = root.PersistentFlags().MarkHidden("space-context")
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.SetVersionTemplate("{{.Version}}\n")
 	root.SetOut(stdout)
@@ -98,6 +105,7 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	root.AddCommand(authcmd.NewLoginCommand(stdout, stderr, runner))
 	root.AddCommand(authcmd.NewStatusCommand(stdout, stderr, runner))
 	root.AddCommand(authcmd.NewLogoutCommand(stdout, stderr, runner))
+	root.AddCommand(newSpaceCommand(stdout, runner))
 	root.AddCommand(canvascmd.NewCommand(stdout, stderr, runner))
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetCreditBalanceCommand(stdout, stderr, runner))

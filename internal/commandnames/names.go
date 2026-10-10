@@ -2,8 +2,13 @@
 package commandnames
 
 const (
-	Login  = "login"
-	Logout = "logout"
-	Status = "status"
-	Update = "update"
+	Login          = "login"
+	Logout         = "logout"
+	Status         = "status"
+	Space          = "space"
+	Update         = "update"
+	Completion     = "completion"
+	Help           = "help"
+	Model          = "model"
+	DownloadResult = "download-result"
 )

@@ -90,6 +90,11 @@ func (c *httpClient) SendRequest(ctx context.Context, path string, body any, out
 }
 
 func (c *httpClient) SendRequestWithHeaders(ctx context.Context, path string, body any, headers map[string]string, out any) error {
+	var scopeErr error
+	ctx, scopeErr = c.prepareSpaceRequest(ctx, path, body)
+	if scopeErr != nil {
+		return scopeErr
+	}
 	method := http.MethodPost
 	if body == nil {
 		method = http.MethodGet
@@ -145,6 +150,11 @@ func (c *httpClient) SendRequestWithHeaders(ctx context.Context, path string, bo
 }
 
 func (c *httpClient) SendMultipartRequest(ctx context.Context, path string, fields map[string]string, file MultipartFile, out any) error {
+	var scopeErr error
+	ctx, scopeErr = c.prepareSpaceRequest(ctx, path, nil)
+	if scopeErr != nil {
+		return scopeErr
+	}
 	reqURL, err := c.resolveURL(path, nil)
 	if err != nil {
 		return err
@@ -242,6 +252,7 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 	c.injectHeaders(req, headers)
 	// Rebuild the authentication header only for requests to the configured API origin; general request headers cannot override it.
 	req.Header.Del("Authorization")
+	req.Header.Del("X-Team-Id")
 	if !isAPIOrigin {
 		c.adapter.StripSensitiveHeaders(req)
 		return nil
@@ -249,6 +260,16 @@ func (c *httpClient) prepareRequest(ctx context.Context, req *http.Request, head
 	decision, err := c.adapter.PrepareAPIRequest(ctx, req)
 	if err != nil {
 		return err
+	}
+	// The selected space, like credentials, is rebuilt only for the API origin.
+	if session := SpaceSession(ctx); session != nil {
+		if err := session.CheckIdentity(ctx); err != nil {
+			return err
+		}
+		req.Header.Del("X-Team-Id")
+		if session.TeamID() != "0" {
+			req.Header.Set("X-Team-Id", session.TeamID())
+		}
 	}
 	switch decision {
 	case adapter.AuthProvided:
@@ -313,6 +334,7 @@ func (c *httpClient) checkRedirect(req *http.Request, via []*http.Request) error
 	}
 	if !trusted {
 		req.Header.Del("Authorization")
+		req.Header.Del("X-Team-Id")
 		c.adapter.StripSensitiveHeaders(req)
 	}
 	return nil
@@ -362,6 +384,7 @@ func (c *httpClient) do(req *http.Request, out any) error {
 	if err := sonic.Unmarshal(data, out); err != nil {
 		return fmt.Errorf("解析响应体失败: %w", err)
 	}
+	rememberSpaceResponse(req.Context(), data)
 	return nil
 }
 
