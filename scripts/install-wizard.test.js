@@ -46,7 +46,7 @@ for (const [args, env, want] of [
   [[], undefined, ''], [[], ' workbuddy ', 'workbuddy'],
   [['--source', ' doubao_office '], 'workbuddy', 'doubao_office'],
   [['--source=custom-host'], undefined, 'custom-host'],
-  [['--source', ''], 'workbuddy', ''], [['--source=  '], 'workbuddy', ''],
+  [['--source', ''], 'workbuddy', 'workbuddy'], [['--source=  '], 'workbuddy', 'workbuddy'],
 ]) {
   const result = installFixture(args, env, true);
   assert.deepStrictEqual(result.reports, [['install', 'npx_install', want]]);
@@ -96,13 +96,23 @@ for (const [args, env, want] of [
   [[], { CLAUDECODE: '1' }, 'claude_code'],
   [[], { CURSOR_AGENT: '1' }, 'cursor'],
   [[], { GEMINI_CLI: 'true' }, 'gemini_cli'],
+  [[], { OPENCODE: '1' }, 'opencode'],
+  [[], { QWEN_CODE: '1' }, 'qwen_code'],
+  [[], { CLINE_ACTIVE: ' true ' }, 'cline'],
+  [[], { COPILOT_CLI: '1' }, 'github_copilot_cli'],
+  [[], { COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
+  [[], { COPILOT_CLI: '1', COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
   [[], { PIPPIT_CLI_SOURCE: ' workbuddy ', CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
   [['--source= doubao_office '], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
-  [['--source', ''], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, undefined],
-  [['--source=  '], { CODEX_THREAD_ID: 'private-id' }, undefined],
+  [['--source', ''], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
+  [['--source=  '], { CODEX_THREAD_ID: 'private-id' }, 'codex'],
+  [['--source=workbuddy', '--source='], { QWEN_CODE: '1' }, 'qwen_code'],
   [[], { PIPPIT_CLI_SOURCE: '  ', CODEX_THREAD_ID: 'private-id' }, 'codex'],
   [[], { CODEX_THREAD_ID: 'private-id', CLAUDECODE: '1' }, undefined],
+  [[], { OPENCODE: '1', CLINE_ACTIVE: 'true' }, undefined],
   [[], { CLAUDECODE: '0', CURSOR_AGENT: ' FALSE ', GEMINI_CLI: '' }, undefined],
+  [[], { OPENCODE: '0', QWEN_CODE: ' FALSE ', CLINE_ACTIVE: '', COPILOT_CLI: 'false', COPILOT_AGENT_SESSION_ID: ' ' }, undefined],
+  [[], { AGENT: '1', OPENCODE_CONFIG: '/example/config.json', QWEN_API_KEY: 'private-id', COPILOT_HOME: '/example/copilot' }, undefined],
   [[], {}, undefined],
 ]) {
   const { payloads } = installFixture(args, undefined, false, env);

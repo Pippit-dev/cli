@@ -66,6 +66,13 @@ const readme = readRequiredFile(readmePath);
 assertFrontmatterName(generalSkill, "xyq-skill");
 assertFrontmatterName(shortDramaSkill, "xyq-short-drama-skill");
 assertFrontmatterName(marketingSkill, "xyq-marketing-skill");
+for (const [name, content] of [["xyq-skill", generalSkill], ["xyq-short-drama-skill", shortDramaSkill], ["xyq-marketing-skill", marketingSkill]]) {
+  assert(!content.includes("space current") && !content.includes("space list --json"), `${name} still documents removed space commands or flags`);
+  for (const contract of ["space list", "current: true", "space use TEAM_ID", "--team-id", "原空间", "不回退", "Canvas"]) {
+    assert(content.includes(contract), `${name} missing space guidance: ${contract}`);
+  }
+}
+
 assert.ok(generalSkill.includes("user-invocable: true"), "xyq-skill must remain user-invocable");
 assert.ok(
   shortDramaSkill.includes("user-invocable: true"),
@@ -122,8 +129,8 @@ for (const [moduleName, commands] of Object.entries(commandModules)) {
   }
 }
 const documentedCommands = [...new Set([...skillDocuments.matchAll(/\bpippit-tool-cli ([a-z][a-z-]*)\b/g)].map((match) => match[1]))].sort();
-// The npm launcher install command is documented in scripts/install.md, not a command module.
-assert.deepStrictEqual(documentedCommands, [...Object.values(commandModules).flat(), "install"].sort(), "Skill must document exactly its supported CLI commands");
+// Install is documented in scripts/install.md; shared space selection lives in SKILL.md.
+assert.deepStrictEqual(documentedCommands, [...Object.values(commandModules).flat(), "install", "space"].sort(), "Skill must document exactly its supported CLI commands");
 for (const requiredText of ["XYQ_ACCESS_KEY", "web_thread_link", "request_user_input", "ask_user_question"]) {
   assert(skillDocuments.includes(requiredText), `xyq-skill missing contract: ${requiredText}`);
 }

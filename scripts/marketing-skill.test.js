@@ -7,18 +7,28 @@ const { spawnSync } = require('child_process');
 const { BASE, PATHS, validate, checkResponse, resolveCLI, invokeCLI, createClient, resolveHostSource, main } = require('../skills/xyq-marketing-skill/scripts/marketing');
 
 async function test() {
-  for (const key of ['PIPPIT_CLI_SOURCE', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CLAUDECODE', 'CURSOR_AGENT', 'GEMINI_CLI']) delete process.env[key];
+  for (const key of ['PIPPIT_CLI_SOURCE', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'CLAUDECODE', 'CURSOR_AGENT', 'GEMINI_CLI', 'OPENCODE', 'QWEN_CODE', 'CLINE_ACTIVE', 'COPILOT_CLI', 'COPILOT_AGENT_SESSION_ID']) delete process.env[key];
   for (const [explicit, env, want] of [
     [undefined, {}, ''],
     [' workbuddy ', { CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
-    ['', { PIPPIT_CLI_SOURCE: 'codex' }, ''],
+    ['', { PIPPIT_CLI_SOURCE: 'codex' }, 'codex'],
+    ['  ', { OPENCODE: '1' }, 'opencode'],
     [undefined, { PIPPIT_CLI_SOURCE: ' doubao_office ', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
     [undefined, { CODEX_THREAD_ID: 'private-id', CODEX_SESSION_ID: 'private-session' }, 'codex'],
     [undefined, { CLAUDECODE: '1' }, 'claude_code'],
     [undefined, { CURSOR_AGENT: '1' }, 'cursor'],
     [undefined, { GEMINI_CLI: '1' }, 'gemini_cli'],
+    [undefined, { OPENCODE: '1' }, 'opencode'],
+    [undefined, { QWEN_CODE: '1' }, 'qwen_code'],
+    [undefined, { CLINE_ACTIVE: ' true ' }, 'cline'],
+    [undefined, { COPILOT_CLI: '1' }, 'github_copilot_cli'],
+    [undefined, { COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
+    [undefined, { COPILOT_CLI: '1', COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
     [undefined, { CODEX_THREAD_ID: 'private-id', CURSOR_AGENT: '1' }, ''],
+    [undefined, { OPENCODE: '1', CLINE_ACTIVE: 'true' }, ''],
     [undefined, { CLAUDECODE: '0', GEMINI_CLI: 'false', TERM_PROGRAM: 'vscode' }, ''],
+    [undefined, { OPENCODE: '0', QWEN_CODE: ' FALSE ', CLINE_ACTIVE: '', COPILOT_CLI: 'false', COPILOT_AGENT_SESSION_ID: ' ' }, ''],
+    [undefined, { AGENT: '1', OPENCODE_CONFIG: '/example/config.json', QWEN_API_KEY: 'private-id', COPILOT_HOME: '/example/copilot' }, ''],
   ]) assert.strictEqual(resolveHostSource(explicit, env), want);
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xyq-marketing-'));
@@ -42,7 +52,7 @@ async function test() {
   const client = createClient({ request, timeout: 1000, invoke: async (...args) => { calls.push(args); return args[0].includes('--help') ? '  --source string  Host identifier\n' : cliResult; } });
   const json = value => { respond = (_, res) => { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify(value)); }; };
   const ids = { thread_id: 'marketing-thread', run_id: 'marketing-run' };
-  const response = (state, extra = {}) => ({ ret: '0', data: { ...ids, run_state: state, ...extra } });
+  const response = (state, extra = {}) => ({ ret: '0', team_id: '12', space_context: 'fixed-account-origin-team', data: { ...ids, run_state: state, ...extra } });
   try {
     const body = { message: '按原文生成 🛍️', general_agent_settings: { video_model: 'seedance2.0_vision', ratio: 3, show_subtitle: false, duration_start: 15, duration_end: 15 } };
     assert.strictEqual(validate(body), body);
@@ -64,17 +74,22 @@ async function test() {
 
     const file = path.join(dir, 'request.json');
     fs.writeFileSync(file, JSON.stringify(body));
+    const previewFactory = () => ({ api: async (action, request, source, execute) => {
+      assert.strictEqual(action, 'generate');
+      assert.strictEqual(execute, false, 'preview must not submit');
+      return { dry_run: true, url: BASE + PATHS.generate, body: source && source.trim() ? { ...request, platform: source.trim() } : request, team_id: '0' };
+    } });
     const output = [];
     assert.strictEqual(await main(['generate', '--request', file], {
-      env: {}, out: line => output.push(JSON.parse(line)), clientFactory: () => { throw new Error('dry-run contacted API'); },
+      env: {}, out: line => output.push(JSON.parse(line)), clientFactory: previewFactory,
     }), 0);
-    assert.deepStrictEqual(output[0], { dry_run: true, url: BASE + PATHS.generate, body });
+    assert.deepStrictEqual(output[0], { dry_run: true, url: BASE + PATHS.generate, body, team_id: '0' });
     await assert.rejects(main(['generate', '--request', file, '--execute', '--dry-run']), /不能同时/);
     await assert.rejects(main(['query', '--thread-id', ids.thread_id]), /run-id/);
     await assert.rejects(main(['query', '--thread-id', ids.thread_id, '--run-id', ids.run_id, '--timeout', '0']), /timeout/);
     for (const source of [' codex ', '', '  ']) {
       const preview = [];
-      await main(['generate', '--request', file, '--source', source], { out: line => preview.push(JSON.parse(line)), clientFactory: () => { throw new Error('dry-run contacted API'); } });
+      await main(['generate', '--request', file, '--source', source], { out: line => preview.push(JSON.parse(line)), clientFactory: previewFactory });
       assert.deepStrictEqual(preview[0].body, source.trim() ? { ...body, platform: source.trim() } : body);
     }
     await assert.rejects(main(['balance', '--source', 'codex']), /无效/);
@@ -91,13 +106,31 @@ async function test() {
     assert.deepStrictEqual(JSON.parse(calls[calls.length - 1][1]), body);
     process.env.PIPPIT_CLI_SOURCE = ' workbuddy ';
     const inferredPreview = [];
-    await main(['generate', '--request', file], { out: line => inferredPreview.push(JSON.parse(line)) });
+    await main(['generate', '--request', file], { out: line => inferredPreview.push(JSON.parse(line)), clientFactory: previewFactory });
     assert.strictEqual(inferredPreview[0].body.platform, 'workbuddy');
     await main(['generate', '--request', file, '--execute'], { out: () => {}, clientFactory: () => client });
     assert.deepStrictEqual(calls[calls.length - 1][0].slice(-2), ['--source', 'workbuddy']);
     await main(['generate', '--request', file, '--source', '', '--execute'], { out: () => {}, clientFactory: () => client });
-    assert.deepStrictEqual(calls[calls.length - 1][0].slice(-2), ['--source', '']);
+    assert.deepStrictEqual(calls[calls.length - 1][0].slice(-2), ['--source', 'workbuddy']);
+    const blankPreview = [];
+    await main(['generate', '--request', file, '--source', '  '], { out: line => blankPreview.push(JSON.parse(line)), clientFactory: previewFactory });
+    assert.strictEqual(blankPreview[0].body.platform, 'workbuddy');
     delete process.env.PIPPIT_CLI_SOURCE;
+    for (const [key, host] of [
+      ['OPENCODE', 'opencode'], ['QWEN_CODE', 'qwen_code'], ['CLINE_ACTIVE', 'cline'],
+      ['COPILOT_CLI', 'github_copilot_cli'], ['COPILOT_AGENT_SESSION_ID', 'github_copilot_cli'],
+    ]) {
+      process.env[key] = 'private-id';
+      const preview = [];
+      await main(['generate', '--request', file, '--source', ''], { out: line => preview.push(JSON.parse(line)), clientFactory: previewFactory });
+      assert.strictEqual(preview[0].body.platform, host);
+      await main(['generate', '--request', file, '--source', '', '--execute'], { out: () => {}, clientFactory: () => client });
+      const submitted = calls[calls.length - 1];
+      assert.deepStrictEqual(submitted[0].slice(-2), ['--source', host]);
+      assert.deepStrictEqual(JSON.parse(submitted[1]), body);
+      assert(!JSON.stringify(submitted).includes('private-id'));
+      delete process.env[key];
+    }
 
     const uploadFile = path.join(dir, '商品 with spaces.png');
     fs.writeFileSync(uploadFile, Buffer.from([0, 1, 2, 255]));
@@ -141,6 +174,15 @@ async function test() {
     const bridge = await invokeCLI(['marketing', 'generate', '--request', '-'], JSON.stringify(body), 3000, invocation);
     assert.deepStrictEqual(bridge.args, ['marketing', 'generate', '--request', '-']);
     assert.deepStrictEqual(JSON.parse(bridge.input), body);
+    fs.writeFileSync(fixture, `console.error('space record failed; do not resubmit'); console.log(JSON.stringify({ret:'0',team_id:'12'}));`);
+    const originalWrite = process.stderr.write;
+    let warning = '';
+    try {
+      process.stderr.write = chunk => { warning += chunk; return true; };
+      const success = await invokeCLI(['marketing', 'generate'], undefined, 3000, invocation);
+      assert.strictEqual(success.ret, '0');
+    } finally { process.stderr.write = originalWrite; }
+    assert(warning.includes('do not resubmit'), 'successful submission must preserve record warnings');
     // Standalone Skill + old CLI: probe help, omit unsupported attribution, never replay.
     for (const support of ['new', 'old', 'help-failed']) {
       fs.writeFileSync(fixture, `
@@ -166,7 +208,7 @@ async function test() {
         assert.deepStrictEqual(legacyCalls[0][0], ['marketing', 'generate', '--help']);
         const submitted = legacyCalls[1];
         assert.strictEqual(submitted[0].includes('--source'), support === 'new');
-        if (support === 'new') assert.deepStrictEqual(submitted[0].slice(-2), ['--source', sourceArgs.length ? sourceArgs[1] : 'codex']);
+        if (support === 'new') assert.deepStrictEqual(submitted[0].slice(-2), ['--source', sourceArgs[1] || 'codex']);
         assert.deepStrictEqual(JSON.parse(submitted[1]), body);
       }
       delete process.env.CODEX_THREAD_ID;
@@ -183,17 +225,52 @@ async function test() {
     let states = [1, '2', 7, '8', 3];
     let clock = 0;
     const outputs = [];
+    const pollBindings = [];
     const runtime = {
       out: line => outputs.push(JSON.parse(line)), now: () => clock, pause: async ms => { clock += ms; },
-      clientFactory: () => ({ api: async (action, input) => {
+      clientFactory: options => { pollBindings.push(options); return { api: async (action, input) => {
         seenActions.push(action); assert.deepStrictEqual(input, ids);
         return response(states.shift(), { video_urls: ['https://cdn.example/final.mp4'] });
-      } }),
+      } }; },
     };
     assert.strictEqual(await main([...queryArgs, '--wait'], runtime), 0);
     assert.deepStrictEqual(seenActions, ['query', 'query', 'query', 'query', 'query']);
     assert.strictEqual(outputs[0].data.run_state, 3);
     assert.strictEqual(clock, 40000);
+    assert(pollBindings.some(binding => binding.teamID === '12' && binding.spaceContext === 'fixed-account-origin-team'), 'subsequent polls must pin account, origin, and team');
+    let changedPoll = 0;
+    await assert.rejects(main([...queryArgs, '--wait'], {
+      out: () => {}, pause: async () => {},
+      clientFactory: () => ({ api: async () => ++changedPoll === 1 ? response(2) : { ...response(3), space_context: 'different-account' } }),
+    }), /发生变化/);
+    let fixedCall;
+    const fixedClient = createClient({ teamID: '00012', spaceContext: 'scope-token', invoke: async args => { fixedCall = args; return response(3); } });
+    await fixedClient.api('query', ids);
+    assert.deepStrictEqual(fixedCall.slice(4, 8), ['--team-id', '12', '--space-context', 'scope-token']);
+    await assert.rejects(main([...queryArgs, '--team-id', '9223372036854775808'], { clientFactory: () => { throw new Error('must reject before API'); } }), /team-id/);
+
+    // An explicitly selected space can be polled without local account records.
+    for (const teamID of ['0', '12', '34']) {
+      const bindings = [];
+      let polls = 0;
+      const resultWithoutAccount = state => ({ ...response(state, { video_urls: ['https://cdn.example/final.mp4'] }), team_id: teamID, space_context: '' });
+      assert.strictEqual(await main([...queryArgs, '--wait', '--team-id', teamID], {
+        out: () => {}, pause: async () => {},
+        clientFactory: options => { bindings.push(options); return { api: async () => resultWithoutAccount(++polls === 1 ? 2 : 3) }; },
+      }), 0);
+      assert.strictEqual(polls, 2);
+      assert(bindings.every(binding => binding.teamID === teamID && !binding.spaceContext));
+    }
+    let unboundPolls = 0;
+    await assert.rejects(main([...queryArgs, '--wait', '--team-id', '12'], {
+      out: () => {}, pause: async () => {},
+      clientFactory: () => ({ api: async () => ({ ...response(++unboundPolls === 1 ? 2 : 3), team_id: unboundPolls === 1 ? '12' : '34', space_context: '' }) }),
+    }), /任务空间发生变化/);
+    await assert.rejects(main([...queryArgs, '--wait'], {
+      out: () => {}, pause: async () => {},
+      clientFactory: () => ({ api: async () => ({ ...response(2), space_context: '' }) }),
+    }), /原 --team-id/);
+
     for (const state of [6, '6', 9, '9']) {
       states = [state, 3];
       const beforeClock = clock;
