@@ -18,6 +18,7 @@ const (
 	UploadFilePath              = "/api/biz/v1/skill/upload_file"
 	ListThreadFilePath          = "/api/biz/v1/skill/list_thread_file"
 	EnvXYQAccessKey             = "XYQ_ACCESS_KEY"
+	EnvPPECliEnv                = "PIPPIT_CLI_PPE_ENV"
 )
 
 // Config holds runtime settings selected by the root command and passed down

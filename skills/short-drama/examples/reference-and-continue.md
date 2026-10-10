@@ -25,4 +25,4 @@ pippit-tool-cli short-drama +submit-run --message "用户的原始回答" --thre
 pippit-tool-cli short-drama +submit-run --message "继续写下一集，重点描写主角的逃亡。" --thread-id THREAD_ID
 ```
 
-新 Run 从第一页核对会话文件，下载更新或新增的重要资产，避免重复交付未变更版本。已绑定剧本的会话不能再追加第二个剧本；用户只要求查进度或取件时，只查原会话，不运行上述提交命令。
+新 Run 从第一页核对会话文件，只下载更新或新增的保留产物，避免重复交付未变更版本。已绑定剧本的会话不能再追加第二个剧本；用户只要求查进度或取件时，只查原会话，不运行上述提交命令。

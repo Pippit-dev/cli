@@ -72,8 +72,12 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 
 	body := buildSubmitRunBody(opts, modelKey, imageAssetIDs)
 
+	headers, err := common.SubmitRunHeadersFromEnv()
+	if err != nil {
+		return nil, err
+	}
 	var resp common.SubmitRunResponse
-	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
+	if err := runner.Client.SendRequestWithHeaders(ctx, common.SubmitRunPath(runner), body, headers, &resp); err != nil {
 		return nil, fmt.Errorf("提交 generate-image 请求失败: %s", catalog.Catalog.ImageDisplayMessage(err.Error()))
 	}
 	if resp.Ret != "0" {
