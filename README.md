@@ -20,6 +20,32 @@
 
 需要补充、选择或确认时，使用宿主实际暴露且当前模式允许的工具：Codex 的 `request_user_input` / `request_user_input_async`、WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。
 
+## 个人与团队空间
+
+同一个 AK 可以切换个人与所属团队，无需重新登录。首次使用默认个人；当前账号与 API origin 的选择独立保存。
+
+```bash
+pippit-tool-cli space list           # 查看个人和所属团队，并标记当前默认空间
+pippit-tool-cli space use 123456      # 保存团队为默认空间
+pippit-tool-cli space use 0           # 保存个人为默认空间
+pippit-tool-cli get-credit-balance --team-id 123456 # 仅本次使用团队
+pippit-tool-cli get-credit-balance --team-id 0      # 仅本次使用个人
+```
+
+`space` 仅提供 `list` 和 `use <TEAM_ID>`，统一输出 JSON。`list` 返回完整分页后的 `spaces` 和已保存的默认空间 `current`，列表项用 `current: true` 标记当前选择；`use` 必须指定 ID，不等待交互输入，成功后返回保存的空间。团队 ID 按 int64 的十进制字符串处理，不接受负数、小数或溢出值。切换到团队前核实账号所属团队列表，失败保留旧选择；切回个人不依赖列表接口。
+
+新任务按「单次 `--team-id` → 已保存默认 → 个人」确定空间；上传、提交、轮询固定同一空间。生成、视频处理、短剧、上传、会话查询、文件列表、积分与营销命令均适用。同源 API 请求统一携带当前团队的 `X-Team-Id`，由 API 决定是否使用；模型接口内部仍按个人身份查询；Canvas 本轮仅支持个人，当前默认为团队时显式使用 `canvas … --team-id 0`，正数团队参数会拒绝。帮助、安装和版本命令无需读取空间或登录。
+
+显式 `--team-id` 不要求 CLI 能读取本地账号标识或空间记录，认证继续使用当前 AK/adapter，由 API 校验团队权限。本地记录可用时照常保存；不可用时本次仍固定使用指定空间，宿主应保存返回的任务 ID 和 `team_id`，后续显式传入原 TeamID。`space use` 保存默认空间仍需要可识别的账号；`space list` 在账号不可识别时返回 `current: null`。
+
+提交成功会按当前账号、API origin 保存 thread/run 的空间记录，上传成功保存资产归属。之后即使切到另一团队，直接 `get-thread --thread-id ...`、`query-result`、`list-thread-file` 或 `marketing query` 仍查询原任务；带原 thread 的续写也使用原空间。显式指定与记录冲突的团队会在请求前停止，已知跨空间素材同样会拦截。跨设备或旧任务无记录时应显式传原 `--team-id`；失败不会遍历其它团队。查询成功后可补齐记录。
+
+空间记录位于系统用户配置目录的 `pippit-cli/spaces/`，按账号与 API origin 摘要隔离，每条记录原子保存，不存 AK。空间账号标识使用本地登录凭证的 UID 摘要，同 UID 换 AK 保留选择。损坏记录报错，不当作首次使用；按错误提示用原 `--team-id` 查询恢复。保存失败不把已经成功的提交改成失败：输出保留 ID 与 `team_id`，警告写 stderr，后续沿用原空间查询，不能重提。
+
+业务 stdout 保留既有结构；上传和提交增加字符串 `team_id`，`status` 增加 `default_space`，空间提示写 stderr。`marketing.js query --wait` 自动向各次 CLI 子进程传递固定空间；有账号记录时同时传递账号/API origin 约束，切换账号会停止。无本地账号记录时可显式传入 `--team-id` 轮询，各次请求仍由 API 鉴权；默认空间切换不会改变已固定的 TeamID。团队出现在列表中不等于有 WRITE 权限、有效会员或可用积分；最终由服务端授权和扣费，CLI 不自动回退。
+
+`space list/use TEAM_ID` 依赖 API 部署 `/api/biz/v1/skill/get_lite_team_list` 的 AK 适配入口，业务团队使用还依赖对应 API 团队权限实现；不直连 commerce Web 接口。宿主 Agent 的选择、任务恢复与不回退规则已写入三个 Skill 的 `Space Selection` 章节。
+
 ## 小云雀营销成片技能
 
 入口：[skills/xyq-marketing-skill/SKILL.md](skills/xyq-marketing-skill/SKILL.md)。使用 [官网](https://xyq.jianying.com/cli?tab=api) 已开放的营销 API，支持素材上传、营销视频提交、结果查询与下载、积分查询。安装器会从 `skills/` 自动安装该 Skill，也可以单独安装：
@@ -38,7 +64,7 @@ node skills/xyq-marketing-skill/scripts/marketing.js generate --request request.
 node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID --run-id RUN_ID --wait --output-dir ./results
 ```
 
-参数与错误处理见 [接口契约](skills/xyq-marketing-skill/references/api.md)，完整示例见 [商品图到营销视频](skills/xyq-marketing-skill/examples/product-video.md)。这是 Skill 脚本入口，不是新增的 Go CLI 子命令。营销 API 未公开团队切换字段，不宣称支持团队空间切换。
+参数与错误处理见 [接口契约](skills/xyq-marketing-skill/references/api.md)，完整示例见 [商品图到营销视频](skills/xyq-marketing-skill/examples/product-video.md)。Skill 脚本通过原生 `marketing` 命令执行；两者均支持 `--team-id`，空间经 HTTP Header 传递，营销请求 JSON 无需增加字段。
 
 维护后运行 `node scripts/marketing-skill.test.js` 和 `node scripts/skills.test.js`，验证请求、上传、任务状态、下载与 Skill 引用。测试使用本地模拟服务，不会创建真实付费任务。
 
@@ -95,7 +121,7 @@ pippit-tool-cli list-thread-file --thread-id thread_123 --page-num 1 --page-size
 pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --url URL --updated-at 1779716734
 ```
 
-`get-credit-balance`: 使用当前登录凭证查询个人有效积分余额，并输出 `{"total_remain_amount":"123"}`；零余额会显式输出为 `"0"`。加 `--with-log-id` 可在输出中同时保留本次请求的 `log_id`。
+`get-credit-balance`: 使用当前登录凭证查询所选个人或团队空间的有效积分余额，并输出 `{"total_remain_amount":"123"}`；零余额会显式输出为 `"0"`。加 `--with-log-id` 可在输出中同时保留本次请求的 `log_id`。
 
 `+submit-run`: 输出 `thread_id`、`run_id` 和 `web_thread_link`；其中 `--message` 为必填参数。
 `get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
@@ -254,7 +280,7 @@ pippit-tool-cli model describe MiniMax-H3
 pippit-tool-cli model list --refresh
 ```
 
-使用当前个人登录凭证查询服务端 Skill 模型接口；图片 scene 为 `web_image_agent`，视频为 `web_turbo_video_generator`，不传 TeamID。成功结果按账号、环境和场景隔离缓存 5 分钟，`--refresh` 强制刷新。失败时提示重试，不回退静态列表或过期缓存。`describe` 提供可直接传给生成命令的参数：图片比例保留数字枚举并附比例说明，视频比例转换为字符串，同时整理分辨率、图片推理强度、视频时长和素材限制；不展示内部 `config_key`，未知比例枚举跳过。图片列表和详情仅用 `name` 标识模型，不展示底层模型枚举；搜索、详情查询和 `generate-image --model` 均使用名称，包含空格时加引号。图片详情保留原始 `parameter_config`，包括条件、必选标记、选项说明和参数组合约束。生成仍由服务端校验；服务端尚未开放图片场景或提交参数时会返回错误，不回退静态模型清单。详见 [模型发现](skills/xyq-nest-skill/commands/model.md)。
+使用当前登录凭证查询服务端 Skill 模型接口；图片 scene 为 `web_image_agent`，视频为 `web_turbo_video_generator`。团队空间的请求携带 `X-Team-Id`，API 内部仍按个人身份查询模型。成功结果按账号、环境和场景隔离缓存 5 分钟，`--refresh` 强制刷新。失败时提示重试，不回退静态列表或过期缓存。`describe` 提供可直接传给生成命令的参数：图片比例保留数字枚举并附比例说明，视频比例转换为字符串，同时整理分辨率、图片推理强度、视频时长和素材限制；不展示内部 `config_key`，未知比例枚举跳过。图片列表和详情仅用 `name` 标识模型，不展示底层模型枚举；搜索、详情查询和 `generate-image --model` 均使用名称，包含空格时加引号。图片详情保留原始 `parameter_config`，包括条件、必选标记、选项说明和参数组合约束。生成仍由服务端校验；服务端尚未开放图片场景或提交参数时会返回错误，不回退静态模型清单。详见 [模型发现](skills/xyq-nest-skill/commands/model.md)。
 
 ## 生视频 CLI
 
@@ -358,6 +384,7 @@ pippit-tool-cli query-result \
 - 同源判断由公共 HTTP client 按 scheme、hostname、有效端口执行；只有同源 API 请求才调用 `PrepareAPIRequest`。非同源请求清除默认认证和 adapter 管理的敏感字段；API 跨域重定向会被拒绝。
 - `AuthProvided` 只表示 adapter 已附加认证材料，不代表服务端验证通过；失败立即返回，不回退到本机认证。`UseDefaultAuth` 才调用默认认证器，未知决策会被拒绝。
 - CLI 策略与 Cobra 解耦。`DefaultAllowRootCommands` 明确指定是否默认放行一级业务命令；为 false 时只开放 `AllowedRootCommands` 白名单，nil 和空列表都表示没有白名单命令。默认 adapter 将该开关设为 true，本机认证和自更新仍受各自开关控制；标准帮助和版本行为仍由 Cobra 提供。可通过 `auth.WithCLIOptions` 将本机认证能力配置应用于独立 Manager。
+- `space` 按普通业务命令白名单开放，不随 `LocalCredentialsEnabled` 隐藏。`space list` 复用请求认证；没有可识别账号时仍可查询列表，JSON 的 `current` 为 `null`。`space use` 需要稳定账号标识，缺失时明确报错；不读取或写入匿名空间配置。显式 `--team-id` 的业务请求仍可使用 adapter 认证。关闭本地凭据后，未用于实际认证的环境 AK 不作为宿主账号标识。
 - 业务 client 与更新遥测 client 都在构造时包装 Transport；遥测 client 属于命令实例，避免使用不同 adapter 的实例共享可变客户端。
 
 例如，自定义 adapter 可以复用默认实现，仅调整命令能力，并在自己的程序入口注入：
@@ -398,7 +425,7 @@ npx @pippit-dev/cli install --source HOST
 pippit-tool-cli update --source HOST
 ```
 
-直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。安装和更新均按显式 `--source`（命令支持时）、`PIPPIT_CLI_SOURCE`、已核实宿主运行标记的顺序识别来源；首尾空白去除，显式空值清空来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
+直接使用 `npm install -g @pippit-dev/cli` 时，可由宿主在该次命令的环境中设置 `PIPPIT_CLI_SOURCE`。安装和更新均按非空显式 `--source`（命令支持时）、`PIPPIT_CLI_SOURCE`、已核实宿主运行标记的顺序识别来源；去掉首尾空白后，未传或空值继续尝试下一来源。该值不持久化；生成命令运行环境中若也存在此变量，同样会读取它作为宿主来源，具体兜底规则见下文。
 
 `report_telemetry` 新增可选请求字段 `host_platform` 上报宿主标识；原有 `source` 保留 `npm_install`、`npx_install`、`cli_update`，`event` 区分 install/update，`platform` 仍表示操作系统。服务端通过独立的 `host_platform` 指标标签统计宿主来源。帮助不安装也不上报，`PIPPIT_CLI_DISABLE_TELEMETRY=1` 仍可关闭上报。内部 `install-cli.js` 仅安装二进制，沿用不安装 Skill、不上报的原有行为。
 
@@ -406,15 +433,17 @@ pippit-tool-cli update --source HOST
 
 生成提交命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
 
-由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源或显式空值时不发送该字段。省略 `--source` 时，CLI 按以下顺序尽力补齐来源：
+由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源时不发送该字段。省略 `--source`、显式空值或纯空白时，CLI 按以下顺序尽力补齐来源：
 
 1. 宿主显式设置的 `PIPPIT_CLI_SOURCE`。
-2. 运行标记：`CODEX_THREAD_ID` / `CODEX_SESSION_ID` → `codex`，`CLAUDECODE` → `claude_code`，`CURSOR_AGENT` → `cursor`，`GEMINI_CLI` → `gemini_cli`。
+2. 运行标记：`CODEX_THREAD_ID` / `CODEX_SESSION_ID` → `codex`，`CLAUDECODE` → `claude_code`，`CURSOR_AGENT` → `cursor`，`GEMINI_CLI` → `gemini_cli`，`OPENCODE` → `opencode`，`QWEN_CODE` → `qwen_code`，`CLINE_ACTIVE` → `cline`，`COPILOT_CLI` / `COPILOT_AGENT_SESSION_ID` → `github_copilot_cli`。
 3. 标记缺失、为 0/false 或不同宿主标记冲突时不猜测，省略来源。
 
-显式 `--source` 始终优先，显式空值可关闭本次归因。仅消费环境标记是否存在，不上传会话标识，不根据 API Key、已安装软件、普通终端名或用户 prompt 猜来源，也不持久化。查询、上传、下载、Canvas 不附加来源。营销脚本的预览与提交采用相同规则；原生 update 也复用该解析，仍写入 `host_platform`，保留旧 source。豆包办公、WorkBuddy 等尚无已核实运行标记的宿主，应优先主动传参或设置上述环境变量。
+非空显式 `--source` 始终优先，空值继续尝试环境识别。仅消费环境标记是否存在，不上传会话标识，不根据 API Key、已安装软件、普通终端名或用户 prompt 猜来源，也不持久化。查询、上传、下载、Canvas 不附加来源。营销脚本的预览与提交采用相同规则；原生 update 也复用该解析，仍写入 `host_platform`，保留旧 source。豆包办公、WorkBuddy 等尚无已核实运行标记的宿主，应优先主动传参或设置上述环境变量。
 
 Cursor 标记依据：[官方终端文档](https://docs.cursor.com/en/agent/terminal)；Gemini 标记依据：[官方命令文档](https://geminicli.com/docs/reference/commands/)。Codex 标记已在本机运行环境核实；Claude Code 标记已在本机安装产物核实。
+
+新增标记依据：[OpenCode 启动入口](https://github.com/anomalyco/opencode/blob/388406238bd5ca15564a762840a2362c3a45bd9c/packages/opencode/src/index.ts#L75-L77)、[Qwen Code shell 环境](https://github.com/QwenLM/qwen-code/blob/e6e2c9efd1dd48bf93143510f7ed1c2413bcea6b/packages/core/src/services/shellExecutionService.ts#L988-L994)、[Cline VS Code 终端环境](https://github.com/cline/cline/blob/e6ad24c43aa2d7551cecdbb97a15269566d3650f/apps/vscode/src/hosts/vscode/terminal/VscodeTerminalRegistry.ts#L28-L34)、[GitHub Copilot CLI 变更记录](https://github.com/github/copilot-cli/blob/main/changelog.md)（0.0.421 增加 `COPILOT_CLI`，1.0.29 增加 `COPILOT_AGENT_SESSION_ID`）。只在子进程实际继承标记时识别，不保证所有宿主版本或启动方式都提供这些标记。
 
 ```bash
 pippit-tool-cli generate-video --prompt "小猫在花园散步" --model Seedance_2.0_mini --source workbuddy
