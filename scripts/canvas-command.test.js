@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 
 const {
+  canvasSpaceArgs,
   createFilePersistence,
   ensureNodeRuntimeGlobals,
   isCanvasCommand,
@@ -390,7 +391,11 @@ else if (args[1] === "apply") {
     const calls = fs.readFileSync(logPath, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepStrictEqual(calls.slice(0, 2).map((call) => call.args), [["status"], ["login"]]);
     const apply = calls.find((call) => call.args[1] === "apply");
-    assert.deepStrictEqual(apply.args, ["canvas", "apply", "--transport-result", "--file", "-"]);
+    assert.deepStrictEqual(apply.args, ["canvas", "apply", "--transport-result", "--file", "-", "--team-id", "0"]);
+    assert.deepStrictEqual(canvasSpaceArgs(["--team-id=0", "canvas", "command", "list"]), { args: ["canvas", "command", "list"], teamID: "0" });
+    assert(isCanvasCommand(["--team-id", "0", "canvas", "command", "list"]));
+    assert.throws(() => canvasSpaceArgs(["--team-id", "-1"]), /team-id/);
+    await assert.rejects(runCanvasCommand(["canvas", "command", "run", "role.update", "--team-id", "12", "--canvas-id", "canvas_1", "--input", "{}"], { sdk }), /个人空间/);
     assert.strictEqual(JSON.parse(apply.input).transactions.length, 1);
 
     const checkpointOut = outputBuffer();

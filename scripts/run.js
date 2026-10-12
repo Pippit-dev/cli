@@ -3,7 +3,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { isCanvasCommand, runCanvasCommand } = require('./canvas-command');
+const { isCanvasCommand, runCanvasCommand, canvasSpaceArgs } = require('./canvas-command');
 const { maybeWarnNewVersion } = require('./version-check');
 
 const ext = process.platform === 'win32' ? '.exe' : '';
@@ -43,7 +43,7 @@ function main() {
   }
 
   const helpRequested = args.includes('--help') || args.includes('-h') || args[0] === 'help';
-  if (isCanvasCommand(args) && (args[2] !== 'run' || helpRequested)) {
+  if (isCanvasCommand(args) && (canvasSpaceArgs(args).args[2] !== 'run' || helpRequested)) {
     return runCanvas();
   }
 
