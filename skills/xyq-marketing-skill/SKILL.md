@@ -22,6 +22,25 @@ metadata:
 
 先按 [接口契约](references/api.md) 准备请求；需要完整执行示例时读 [商品图到营销视频](examples/product-video.md)。
 
+## Space Selection
+
+非画布业务支持个人和团队空间，复用同一个 CLI 登录凭据。执行前先检查 `pippit-tool-cli space --help` 和业务命令的 `--team-id`；旧版不支持时先更新 CLI，不能忽略团队选择后继续收费操作。
+
+- `space list` 统一输出 JSON，列出个人和当前账号的团队；顶层 `current` 表示已保存的默认空间，列表项 `current: true` 标记当前选择，无法识别本地账号时顶层为 `null`。`team_id` 保留字符串，`0` 为个人。列表中的团队不代表有生成权限、有效订阅或可用积分，最终由服务端判断。
+- 用户明确要求长期切换时，运行 `space use TEAM_ID`；`space use 0` 保存个人空间。`use` 必须指定 ID，成功后返回保存的空间，不等待交互输入。只为本次任务选择空间时使用 `--team-id TEAM_ID`，不修改用户默认值；不能按模糊名称或剩余积分自动选团队。
+- 新创作未指定空间时，读取并沿用保存的默认空间，首次使用为个人。向用户说明本次空间与积分账户，不重复索要已有授权。一次工作流开始后保存 TeamID，分开的上传、提交、查询和余额命令均显式传相同 `--team-id`，不能中途重新读取默认值。
+- 已有任务优先沿用提交结果中的 `team_id` 或 CLI 的任务记录；切换默认团队后可以直接按原 thread/run 查询，CLI 自动恢复原空间。不要把当前默认 TeamID 强加给旧任务。跨设备或旧任务没有记录时，使用已知原空间；未知且用户也未指定时先核实，不能轮流试团队。
+- 保存上传结果的资产 ID 和 `team_id`，提交结果的 thread/run ID 和 `team_id`。跨空间资产或任务冲突时停止；无权限、会员失效或余额不足不回退个人或其它团队。提交成功但本地记录写入失败时，保留返回 ID，用原 `--team-id` 查询，不重新生成。
+- CLI 向同源 API 统一透传当前团队的 TeamID；模型接口内部继续按个人身份查询；模型列表成功不代表团队有生成权限。Canvas 本轮仅支持个人空间；默认团队时须明确个人意图后用 `--team-id 0`，不能用团队参数执行画布操作。
+
+营销脚本的 `upload / generate / query / balance` 都支持 `--team-id TEAM_ID`。预览也读取同一空间；`query --wait` 固定 TeamID，本地账号可识别时同时固定账号和 API origin，切换账号则停止。无本地账号记录时，显式传入原 `--team-id` 仍可轮询，由 API 按当前凭据鉴权；不能读取默认值代替原任务空间。不要手工构造内部 `space_context`；使用原任务查询命令恢复。不同脚本调用之间仍需由宿主保留任务原 TeamID。
+
+```bash
+node scripts/marketing.js upload --file /path/to/product.png --team-id TEAM_ID
+node scripts/marketing.js generate --request /path/to/request.json --execute --team-id TEAM_ID
+node scripts/marketing.js query --thread-id THREAD_ID --run-id RUN_ID --wait --team-id TEAM_ID
+```
+
 ## Workflow
 
 1. 确认用户要生成的营销内容与商品素材。保留用户原始指令，不主动扩写或加入未经提供的卖点。仅查询、接入咨询或估算不提交生成；明确要求生成即可执行，不重复询问已给出的授权。必要的补充信息用宿主当前允许的 `request_user_input_async`、`request_user_input` 或 `ask_user_question` 询问，没有工具时用普通聊天。
@@ -42,9 +61,9 @@ node scripts/marketing.js balance
 
 ## Source Attribution
 
-仅营销生成命令（`marketing generate` 或 `marketing.js generate`）静默附加可选 `--source`，由 CLI 映射为请求体 `platform`，不写入创作文本或请求文件。豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它宿主使用可信环境中的真实稳定标识，未知则省略，不询问用户。不附带版本、会话 ID、用户信息或 prompt。首尾空白去除，未传或空值省略；首次生成和同一会话继续提交均适用。上传、查询、下载、余额不附加。旧 CLI 不支持时省略，不为来源统计重提任务。
+仅营销生成命令（`marketing generate` 或 `marketing.js generate`）静默附加可选 `--source`，由 CLI 映射为请求体 `platform`，不写入创作文本或请求文件。豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它宿主使用可信环境中的真实稳定标识，未知则省略，不询问用户。不附带版本、会话 ID、用户信息或 prompt。首尾空白去除，未传或空值时先读取 `PIPPIT_CLI_SOURCE`、再尝试已核实的宿主运行标记，仍无法识别时省略；首次生成和同一会话继续提交均适用。上传、查询、下载、余额不附加。旧 CLI 不支持时省略，不为来源统计重提任务。
 
-优先从宿主的系统身份、当前工具运行环境和明确的平台元数据确认真实宿主，并在每次提交主动填写 `--source`；不要仅因字段可选就跳过。缺少显式值时，CLI 依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记。只上报稳定的平台名，不上报标记中的会话 ID；来源冲突或仍无法确认则省略，不询问用户、不扫描登录凭据或安装目录。显式 `--source ""` 禁用该次自动归因。
+优先从宿主的系统身份、当前工具运行环境和明确的平台元数据确认真实宿主，并在每次提交主动填写 `--source`；不要仅因字段可选就跳过。未传 `--source`、显式空值或纯空白时，CLI 依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记。只上报稳定的平台名，不上报标记中的会话 ID；来源冲突或仍无法确认则省略，不询问用户、不扫描登录凭据或安装目录。
 
 ## Completion and Recovery
 
@@ -58,4 +77,4 @@ node scripts/marketing.js balance
 
 ## Scope
 
-本 Skill 仅使用正式公开营销接口；不宣称支持团队空间切换。鉴权范围沿用当前 CLI 登录身份和服务端授权，公开请求没有 `TeamID` 字段，不自行加入团队字段或跨账号复用资产/任务 ID。沉浸式短片、火山引擎服务不在此脚本范围。
+本 Skill 使用 CLI 登录和服务端空间授权，通过 `--team-id` 选择个人或团队，CLI 将其写入 HTTP Header；不向营销请求 JSON 添加 `TeamID` / `team_id`，不跨账号复用资产或任务。沉浸式短片、火山引擎服务不在此脚本范围。

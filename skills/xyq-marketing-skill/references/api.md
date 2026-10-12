@@ -22,7 +22,7 @@ Base URL：`https://xyq.jianying.com`。全部使用 POST，`Accept: application
 | `general_agent_settings` | object | 必传，且必须包含非空 `video_model` |
 | `thread_id` | string | 可选，只在继续已有营销会话时使用 |
 
-来源统计由生成命令的可选 `--source HOST` 提供，CLI 在提交及预览的请求体中映射为 `platform` 字符串；不传或去除首尾空白后为空时省略。请求文件仍只填写上表中的创作字段，不直接添加 `source` 或 `platform`。
+来源统计由生成命令的可选 `--source HOST` 提供，CLI 在提交及预览的请求体中映射为 `platform` 字符串；不传或去除首尾空白后为空时，依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记，仍未知则省略。请求文件仍只填写上表中的创作字段，不直接添加 `source` 或 `platform`。
 
 设置块必须传对象，且 `video_model` 必填。2026-09-22 实际调用及服务端 `validateMarketingGeneralAgentSettings` 均确认：`{}` 或仅有比例/时长会返回 `ret=2`、缺少 `video_model`。不再按文档中的默认策略说明发送空对象；预览和提交都先本地校验。用户未指定模型时先询问，已有明确选择授权时按授权选择，不隐式降级。
 
@@ -63,3 +63,9 @@ HTTP 成功还需检查 `ret` 为 `"0"` 或 `0`；失败保留 `errmsg` 和 `log
 查询接口透传 Run 状态；仅在 3 时提取媒体，4/5 时提取失败原因，其它状态返回空媒体数组。因此 9 的空 `video_urls` 不能解释为生成失败。状态 3 也不保证有视频；以真实媒体列表判断交付。未知数值保留原始响应并停止，不自动重提或无期限轮询。
 
 一条 thread 可以有多个 Run。问卷、达人图或工具执行确认会产生后续 Run，原 `run_id` 不会自动变成最新运行。确认后从网页或可用的 `pippit-tool-cli get-thread --thread-id THREAD_ID` 读取新的真实 run_id，再传给营销查询命令；不要猜 ID 或为查询创建新 Run。
+
+## Space Context
+
+原生 CLI 和 Skill 脚本均支持 `--team-id TEAM_ID`；`0` 为个人，正整数为团队。空间通过 API origin 上的 `X-Team-Id` Header 传递，保持本文件中的 JSON 请求字段不变。非 Canvas 业务默认使用 `space use` 保存的空间；旧任务按本地记录恢复原空间。团队列表为 `space list`，由 CLI 使用同一 AK 调用 `/api/biz/v1/skill/get_lite_team_list`，不直连 commerce Web 接口。
+
+营销响应增加 `team_id` 和供脚本固定轮询使用的 `space_context`；无可用本地账号记录时 `space_context` 为空，脚本通过显式 `--team-id` 固定轮询空间。二者只是本地路由信息，不能替代服务端鉴权。预览增加 `team_id`，不发送生成请求。权限或积分错误不自动切空间重试。
