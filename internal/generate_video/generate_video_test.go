@@ -68,7 +68,7 @@ func TestRunCarriesVideoROIQuery(t *testing.T) {
 				}
 			}
 			body := client.body.(map[string]any)
-			if body["agent_name"] != common.AgentNameVideoPart || body["message"] != "cat walking" || len(body) != 3 {
+			if body["agent_name"] != common.AgentNameVideoPart || body["message"] != "cat walking" || len(body) != 4 || body["call_source"] != "pippit_cli" {
 				t.Fatalf("ROI must not change the request body contract: %#v", body)
 			}
 		})
@@ -139,5 +139,21 @@ func TestConfiguredVideoModelParametersPassThrough(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestVideoCallSourcePreservesHostPlatform(t *testing.T) {
+	for _, host := range []string{"", "codex", "workbuddy"} {
+		body := buildSubmitRunBody(&Options{Source: host, Prompt: "a cat"}, nil, nil, nil)
+		if body["call_source"] != "pippit_cli" {
+			t.Fatalf("call_source = %v", body["call_source"])
+		}
+		if host == "" {
+			if _, ok := body["platform"]; ok {
+				t.Fatal("missing host must remain omitted")
+			}
+		} else if body["platform"] != host {
+			t.Fatalf("platform = %v, want %q", body["platform"], host)
+		}
 	}
 }
