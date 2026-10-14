@@ -620,10 +620,11 @@ function definitionToJSON(name, definition) {
   };
 }
 
-function createDefinitions(sdk, runtime, allocateNodeId) {
+function createDefinitions(sdk, runtime, allocateNodeId, queryMediaAsset) {
   const definitions = sdk.createXyqCanvasOpencodeToolDefinitions({
     allocateAssetId: allocateNodeId,
     allocateNodeId,
+    queryMediaAsset,
     runtime,
     schema: createSchemaFactory(),
   });
@@ -887,7 +888,8 @@ async function runCanvasCommand(args, options = {}) {
     const definitions = createDefinitions(
       sdk,
       { checkpoints: checkpointStore, permissions: CANVAS_COMMAND_PERMISSIONS, store: standalone.store },
-      allocateAssetId
+      allocateAssetId,
+      (pippitAssetId) => assetRuntime.client.assets.getAsset({ pippitAssetId })
     );
     if (typeof standalone.prepareCommand === "function") {
       if (route.kind === "registered") {

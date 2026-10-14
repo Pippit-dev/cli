@@ -100,6 +100,9 @@ func Apply(ctx context.Context, opts ApplyOptions, runner *common.Runner) (*Appl
 	if err := validateApplyRequest(&request); err != nil {
 		return nil, err
 	}
+	if err := validateApplyMediaIdentities(ctx, request, runner); err != nil {
+		return nil, err
+	}
 
 	var envelope responseEnvelope
 	if err := client.SendRequest(ctx, pathWithProjectID(ApplyPath, projectID), request, &envelope); err != nil {
