@@ -79,6 +79,45 @@ Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原
 - 文档使用 Skill 内相对链接，打包时保留结构。规范副本位于 `skills/xyq-nest-skill/`，项目发现入口 `.agents/skills/xyq-skill` 指向该目录。
 - 修改后运行 `node scripts/skills.test.js` 与 `node scripts/install-cli.test.js`，检查引用完整、保留命令与安装检查一致及缺命令升级/缓存复用；Agent 行为用例见 [测试场景](skills/xyq-nest-skill/tests/agent_test_cases.md)。这些检查不代表真实生成已验证。
 
+## CLI 更新渠道与发布
+
+普通用户使用稳定渠道（npm `latest`）；试用用户主动选择 `canary`：
+
+```bash
+pippit-tool-cli update                  # 默认安装 latest
+pippit-tool-cli update --channel canary # 本次安装 canary，并更新配套 Skills
+pippit-tool-cli update --channel stable # 本次安装 latest，并更新配套 Skills
+```
+
+`--channel` 只影响本次更新，不保存渠道偏好。下一次不带参数的 `update` 仍走 `latest`，因此可能从试用版退回当前稳定版。显式 `--channel` 优先于 `PIPPIT_CLI_INSTALL_PACKAGE`；不传渠道时保留该环境变量指定包版本的既有行为。新版本提示仍检查稳定渠道。
+
+首次安装试用版，或旧 CLI 尚不支持 `--channel` 时，使用现有安装入口：
+
+```bash
+npx --prefer-online @pippit-dev/cli@canary install
+pippit-tool-cli --version
+```
+
+该命令会替换全局 CLI 和配套 Skills。`canary` 是公开 npm 分发渠道，适合主动参与的小范围试用，不限制谁可以下载。Skill 的 `ensure-cli.js` 在需要下载时仍使用 `latest`；希望试用的用户应先安装 canary。
+
+维护者发布步骤：
+
+1. 保持 `package.json`、`package-lock.json` 与 `vX.Y.Z` tag 的版本一致；使用普通版本号，不使用 `-beta` / `-rc` 后缀（现有安装器按普通版本号定位二进制）。
+2. 推送 tag 后，`Release` workflow 构建 GitHub Release 产物并执行 `npm publish --tag canary`，保留原 `latest`。GitHub Release 产物仍公开可见，本流程控制的是 npm 分发渠道。
+3. 试用用户安装 canary，核对版本并验证实际业务流程。
+4. 验证通过后，在 GitHub Actions 的 `Promote canary to latest` workflow 中点击 `Run workflow`，填写已验证的 `X.Y.Z`。该 workflow 须先合入默认分支才会显示手动入口，并复用仓库已有的 `NPM_TOKEN`。
+5. 提升流程要求输入版本与当前 `canary` 一致，只移动 npm `latest` 指针并回读确认，不重新构建或发布 npm 包。如果 canary 已更新，需要验证新的候选版本后再提升。
+
+维护者回滚步骤：
+
+1. 在 [GitHub Actions](https://github.com/Pippit-dev/cli/actions) 选择 `Rollback CLI`，点击 `Run workflow`。该 workflow 须先合入默认分支；复用 `NPM_TOKEN` 修改 npm 标签，使用只读 `GITHUB_TOKEN` 检查 Release。
+2. 填写 `channel`（`stable` 对应 `latest`，或 `canary`）、`expected_version`（预期渠道当前版本）和 `target_version`（已验证的目标旧版本）。两个版本均须为普通 `X.Y.Z`，目标必须更低；例如 `stable / 1.0.39 / 1.0.38`，仅在确认 `1.0.38` 可用后操作。
+3. 流水线核对渠道当前值、目标 npm 版本及 GitHub Release 元数据：版本 tag 匹配、已公开发布、六种平台/架构的压缩包及 `checksums.txt` 均已上传且非空。该检查不运行旧版程序，不替代业务验证；回滚依赖这些历史产物继续保留。
+4. 写入前再次核对当前渠道，随后只移动所选 npm 标签并回读确认。不会重新构建、发包、修改 Git tag 或改变另一渠道。Actions 日志和运行摘要会记录目标及确认结果；写入或回读失败时，先用 `npm view @pippit-dev/cli dist-tags --prefer-online` 核实实际状态，再决定是否重试。
+5. 已安装问题版本的用户需要主动执行 `pippit-tool-cli update --channel stable`（回滚 canary 时使用 `--channel canary`）并核对 `pippit-tool-cli --version`。旧 CLI 可执行默认 `update` 获取 `latest`，但须确保未设置 `PIPPIT_CLI_INSTALL_PACKAGE` 覆盖变量。已运行的进程及 Skill 独立缓存中的 CLI 不会被渠道回滚自动替换。
+
+发布、提升和回滚共用并发组，避免这些 workflow 同时修改渠道；不取消正在运行的任务。GitHub 默认只保留一个等待中的同组任务，连续触发时请检查是否有等待任务被替换。并发组不能锁住维护者在终端执行的 npm 写入，操作期间应避免其它渠道修改。此阶段不提供百分比放量或自动回滚，普通客户端也不会因指针变化而自动安装；显式指定问题版本的安装仍然可用。
+
 ## 短剧工作流技能
 
 包发布后可以通过 npm 安装。安装器会按当前系统下载匹配的预构建二进制文件，支持 macOS、Linux 和 Windows：

@@ -1,0 +1,49 @@
+name: Promote canary to latest
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "已验证的 canary 版本（X.Y.Z，不带 v）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-channels
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Promote verified canary
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Version must be X.Y.Z without a v prefix or prerelease suffix." >&2
+            exit 1
+          fi
+          candidate="$(npm view @pippit-dev/cli dist-tags.canary --prefer-online)"
+          if [[ "$candidate" != "$RELEASE_VERSION" ]]; then
+            echo "Requested version $RELEASE_VERSION does not match current canary $candidate; verify the current candidate before promotion." >&2
+            exit 1
+          fi
+          npm dist-tag add "@pippit-dev/cli@$RELEASE_VERSION" latest
+          actual="$(npm view @pippit-dev/cli dist-tags.latest --prefer-online)"
+          if [[ "$actual" != "$RELEASE_VERSION" ]]; then
+            echo "Latest read-back returned $actual; expected $RELEASE_VERSION. Inspect npm dist-tags before retrying." >&2
+            exit 1
+          fi
+          echo "Promoted @pippit-dev/cli@$RELEASE_VERSION to latest."
