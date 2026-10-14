@@ -47,6 +47,9 @@ jobs:
       - name: Test assembled runtime capabilities and output budgets
         run: node scripts/canvas-command-runtime.test.js
 
+      - name: Test material and cloud media identity boundaries
+        run: node scripts/canvas-media-identity.test.js
+
       - name: Test Canvas, Scene3D and Timeline operations
         run: npm run test:canvas-operations
 

@@ -38,6 +38,7 @@ type UploadOptions struct {
 // Canvas patches; callers should persist PippitAssetID instead.
 type AssetLocator struct {
 	PippitAssetID string `json:"pippit_asset_id"`
+	MediaAssetID  string `json:"media_asset_id,omitempty"`
 	SourceID      string `json:"source_id,omitempty"`
 	DownloadURL   string `json:"download_url,omitempty"`
 	InternalURL   string `json:"internal_url,omitempty"`
@@ -46,8 +47,11 @@ type AssetLocator struct {
 }
 
 type UploadResult struct {
-	State         string          `json:"state"`
+	State string `json:"state"`
+	// Deprecated compatibility field: upload workspace/source ID, never cloud media ID.
 	AssetID       string          `json:"asset_id,omitempty"`
+	SourceID      string          `json:"source_id,omitempty"`
+	MediaAssetID  string          `json:"media_asset_id,omitempty"`
 	PippitAssetID string          `json:"pippit_asset_id"`
 	Locator       AssetLocator    `json:"locator"`
 	Asset         json.RawMessage `json:"asset,omitempty"`
@@ -105,6 +109,7 @@ func Upload(ctx context.Context, opts UploadOptions, runner *common.Runner) (*Up
 	result := &UploadResult{
 		State:         StateProcessing,
 		AssetID:       assetID,
+		SourceID:      assetID,
 		PippitAssetID: pippitAssetID,
 		Locator:       AssetLocator{PippitAssetID: pippitAssetID},
 		LogID:         strings.TrimSpace(envelope.LogID),
@@ -121,8 +126,13 @@ func Upload(ctx context.Context, opts UploadOptions, runner *common.Runner) (*Up
 	}
 	result.State = StateReady
 	result.Locator = locatorFromAsset(asset, pippitAssetID)
+	result.MediaAssetID = result.Locator.MediaAssetID
 	result.Asset = asset
 	result.QueryLogID = queryLogID
+	if uploadedMediaKind(asset) != "" && result.MediaAssetID == "" {
+		result.State = StateProcessing
+		result.Warning = "material is queryable but its cloud media ID is not ready; use a semantic media command or query again, do not substitute asset_id/source_id"
+	}
 	return result, nil
 }
 
@@ -200,11 +210,30 @@ func uploadWaitError(err error, assetID string, timeout time.Duration) error {
 	return fmt.Errorf("wait for uploaded canvas asset %q canceled: %w", assetID, err)
 }
 
+func uploadedMediaKind(raw json.RawMessage) string {
+	var record map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &record)
+	var nativeType int
+	_ = json.Unmarshal(record["AssetType"], &nativeType)
+	for kind, value := range canvasMediaAssetTypes {
+		if nativeType == value {
+			return kind
+		}
+	}
+	return ""
+}
+
 func locatorFromAsset(raw json.RawMessage, pippitAssetID string) AssetLocator {
 	var value any
 	_ = json.Unmarshal(raw, &value)
+	kind := uploadedMediaKind(raw)
+	mediaID := ""
+	if kind != "" {
+		mediaID, _ = cloudMediaID(raw, kind)
+	}
 	return AssetLocator{
 		PippitAssetID: pippitAssetID,
+		MediaAssetID:  mediaID,
 		SourceID:      findFirstString(value, "SourceID", "source_id", "sourceId"),
 		DownloadURL:   findFirstString(value, "DownloadUrl", "DownloadURL", "download_url", "downloadUrl"),
 		InternalURL:   findFirstString(value, "InternalUrl", "InternalURL", "internal_url", "internalUrl"),
