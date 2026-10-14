@@ -74,7 +74,7 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	root := &cobra.Command{
 		Use:   "pippit-tool-cli",
 		Short: "Pippit CLI",
-		Long: "Pippit CLI generates and processes videos and images, queries credit balances, submits creative conversations and short-drama workflows, downloads generated assets, and updates the installed CLI package.\n\n" +
+		Long: "Pippit CLI generates and processes videos and images, queries credit balances, submits short-drama workflows, downloads generated assets, and updates the installed CLI package.\n\n" +
 			canvascmd.CommandDiscoveryHelp + "\n\nInstallation help (npm launcher): pippit-tool-cli install --help",
 		Version:       version.Current(),
 		SilenceUsage:  true,
@@ -104,7 +104,8 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	root.AddCommand(newModelCommand(stdout, stderr, runner))
 	root.AddCommand(newMarketingCommand(stdout, stderr, runner, policy))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
-	root.AddCommand(newSubmitRunCommand(stdout, stderr, runner))
+	// 暂停对外提供通用综合 Agent 提交入口，保留实现供后续恢复。
+	// root.AddCommand(newSubmitRunCommand(stdout, stderr, runner))
 	root.AddCommand(newUploadFileCommand(stdout, stderr, runner))
 	root.AddCommand(newListThreadFileCommand(stdout, stderr, runner))
 	root.AddCommand(generate_image.NewCommand(stdout, stderr, runner))

@@ -404,7 +404,7 @@ pippit-tool-cli update --source HOST
 
 ### 宿主来源统计
 
-生成提交命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
+生成提交命令均支持可选 `--source`：`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
 
 由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源或显式空值时不发送该字段。省略 `--source` 时，CLI 按以下顺序尽力补齐来源：
 
