@@ -24,6 +24,8 @@ pippit-tool-cli canvas upload --path "/path/to/reference.png"
 
 上传顶层旧字段 `asset_id` 是保留兼容的 workspace/source ID，不能当节点媒体 ID。`media_asset_id` 来自查询结果对应的 `Image/Video/Audio.asset_id`；缺失时不能用 `source_id`、`pippit_asset_id` 或画布节点 ID 补位。`node_asset_refs[].pippit_asset_id` 使用画布节点资产 ID。
 
+批量 `apply_mutations` 默认非原子执行：必须检查 `data.results` 中每一项的 `committed` / `aborted` 状态，保留已成功项，不重跑整批。需要任一失败时整批回滚，可显式传 `atomic: true`。
+
 普通节点和领域编辑优先使用 [语义命令](canvas.md)，由 SDK 分配 ID 并构造事务。仅在用户确实提供或需要底层资产事务且契约已核实时执行：
 
 ```bash

@@ -31,6 +31,41 @@ async function main() {
     ...rootAsset.content.settings.autoLayout,
     strategy: 'dag-layered',
   };
+  standalone.store.transact((draft) => {
+    draft.assets[nodeId] = {
+      pippitAssetId: nodeId,
+      type: 'biz/image',
+      content: { pippitAssetId, assetId },
+      extra: {},
+    };
+  });
+  const schema = () => ({ optional: schema, describe: schema });
+  const tools = sdk.createXyqCanvasOpencodeToolDefinitions({
+    runtime: {
+      store: standalone.store,
+      permissions: ['canvas.read', 'canvas.write', 'canvas.asset.write', 'canvas.patch'],
+    },
+    schema: { string: schema, number: schema, boolean: schema, unknown: schema, array: schema },
+  });
+  const partial = JSON.parse(
+    await tools.apply_mutations.execute({
+      intent: 'test.non-atomic-media-identity',
+      mutations: [
+        { kind: 'set_title', title: 'committed before rejection' },
+        {
+          kind: 'apply_patches',
+          patches: [{ assetId: nodeId, path: '/content/assetId', op: 'replace', value: pippitAssetId }],
+        },
+      ],
+    }),
+  );
+  assert.strictEqual(partial.ok, true);
+  assert.deepStrictEqual(
+    partial.data.results.map((result) => result.status),
+    ['committed', 'aborted'],
+  );
+  assert.match(partial.data.results[1].reason, /INVALID_MEDIA_IDENTITY/);
+  assert.strictEqual(standalone.store.getState().assets[nodeId].content.assetId, assetId);
   standalone.canvas.dispose();
   fs.writeFileSync(
     native,

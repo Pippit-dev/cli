@@ -4,19 +4,20 @@
     "0fadc755ad4e5dd75dcadb090c89fe892519223d",
     "2dfe29a254b2f559188dfdbe2cf2479c26024cc9"
   ],
-  "source_commit": "56b4714ec8dd2b370f2d0170e49c042090c43abb",
+  "source_commit": "add55d3a40cb52b2a4ce0dbc24533f7ba7000bb1",
   "source_branch": "codex/vg20-cli-compatible",
   "fix_status": "committed compatibility backport; registry package not published",
   "fix_source_files_sha256": {
     "packages/xyq-canvas-sdk/src/nodes/media-identity.ts": "cf1decb0448c7fa78838d300b0408422e10120f4ef28f2cf39401420bbeb335f",
     "packages/xyq-canvas-sdk/src/opencode/media-identity-guard.ts": "1c789b98563d6213260bcf7a4c300ff1c27ae3d897e5fc0bad6fa49d397bb8d5",
     "packages/xyq-canvas-sdk/src/opencode/resolve-media-mutations.ts": "f40804aae089e2cc753cdde54a95dfdac55e950d32149efcab3058a40295407c",
-    "packages/xyq-canvas-sdk/src/opencode/index.ts": "9ef7ca03df0d23d0b2d1e17d00d259459e27c292ba8867f7bd72c619305927f2",
-    "packages/xyq-canvas-sdk/src/opencode/schema-media.ts": "375294baa9b2e7bf8b6a35c628fb61f37ed3c4616072bdae26b609c6da3a765b"
+    "packages/xyq-canvas-sdk/src/opencode/index.ts": "b2cfe309c9ec263303b85e5a2e886b3216303069846f9b43426a9c9282e2fc9f",
+    "packages/xyq-canvas-sdk/src/opencode/schema-media.ts": "375294baa9b2e7bf8b6a35c628fb61f37ed3c4616072bdae26b609c6da3a765b",
+    "packages/xyq-canvas-sdk/src/generation/submit-reference-payload.ts": "7c31b4bb5ac8d1ee430cf8e2791273e597f44d368e7953d6c183dad8f93faa9b"
   },
-  "fix_source_fingerprint_sha256": "884b48f055ddcd0bfdccd6cf0cb22975fbd8ffaf6050081bc5cef5640c294e3a",
+  "fix_source_fingerprint_sha256": "43ca6bcd7c1a6509c22531461225e05d58b27763d1fc92b73d4645515ed06592",
   "dependency_source": "reused locally installed workspace dependencies",
-  "runtime_sha256": "c112319809da8374e0abfbe495cac10cfdb4bf7b90d72493061c47c2b9cef586",
-  "runtime_bytes": 1118692,
-  "legal_sha256": "e915ba38d7f96e9fc85f584bacaafaaad0b7a0d02b5746d9eea57ec626ef12da"
+  "runtime_sha256": "f258da52a41a6e5631c169037db8f6bfd34b06c96926e094d85cd6418e6fca31",
+  "runtime_bytes": 1118566,
+  "legal_sha256": "3b97217c41dfb3c298185c80b1e70c2b469f552450e53d00fc1dcf7098740ffb"
 }
