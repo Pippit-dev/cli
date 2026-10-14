@@ -2,7 +2,9 @@
 
 测试当前 checkout 的 `generate-video`：请求明确携带 `call_source=pippit_cli`，Agent 在指定 PPE 中解析 `cli_turbo_video_generator` 的三元组，并把相同三元组用于当前 Run 的成功预扣。
 
-`cli/main.go` 通过现有 `cmd.ExecuteWithAdapter` 注入 `x-tt-env` / `x-use-ppe`，复用正式命令、请求构造和本机登录态。不会增加生产命令参数，不读取或打印 AK；证据只记录允许的 PPE 请求头、测试 body 和响应标识。`check_billing.py` 仅依赖 Python 标准库。
+`cli/main.go` 通过现有 `cmd.ExecuteWithAdapter` 复用正式命令、运行时 `config.toml`、请求头路由和本机登录态；测试 Adapter 只核验与记录，不再自行注入 PPE header。不会增加生产命令参数，不读取或打印 AK；证据只记录允许的 PPE 请求头、测试 body 和响应标识。`check_billing.py` 使用 Python 3.11+ 标准库（包含 `tomllib`）。
+
+同一测试入口也供 `tests/marketing` 复用：营销用例显式提供 roi.json 时，仅对 submit_marketing_run 在测试 Adapter 内补 babi_param query 并记录；实现维护在 tests/marketing/roi.go。Video Part 请求、生产 marketing 命令及 PPE header 注入逻辑保持原样，详见营销测试 README。
 
 覆盖普通文生视频及 `Seedance_2.5_draft --draft` 的 480p 预览（`reference_mode=none`）；Draft 转成片、参考视频、编辑、延长和团队隔离需要各自的输入与断言，不由本脚本推断。使用原 CLI 已认证的身份，不额外注入 UID / TeamID。
 
@@ -19,6 +21,8 @@ tools/fetch-tcc-config --site cn --namespace pippit.business.agent \
 ```
 
 回到本 CLI 项目根目录：
+
+先将仓库根目录 `config.toml` 中的 `x-tt-env` 改为实际泳道（本例为 `ppe_self_testin_5691a3`），`xyq_api_url` 使用 `https://xyq.jianying.com`。提交脚本要求该值与 `--env` 一致，修改配置无需重新构建。测试结束后可将 `x-tt-env` 清空。
 
 ```bash
 python3 tests/video/check_billing.py preflight \

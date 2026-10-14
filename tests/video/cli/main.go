@@ -16,6 +16,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/cmd"
 	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	marketingtest "github.com/Pippit-dev/pippit-cli/tests/marketing"
 )
 
 type ppeAdapter struct {
@@ -24,15 +25,11 @@ type ppeAdapter struct {
 	output string
 }
 
-func (a ppeAdapter) PrepareAPIRequest(_ context.Context, req *http.Request) (adapter.AuthDecision, error) {
-	req.Header.Set("x-tt-env", a.env)
-	req.Header.Set("x-use-ppe", "1")
-	return adapter.UseDefaultAuth, nil
-}
-
-func (a ppeAdapter) StripSensitiveHeaders(req *http.Request) {
-	req.Header.Del("x-tt-env")
-	req.Header.Del("x-use-ppe")
+func (a ppeAdapter) PrepareAPIRequest(ctx context.Context, req *http.Request) (adapter.AuthDecision, error) {
+	if err := marketingtest.PrepareROIRequest(req, a.output); err != nil {
+		return adapter.UseDefaultAuth, err
+	}
+	return a.Default.PrepareAPIRequest(ctx, req)
 }
 
 func (a ppeAdapter) WrapTransport(next http.RoundTripper) http.RoundTripper {
@@ -125,7 +122,12 @@ func (t captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func main() {
-	env, output := os.Getenv("VIDEO_TEST_PPE_ENV"), os.Getenv("VIDEO_TEST_OUTPUT")
+	cfg, err := config.LoadFile(config.FileName)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	env, output := cfg.PPEEnv, os.Getenv("VIDEO_TEST_OUTPUT")
 	info, err := os.Stat(output)
 	if !strings.HasPrefix(env, "ppe_") || env == "ppe_test" || err != nil || !info.IsDir() {
 		fmt.Fprintln(os.Stderr, "请通过 tests/video/check_billing.py 指定专属 PPE 泳道和证据目录")

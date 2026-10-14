@@ -124,7 +124,7 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 		}
 		ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 		defer cancel()
-		client := common.NewNonRedirectingHTTPClientWithAdapter(runner.Config.BaseURL, timeout, newRunnerAuthorizer(runner), policy)
+		client := common.NewNonRedirectingHTTPClientWithAdapter(runner.Config.BaseURL, timeout, newRunnerAuthorizer(runner), adapter.WithPPE(policy, runner.Config.PPEEnv))
 		var result map[string]json.RawMessage
 		var err error
 		if action == "upload" {

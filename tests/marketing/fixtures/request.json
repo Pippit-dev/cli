@@ -1,0 +1,11 @@
+{
+  "message": "根据参考素材中的小猫，制作一段猫咪主题的宣传短片：小猫在花园中缓慢散步，镜头自然平稳。5秒，横屏16:9，720p，不加字幕。直接按这些要求完成成片。",
+  "general_agent_settings": {
+    "video_model": "Seedance_2.5",
+    "ratio": 2,
+    "duration_start": 5,
+    "duration_end": 5,
+    "show_subtitle": false,
+    "video_resolution": "720p"
+  }
+}

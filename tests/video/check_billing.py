@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -107,12 +108,15 @@ def preflight(args):
 
 def submit(args):
     expected = preflight(args)
+    with (ROOT / "config.toml").open("rb") as stream:
+        runtime_config = tomllib.load(stream)
+    require(runtime_config.get("x-tt-env", "").strip() == args.env, "config.toml 的 x-tt-env 与 --env 不一致，请先修改仓库配置")
     binary = BUILD / "pippit-cli-ppe"
     metadata = read(BUILD / "build.json")
     require(metadata["source_sha256"] == source_digest() and metadata["binary_sha256"] == digest(binary), "测试二进制与当前源码不一致，需显式重新构建")
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
-    env = dict(os.environ, VIDEO_TEST_PPE_ENV=args.env, VIDEO_TEST_OUTPUT=str(out))
+    env = dict(os.environ, VIDEO_TEST_OUTPUT=str(out))
     status = subprocess.run([str(binary), "status"], cwd=ROOT, env=env, capture_output=True, text=True, check=True)
     require(json.loads(status.stdout).get("logged_in"), "本机 CLI 未登录；先使用正式 CLI 登录")
     command = [str(binary), "generate-video", "--model", args.model, "--resolution", args.resolution,

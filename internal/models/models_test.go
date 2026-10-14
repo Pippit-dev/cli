@@ -90,6 +90,13 @@ func TestCacheTTLRefreshAndIsolation(t *testing.T) {
 	s.runner.Config.AccessKey = "second-account"
 	check(false, false, 4)
 	oldPath := s.cachePath("second-account", config.GetAvailableModelListPath, VideoScene)
+	s.runner.Config.PPEEnv = "ppe_first"
+	check(false, false, 5)
+	check(false, true, 5)
+	s.runner.Config.PPEEnv = "ppe_second"
+	check(false, false, 6)
+	s.runner.Config.PPEEnv = ""
+	check(false, true, 6)
 	s.runner.Config.BaseURL += "/other-api"
 	if s.cachePath("second-account", config.GetAvailableModelListPath, VideoScene) == oldPath {
 		t.Fatal("API base URLs must not share cache")

@@ -3,14 +3,77 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
+
+func TestRootRunnerUsesRuntimePPERouting(t *testing.T) {
+	headers := make(chan http.Header, 1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers <- r.Header.Clone()
+		_, _ = w.Write([]byte(`{}`))
+	})
+	api := httptest.NewServer(handler)
+	defer api.Close()
+	media := httptest.NewServer(handler)
+	defer media.Close()
+	dir := t.TempDir()
+	configPath, mediaPath := filepath.Join(dir, config.FileName), filepath.Join(dir, "sample.txt")
+	if err := os.WriteFile(mediaPath, []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Re-read the same file after changes, including clearing the PPE setting.
+	for _, env := range []string{"ppe_first", "ppe_second", ""} {
+		contents := fmt.Sprintf("xyq_api_url = %q\nx-tt-env = %q\n", api.URL, env)
+		if err := os.WriteFile(configPath, []byte(contents), 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.LoadFile(configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg.AccessKey = "fixture-key"
+		runner := newRootRunner(cfg)
+		for _, request := range []struct {
+			name     string
+			external bool
+			send     func() error
+		}{
+			{"submit", false, func() error {
+				return runner.Client.SendRequest(context.Background(), config.SubmitRunPath, map[string]any{}, nil)
+			}},
+			{"query", false, func() error { return runner.Client.SendRequest(context.Background(), config.GetThreadPath, nil, nil) }},
+			{"upload", false, func() error {
+				return runner.Client.SendMultipartRequest(context.Background(), config.UploadFilePath, nil, common.MultipartFile{FieldName: "file", Path: mediaPath}, nil)
+			}},
+			{"media", true, func() error { return runner.Client.SendRequest(context.Background(), media.URL, nil, nil) }},
+		} {
+			if err := request.send(); err != nil {
+				t.Fatalf("%s: %v", request.name, err)
+			}
+			got := <-headers
+			wantEnv, wantUsePPE := env, ""
+			if request.external {
+				wantEnv = ""
+			}
+			if wantEnv != "" {
+				wantUsePPE = "1"
+			}
+			if got.Get("x-tt-env") != wantEnv || got.Get("x-use-ppe") != wantUsePPE {
+				t.Fatalf("%s with env %q: unexpected PPE headers", request.name, env)
+			}
+		}
+	}
+}
 
 func TestRootRunnerReadsUpdatedAccessKeyForEveryRequest(t *testing.T) {
 	received := make([]string, 0, 2)
