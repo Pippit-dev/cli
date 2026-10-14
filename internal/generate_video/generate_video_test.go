@@ -23,13 +23,19 @@ func TestBuildSubmitRunBodyPreservesEmptyPrompt(t *testing.T) {
 
 type videoSubmitRecordingClient struct {
 	common.Client
-	path string
-	body any
+	path    string
+	body    any
+	headers map[string]string
 }
 
 func (c *videoSubmitRecordingClient) SendRequest(_ context.Context, path string, body, out any) error {
 	c.path, c.body = path, body
 	return json.Unmarshal([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread_123","run_id":"run_123"}}}`), out)
+}
+
+func (c *videoSubmitRecordingClient) SendRequestWithHeaders(ctx context.Context, path string, body any, headers map[string]string, out any) error {
+	c.headers = headers
+	return c.SendRequest(ctx, path, body, out)
 }
 
 func TestRunCarriesVideoROIQuery(t *testing.T) {
