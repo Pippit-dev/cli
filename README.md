@@ -108,7 +108,15 @@ pippit-tool-cli --version
 4. 验证通过后，在 GitHub Actions 的 `Promote canary to latest` workflow 中点击 `Run workflow`，填写已验证的 `X.Y.Z`。该 workflow 须先合入默认分支才会显示手动入口，并复用仓库已有的 `NPM_TOKEN`。
 5. 提升流程要求输入版本与当前 `canary` 一致，只移动 npm `latest` 指针并回读确认，不重新构建或发布 npm 包。如果 canary 已更新，需要验证新的候选版本后再提升。
 
-发布和提升共用并发组，避免同时修改渠道；不取消正在运行的任务。GitHub 默认只保留一个等待中的同组任务，连续触发时请检查是否有等待任务被替换。此阶段不提供百分比放量或自动回滚，普通客户端也不会因指针变化而自动安装。
+维护者回滚步骤：
+
+1. 在 [GitHub Actions](https://github.com/Pippit-dev/cli/actions) 选择 `Rollback CLI`，点击 `Run workflow`。该 workflow 须先合入默认分支；复用 `NPM_TOKEN` 修改 npm 标签，使用只读 `GITHUB_TOKEN` 检查 Release。
+2. 填写 `channel`（`stable` 对应 `latest`，或 `canary`）、`expected_version`（预期渠道当前版本）和 `target_version`（已验证的目标旧版本）。两个版本均须为普通 `X.Y.Z`，目标必须更低；例如 `stable / 1.0.39 / 1.0.38`，仅在确认 `1.0.38` 可用后操作。
+3. 流水线核对渠道当前值、目标 npm 版本及 GitHub Release 元数据：版本 tag 匹配、已公开发布、六种平台/架构的压缩包及 `checksums.txt` 均已上传且非空。该检查不运行旧版程序，不替代业务验证；回滚依赖这些历史产物继续保留。
+4. 写入前再次核对当前渠道，随后只移动所选 npm 标签并回读确认。不会重新构建、发包、修改 Git tag 或改变另一渠道。Actions 日志和运行摘要会记录目标及确认结果；写入或回读失败时，先用 `npm view @pippit-dev/cli dist-tags --prefer-online` 核实实际状态，再决定是否重试。
+5. 已安装问题版本的用户需要主动执行 `pippit-tool-cli update --channel stable`（回滚 canary 时使用 `--channel canary`）并核对 `pippit-tool-cli --version`。旧 CLI 可执行默认 `update` 获取 `latest`，但须确保未设置 `PIPPIT_CLI_INSTALL_PACKAGE` 覆盖变量。已运行的进程及 Skill 独立缓存中的 CLI 不会被渠道回滚自动替换。
+
+发布、提升和回滚共用并发组，避免这些 workflow 同时修改渠道；不取消正在运行的任务。GitHub 默认只保留一个等待中的同组任务，连续触发时请检查是否有等待任务被替换。并发组不能锁住维护者在终端执行的 npm 写入，操作期间应避免其它渠道修改。此阶段不提供百分比放量或自动回滚，普通客户端也不会因指针变化而自动安装；显式指定问题版本的安装仍然可用。
 
 ## 短剧工作流技能
 

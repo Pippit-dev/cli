@@ -8,6 +8,17 @@ permissions:
   contents: read
 
 jobs:
+  rollback-workflow:
+    name: Rollback workflow
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/rollback-workflow.test.js
+
   canvas-command:
     name: Canvas command (Node ${{ matrix.node-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
