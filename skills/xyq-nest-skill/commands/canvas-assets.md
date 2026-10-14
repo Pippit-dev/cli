@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `canvas create` | `--title` 最多 50 字符；`--request-id` 可选；`--wait` 等初始化；可调 `--poll-interval`、`--timeout` | 保存 `project_id`、`canvas_asset_id`、`web_url`、`request_id`；检查 `state`、`warning` 和退出码 |
 | `canvas get` | `--asset-id` 必填，可重复 | 返回 `requested_asset_ids`、`assets` 及可用的 `log_id`；核对实际返回资产 |
-| `canvas upload` | `--path` 本地文件；可调 `--poll-interval`、`--timeout` | 返回 `pippit_asset_id`、`locator`、`state`、`warning`；素材可查询不代表已插入画布 |
+| `canvas upload` | `--path` 本地文件；可调 `--poll-interval`、`--timeout` | 返回 `pippit_asset_id`、可用的 `media_asset_id`、`source_id`、`locator`、`state`、`warning`；素材可查询不代表已插入画布 |
 | `canvas allocate` | `--count` 分配数量 | 返回 `asset_ids[]`；只预留 ID，不创建节点或资产 |
 | `canvas apply` | `--project-id` 项目 ID；`--file` JSON 文件，默认 `-` 读 stdin | 一个 transaction，可含多条 patch；检查事务 ACK 和目标资产版本 |
 
@@ -20,6 +20,12 @@ pippit-tool-cli canvas upload --path "/path/to/reference.png"
 
 ## 低层事务的使用边界
 
+媒体节点优先通过语义 `create_biz_node` 创建，`initialData` 只传 `pippitAssetId`：CLI 查询素材并填写真实云媒体 `assetId`。用 `update_asset.contentPatch` 或 `update_node_data.patch` 替换素材时也可只传新的 `pippitAssetId`。显式填写的 `assetId` 必须与素材查询结果匹配，否则返回 `INVALID_MEDIA_IDENTITY` 并拒绝写入。
+
+上传顶层旧字段 `asset_id` 是保留兼容的 workspace/source ID，不能当节点媒体 ID。`media_asset_id` 来自查询结果对应的 `Image/Video/Audio.asset_id`；缺失时不能用 `source_id`、`pippit_asset_id` 或画布节点 ID 补位。`node_asset_refs[].pippit_asset_id` 使用画布节点资产 ID。
+
+批量 `apply_mutations` 默认非原子执行：必须检查 `data.results` 中每一项的 `committed` / `aborted` 状态，保留已成功项，不重跑整批。需要任一失败时整批回滚，可显式传 `atomic: true`。
+
 普通节点和领域编辑优先使用 [语义命令](canvas.md)，由 SDK 分配 ID 并构造事务。仅在用户确实提供或需要底层资产事务且契约已核实时执行：
 
 ```bash
@@ -30,3 +36,5 @@ pippit-tool-cli canvas apply --project-id PROJECT_ID --file "/path/to/validated-
 JSON 根包含 `batch_id`、`client_id`、`transactions`，可含 `root_pippit_asset_id` 和 `Base`；单一 transaction 含 `transaction_id`、`patches`。每个 patch 使用实际 `asset_id`、`op`、`path`、所需 `value` 与适用的 `base_asset_version`，具体版本及内容必须来自真实查询或已核实调用契约。保留调用方原有 batch/transaction ID，不擅自改前缀；不手工绕过语义命令的业务校验。
 
 写入结果不明确、超时或版本冲突时，先查询受影响资产，再决定如何恢复；不能照原请求盲目重放。不要使用隐藏传输参数绕过 ACK 校验。
+
+`canvas apply` 在发送写入前验证本次修改涉及的媒体身份，包括部分字段 patch；按整笔事务最终结果校验，拒绝 Pippit ID、source ID、节点 ID 与真实媒体 ID 的错配。低层写入不会自动改写调用方的 patch。
