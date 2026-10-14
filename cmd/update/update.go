@@ -58,6 +58,7 @@ func NewCommand(stdout, stderr io.Writer) *cobra.Command {
 func NewCommandWithAdapter(stdout, stderr io.Writer, policy adapter.HTTPAdapter) *cobra.Command {
 	updater := newUpdater(policy)
 	var source string
+	var channel string
 	cmd := &cobra.Command{
 		Use:   commandnames.Update,
 		Short: "Update pippit-tool-cli and bundled skills",
@@ -65,17 +66,27 @@ func NewCommandWithAdapter(stdout, stderr io.Writer, policy adapter.HTTPAdapter)
 			if !cmd.Flags().Changed("source") {
 				source = os.Getenv("PIPPIT_CLI_SOURCE")
 			}
-			return updater.runUpdate(stdout, stderr, source)
+			return updater.runUpdate(stdout, stderr, source, channel)
 		},
 	}
 	cmd.Flags().StringVar(&source, "source", "", "optional real host identifier reported as host_platform; defaults to PIPPIT_CLI_SOURCE when unset")
+	cmd.Flags().StringVar(&channel, "channel", "", "channel for this update only: stable (npm latest) or canary; overrides PIPPIT_CLI_INSTALL_PACKAGE")
 	return cmd
 }
 
-func (u *updater) runUpdate(stdout, stderr io.Writer, hostPlatform string) error {
+func (u *updater) runUpdate(stdout, stderr io.Writer, hostPlatform, channel string) error {
 	pkg := os.Getenv("PIPPIT_CLI_INSTALL_PACKAGE")
-	if pkg == "" {
+	switch channel {
+	case "":
+		if pkg == "" {
+			pkg = defaultPackage + "@latest"
+		}
+	case "stable":
 		pkg = defaultPackage + "@latest"
+	case "canary":
+		pkg = defaultPackage + "@canary"
+	default:
+		return fmt.Errorf("不支持的更新渠道 %q，可选值为 stable 或 canary", channel)
 	}
 
 	fmt.Fprintf(stderr, "Updating pippit-tool-cli via npm: %s\n", pkg)
