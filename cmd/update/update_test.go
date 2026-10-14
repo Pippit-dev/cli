@@ -15,6 +15,74 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 )
 
+func TestUpdateCommandSelectsChannel(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses POSIX shell scripts to stub npm and npx")
+	}
+	cases := []struct {
+		name     string
+		args     []string
+		override string
+		want     string
+		wantErr  bool
+	}{
+		{name: "default stable", want: defaultPackage + "@latest"},
+		{name: "explicit stable", args: []string{"--channel", "stable"}, want: defaultPackage + "@latest"},
+		{name: "explicit canary", args: []string{"--channel", "canary"}, want: defaultPackage + "@canary"},
+		{name: "package override preserved", override: defaultPackage + "@1.0.38", want: defaultPackage + "@1.0.38"},
+		{name: "stable overrides environment", args: []string{"--channel", "stable"}, override: defaultPackage + "@canary", want: defaultPackage + "@latest"},
+		{name: "canary overrides environment", args: []string{"--channel", "canary"}, override: defaultPackage + "@1.0.38", want: defaultPackage + "@canary"},
+		{name: "invalid channel", args: []string{"--channel", "beta"}, wantErr: true},
+		{name: "invalid channel with override", args: []string{"--channel", "beta"}, override: defaultPackage + "@1.0.38", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			binDir := t.TempDir()
+			npmRoot := t.TempDir()
+			capturePath := filepath.Join(t.TempDir(), "npm-args.txt")
+			if err := os.MkdirAll(filepath.Join(npmRoot, "@pippit-dev", "cli", "skills"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			npmScript := "#!/bin/sh\ncase \"$1\" in\ninstall) printf '%s\\n' \"$@\" > \"$CAPTURE_ARGS\";;\nroot) printf '%s\\n' \"$TEST_NPM_ROOT\";;\n*) exit 1;;\nesac\n"
+			for name, script := range map[string]string{"npm": npmScript, "npx": "#!/bin/sh\nexit 0\n"} {
+				if err := os.WriteFile(filepath.Join(binDir, name), []byte(script), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("CAPTURE_ARGS", capturePath)
+			t.Setenv("TEST_NPM_ROOT", npmRoot)
+			t.Setenv("PIPPIT_CLI_DISABLE_TELEMETRY", "1")
+			t.Setenv("PIPPIT_CLI_INSTALL_PACKAGE", tc.override)
+			var stdout, stderr bytes.Buffer
+			cmd := NewCommand(&stdout, &stderr)
+			cmd.SetArgs(append([]string{}, tc.args...))
+			err := cmd.Execute()
+			if tc.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "不支持的更新渠道") {
+					t.Fatalf("error = %v, want invalid channel error", err)
+				}
+				if _, err := os.Stat(capturePath); !os.IsNotExist(err) {
+					t.Fatalf("invalid channel invoked npm or stat failed: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("update failed: %v, stderr: %s", err, stderr.String())
+			}
+			got, err := os.ReadFile(capturePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := strings.Join([]string{"install", "-g", "--prefer-online", "--foreground-scripts", tc.want, ""}, "\n")
+			if string(got) != want {
+				t.Fatalf("npm args = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestInstallSkillsInstallsAllBundledSkills(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test uses a POSIX shell script to stub npx")

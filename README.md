@@ -79,6 +79,37 @@ Canvas 任务使用 `ensure-cli.js --canvas`，额外返回 `canvas_entry`；原
 - 文档使用 Skill 内相对链接，打包时保留结构。规范副本位于 `skills/xyq-nest-skill/`，项目发现入口 `.agents/skills/xyq-skill` 指向该目录。
 - 修改后运行 `node scripts/skills.test.js` 与 `node scripts/install-cli.test.js`，检查引用完整、保留命令与安装检查一致及缺命令升级/缓存复用；Agent 行为用例见 [测试场景](skills/xyq-nest-skill/tests/agent_test_cases.md)。这些检查不代表真实生成已验证。
 
+## CLI 更新渠道与发布
+
+普通用户使用稳定渠道（npm `latest`）；试用用户主动选择 `canary`：
+
+```bash
+pippit-tool-cli update                  # 默认安装 latest
+pippit-tool-cli update --channel canary # 本次安装 canary，并更新配套 Skills
+pippit-tool-cli update --channel stable # 本次安装 latest，并更新配套 Skills
+```
+
+`--channel` 只影响本次更新，不保存渠道偏好。下一次不带参数的 `update` 仍走 `latest`，因此可能从试用版退回当前稳定版。显式 `--channel` 优先于 `PIPPIT_CLI_INSTALL_PACKAGE`；不传渠道时保留该环境变量指定包版本的既有行为。新版本提示仍检查稳定渠道。
+
+首次安装试用版，或旧 CLI 尚不支持 `--channel` 时，使用现有安装入口：
+
+```bash
+npx --prefer-online @pippit-dev/cli@canary install
+pippit-tool-cli --version
+```
+
+该命令会替换全局 CLI 和配套 Skills。`canary` 是公开 npm 分发渠道，适合主动参与的小范围试用，不限制谁可以下载。Skill 的 `ensure-cli.js` 在需要下载时仍使用 `latest`；希望试用的用户应先安装 canary。
+
+维护者发布步骤：
+
+1. 保持 `package.json`、`package-lock.json` 与 `vX.Y.Z` tag 的版本一致；使用普通版本号，不使用 `-beta` / `-rc` 后缀（现有安装器按普通版本号定位二进制）。
+2. 推送 tag 后，`Release` workflow 构建 GitHub Release 产物并执行 `npm publish --tag canary`，保留原 `latest`。GitHub Release 产物仍公开可见，本流程控制的是 npm 分发渠道。
+3. 试用用户安装 canary，核对版本并验证实际业务流程。
+4. 验证通过后，在 GitHub Actions 的 `Promote canary to latest` workflow 中点击 `Run workflow`，填写已验证的 `X.Y.Z`。该 workflow 须先合入默认分支才会显示手动入口，并复用仓库已有的 `NPM_TOKEN`。
+5. 提升流程要求输入版本与当前 `canary` 一致，只移动 npm `latest` 指针并回读确认，不重新构建或发布 npm 包。如果 canary 已更新，需要验证新的候选版本后再提升。
+
+发布和提升共用并发组，避免同时修改渠道；不取消正在运行的任务。GitHub 默认只保留一个等待中的同组任务，连续触发时请检查是否有等待任务被替换。此阶段不提供百分比放量或自动回滚，普通客户端也不会因指针变化而自动安装。
+
 ## 短剧工作流技能
 
 包发布后可以通过 npm 安装。安装器会按当前系统下载匹配的预构建二进制文件，支持 macOS、Linux 和 Windows：
