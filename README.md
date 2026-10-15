@@ -2,6 +2,21 @@
 
 面向 Pippit / 小云雀工作流的命令行工具与智能体技能集合。
 
+## 本地运行配置
+
+CLI 每次启动时读取**当前工作目录**中的 `config.toml`。在仓库根目录执行 CLI 时使用仓库配置，修改后下一次执行直接生效，无需重新编译：
+
+```toml
+xyq_api_url = "https://xyq.jianying.com"
+x-tt-env = ""
+```
+
+`x-tt-env` 填写本次实际 PPE 环境名，格式为 `ppe_[A-Za-z0-9_]+`。非空时，发往 `xyq_api_url` 的提交、查询、上传等 API 请求自动携带 `x-tt-env: <环境名>` 和 `x-use-ppe: 1`；外部媒体下载不携带这两个 header。留空时不添加 PPE header。仓库默认留空，避免默认路由到某个个人泳道。
+
+文件不存在时继续使用线上默认配置；不会搜索父目录、用户目录或二进制目录。文件格式、字段名或值错误会终止执行。旧的 `PIPPIT_CLI_PPE_ENV` 不再生效；`XYQ_ACCESS_KEY` 等认证设置保持原有行为。
+
+`tests/` 中的验证脚本随源码仓库维护，不包含在 npm 发布包中，也不接入正式 CLI 二进制入口。
+
 ## 技能列表
 
 本仓库在 `skills/` 目录下包含三个智能体技能：
@@ -443,7 +458,7 @@ pippit-tool-cli update --source HOST
 
 ### 宿主来源统计
 
-生成提交命令均支持可选 `--source`：`submit-run`、`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
+生成提交命令均支持可选 `--source`：`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
 
 由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao_office`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源或显式空值时不发送该字段。省略 `--source` 时，CLI 按以下顺序尽力补齐来源：
 

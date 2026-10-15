@@ -70,12 +70,16 @@ func TestMarketingUsesRootAdapterForIndependentClient(t *testing.T) {
 		if r.Header.Get("X-Test-Adapter-Auth") != "present" || r.Header.Get("X-Test-Adapter-Transport") != "present" {
 			t.Errorf("marketing request bypassed root adapter: %#v", r.Header)
 		}
+		if r.Header.Get("x-tt-env") != "ppe_fixture" || r.Header.Get("x-use-ppe") != "1" {
+			t.Error("marketing request bypassed runtime PPE config")
+		}
 		fmt.Fprint(w, `{"ret":"0","data":{}}`)
 	}))
 	defer server.Close()
 
 	cfg := config.Load()
 	cfg.BaseURL = server.URL
+	cfg.PPEEnv = "ppe_fixture"
 	policy := marketingTestAdapter{}
 	runner := newRootRunnerWithAdapter(cfg, policy)
 	root := newRootCommandWithAdapter(io.Discard, io.Discard, runner, policy)

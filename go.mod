@@ -3,6 +3,7 @@ module github.com/Pippit-dev/pippit-cli
 go 1.23.0
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/bytedance/sonic v1.15.1
 	github.com/spf13/cobra v1.8.1
 	github.com/zalando/go-keyring v0.2.8
