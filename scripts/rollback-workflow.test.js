@@ -35,15 +35,21 @@ if (tool === 'gh') {
 if (args[0] === 'view') {
   assert.strictEqual(args[3], '--prefer-online');
   if (args[1] === '@pippit-dev/cli') {
-    const tag = args[2].replace(/^dist-tags\\./, '');
-    assert(['latest', 'canary'].includes(tag));
-    state.reads++;
-    if (state.reads === 2 && state.changedDuringCheck) state.tags[tag] = '1.0.40';
-    if (state.reads === 3 && state.fail === 'readback') finish(undefined, 1);
-    finish(state.reads === 3 && state.badReadback ? '1.0.40' : state.tags[tag], state.fail === 'current' ? 1 : 0);
+    // Package metadata can remain unchanged after the tag endpoint accepts a write.
+    finish(state.metadataTags[args[2].replace(/^dist-tags\\./, '')]);
   }
   assert.deepStrictEqual(args, ['view', '@pippit-dev/cli@' + process.env.TARGET_VERSION, 'version', '--prefer-online']);
   finish(state.npmVersion, state.fail === 'target' ? 1 : 0);
+}
+if (args[0] === 'dist-tag' && args[1] === 'ls') {
+  assert.deepStrictEqual(args, ['dist-tag', 'ls', '@pippit-dev/cli', '--prefer-online']);
+  const tag = process.env.CHANNEL === 'stable' ? 'latest' : 'canary';
+  state.reads++;
+  if (state.reads === 2 && state.changedDuringCheck) state.tags[tag] = '1.0.40';
+  const tags = { ...state.tags };
+  if (state.reads === 3 && state.badReadback) tags[tag] = '1.0.40';
+  const value = Object.keys(tags).sort().map(tag => tag + ': ' + tags[tag]).join('\\n');
+  finish(value, state.fail === 'current' || (state.reads === 3 && state.fail === 'readback') ? 1 : 0);
 }
 assert.deepStrictEqual(args.slice(0, 3), ['dist-tag', 'add', '@pippit-dev/cli@' + process.env.TARGET_VERSION]);
 assert(['latest', 'canary'].includes(args[3]));
@@ -64,6 +70,7 @@ function check(name, { input = {}, change = () => {}, success = false, writes = 
     release: { tag_name: "v1.0.38", draft: false, assets: assetNames.map(name => ({ name, state: "uploaded", size: 123 })) },
   };
   change(state);
+  state.metadataTags = { ...state.tags };
   fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(state));
   const env = {
     PATH: `${bin}:/usr/bin:/bin`, HOME: dir, RUNNER_TEMP: dir,
@@ -76,7 +83,7 @@ function check(name, { input = {}, change = () => {}, success = false, writes = 
   assert.ifError(result.error);
   assert.strictEqual(result.status === 0, success, `${name}: ${result.stdout}\n${result.stderr}`);
   const after = JSON.parse(fs.readFileSync(path.join(dir, "state.json"), "utf8"));
-  const mutations = after.calls.filter(call => call[1] === "dist-tag");
+  const mutations = after.calls.filter(call => call[1] === "dist-tag" && call[2] === "add");
   assert.strictEqual(mutations.length, writes, `${name}: unexpected npm writes`);
   const tag = env.CHANNEL === "stable" ? "latest" : "canary";
   const otherTag = tag === "latest" ? "canary" : "latest";
@@ -94,8 +101,8 @@ function check(name, { input = {}, change = () => {}, success = false, writes = 
 }
 
 try {
-  check("stable", { success: true, writes: 1 });
-  check("canary", { input: { CHANNEL: "canary" }, success: true, writes: 1 });
+  check("stable with stale package metadata after write", { success: true, writes: 1 });
+  check("canary with stale package metadata after write", { input: { CHANNEL: "canary" }, success: true, writes: 1 });
   check("numeric ordering", { input: { EXPECTED_VERSION: "1.0.100" }, change: s => { s.tags.latest = "1.0.100"; }, success: true, writes: 1 });
   check("invalid channel", { input: { CHANNEL: "latest" } });
   for (const version of ["", "v1.0.38", "01.0.38", "1.0.38-rc.1", "1.0.38\nnpm publish", "$(touch injected)"]) {
