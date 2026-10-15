@@ -35,13 +35,14 @@ jobs:
             echo "Version must be X.Y.Z without a v prefix or prerelease suffix." >&2
             exit 1
           fi
-          candidate="$(npm view @pippit-dev/cli dist-tags.canary --prefer-online)"
+          # Query the tag endpoint; package metadata can lag behind a successful tag write.
+          candidate="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk '$1 == "canary:" { print $2 }')"
           if [[ "$candidate" != "$RELEASE_VERSION" ]]; then
             echo "Requested version $RELEASE_VERSION does not match current canary $candidate; verify the current candidate before promotion." >&2
             exit 1
           fi
           npm dist-tag add "@pippit-dev/cli@$RELEASE_VERSION" latest
-          actual="$(npm view @pippit-dev/cli dist-tags.latest --prefer-online)"
+          actual="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk '$1 == "latest:" { print $2 }')"
           if [[ "$actual" != "$RELEASE_VERSION" ]]; then
             echo "Latest read-back returned $actual; expected $RELEASE_VERSION. Inspect npm dist-tags before retrying." >&2
             exit 1

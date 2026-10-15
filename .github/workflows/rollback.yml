@@ -68,7 +68,8 @@ jobs:
           NODE
 
           check_current() {
-            current="$(npm view @pippit-dev/cli "dist-tags.$tag" --prefer-online)"
+            # Query the tag endpoint; package metadata can lag behind a successful tag write.
+            current="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk -v tag="$tag:" '$1 == tag { print $2 }')"
             if [[ "$current" != "$EXPECTED_VERSION" ]]; then
               echo "Current $tag is '$current', expected $EXPECTED_VERSION. Inspect npm dist-tags before retrying." >&2
               exit 1
@@ -108,7 +109,7 @@ jobs:
           echo "Rolling back @pippit-dev/cli $tag: $current -> $TARGET_VERSION"
           printf 'Rollback requested: @pippit-dev/cli %s, %s -> %s\n' "$tag" "$current" "$TARGET_VERSION" >> "$GITHUB_STEP_SUMMARY"
           npm dist-tag add "@pippit-dev/cli@$TARGET_VERSION" "$tag"
-          actual="$(npm view @pippit-dev/cli "dist-tags.$tag" --prefer-online)"
+          actual="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk -v tag="$tag:" '$1 == tag { print $2 }')"
           if [[ "$actual" != "$TARGET_VERSION" ]]; then
             echo "Rollback read-back returned '$actual'; expected $TARGET_VERSION. The tag may have changed; inspect npm dist-tags before retrying." >&2
             exit 1
