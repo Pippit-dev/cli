@@ -143,10 +143,14 @@ func (s *Service) cachePath(accessKey, path, scene string) string {
 	if s.cacheDir == "" {
 		return ""
 	}
-	scope, _ := json.Marshal([]string{
+	parts := []string{
 		"v1", strings.TrimRight(s.runner.Config.BaseURL, "/"), path, scene,
 		version.Current(), accessKey,
-	})
+	}
+	if s.runner.Config.PPEEnv != "" {
+		parts = append(parts, s.runner.Config.PPEEnv)
+	}
+	scope, _ := json.Marshal(parts)
 	return filepath.Join(s.cacheDir, fmt.Sprintf("%x.json", sha256.Sum256(scope)))
 }
 

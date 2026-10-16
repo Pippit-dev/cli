@@ -143,7 +143,7 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 	if out := must("upload-file", "--path", file); !strings.Contains(out, `"team_id":"12"`) {
 		t.Fatal(out)
 	}
-	if out := must("submit-run", "--message", "create", "--asset-ids", "asset-a"); !strings.Contains(out, `"team_id":"12"`) {
+	if out := must("short-drama", "+submit-run", "--message", "create", "--asset-ids", "asset-a"); !strings.Contains(out, `"team_id":"12"`) {
 		t.Fatal(out)
 	}
 	must("space", "use", "34")
@@ -188,7 +188,7 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 	before := len(requests)
 	for _, args := range [][]string{
 		{"get-thread", "--thread-id", "thread-a", "--team-id", "34"},
-		{"submit-run", "--message", "wrong asset", "--asset-ids", "asset-a"},
+		{"short-drama", "+submit-run", "--message", "wrong asset", "--asset-ids", "asset-a"},
 		{"get-credit-balance", "--team-id", "-1"},
 		{"space", "use"},
 		{"space", "use", "12", "34"},
@@ -367,7 +367,7 @@ func TestSpaceUsesAvailableIdentityInsteadOfLocalLoginSwitch(t *testing.T) {
 		path string
 	}{
 		{[]string{"upload-file", "--path", file}, config.UploadFilePath},
-		{[]string{"submit-run", "--message", "test", "--asset-ids", "asset-a"}, config.SubmitRunPath},
+		{[]string{"short-drama", "+submit-run", "--message", "test", "--asset-ids", "asset-a"}, config.SubmitRunPath},
 		{[]string{"get-thread", "--thread-id", "thread-a"}, config.GetThreadPath},
 		{[]string{"marketing", "query", "--thread-id", "thread-a", "--run-id", "run-a"}, config.QueryGenerateVideoResultPath},
 	} {

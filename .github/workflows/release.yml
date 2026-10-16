@@ -9,6 +9,10 @@ permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: npm-release-channels
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-22.04
@@ -25,6 +29,18 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
+
+      - name: Verify release version
+        run: |
+          node <<'NODE'
+          const { version } = require('./package.json');
+          const lock = require('./package-lock.json');
+          if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) ||
+              process.env.GITHUB_REF_NAME !== `v${version}` ||
+              lock.version !== version || lock.packages[''].version !== version) {
+            throw new Error('Release requires matching vX.Y.Z tag, package.json and package-lock.json; use the canary dist-tag, not a prerelease version suffix.');
+          }
+          NODE
 
       - name: Test release source
         run: npm test
@@ -51,7 +67,7 @@ jobs:
       - name: Verify npm package contents
         run: npm pack --dry-run
 
-      - name: Publish to npm
-        run: npm publish --provenance --access public
+      - name: Publish to npm canary
+        run: npm publish --provenance --access public --tag canary
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -23,14 +23,13 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("LocalAppData", t.TempDir())
-	for _, name := range []string{"submit-run", "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "short-drama"} {
+	for _, name := range []string{"generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "short-drama"} {
 		t.Run(name, func(t *testing.T) {
 			video := filepath.Join(t.TempDir(), "input.mp4")
 			if err := os.WriteFile(video, []byte("test-video"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			args := map[string][]string{
-				"submit-run":             {"submit-run", "--message", "  保留原文\nworkbuddy 只是内容  ", "--thread-id", "skill_existing", "--asset-ids", "asset_1"},
 				"generate-image":         {"generate-image", "--prompt", "cat", "--model", "Seedream 5.0 Pro", "--ratio", "6", "--resolution", "4K"},
 				"generate-video":         {"generate-video", "--prompt", "cat", "--model", "Seedance_2.0_mini", "--duration", "4", "--ratio", "16:9"},
 				"video-super-resolution": {"video-super-resolution", "--video", video, "--output-resolution", "1080p"},
@@ -215,7 +214,7 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 
 func TestSourceHelpWithoutCredentials(t *testing.T) {
 	for _, args := range [][]string{
-		{"submit-run"}, {"generate-image"}, {"generate-video"},
+		{"generate-image"}, {"generate-video"},
 		{"video-super-resolution"}, {"erase-video-subtitle"}, {"short-drama", "+submit-run"},
 	} {
 		var stdout, stderr bytes.Buffer

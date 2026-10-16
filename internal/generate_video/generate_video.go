@@ -135,6 +135,7 @@ func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []s
 
 	return common.WithSubmitRunSource(map[string]any{
 		"agent_name":            common.AgentNameVideoPart,
+		"call_source":           "pippit_cli",
 		"message":               prompt,
 		"video_part_tool_param": param,
 	}, opts.Source)

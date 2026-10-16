@@ -1,0 +1,8 @@
+{
+  "scene_lv1": "ai_agent",
+  "scene_lv2": "front_tool",
+  "tool_id": "instant_video",
+  "tab_name": "other",
+  "edit_type": "instant_video",
+  "enter_from": "skill"
+}

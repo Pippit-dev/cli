@@ -1,6 +1,46 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadFile(t *testing.T) {
+	// The retired PPE environment variable must not override the runtime file.
+	t.Setenv("PIPPIT_CLI_PPE_ENV", "ppe_ignored")
+	for _, tc := range []struct {
+		name, content, wantURL, wantEnv string
+		missing, wantErr                bool
+	}{
+		{name: "missing", missing: true, wantURL: DefaultBaseURL},
+		{name: "empty", content: "", wantURL: DefaultBaseURL},
+		{name: "production", content: `xyq_api_url = "https://xyq.jianying.com"` + "\n" + `x-tt-env = ""`, wantURL: DefaultBaseURL},
+		{name: "ppe", content: "# local routing\nxyq_api_url = 'https://xyq.jianying.com/'\nx-tt-env = ' ppe_self_testin_5691a3 '", wantURL: DefaultBaseURL, wantEnv: "ppe_self_testin_5691a3"},
+		{name: "invalid toml", content: `x-tt-env = "`, wantErr: true},
+		{name: "invalid type", content: `x-tt-env = 1`, wantErr: true},
+		{name: "invalid ppe", content: `x-tt-env = "prod"`, wantErr: true},
+		{name: "typo", content: `x-tt_env = "ppe_fixture"`, wantErr: true},
+		{name: "invalid url", content: `xyq_api_url = "xyq.jianying.com"`, wantErr: true},
+		{name: "url credentials", content: `xyq_api_url = "https://user:pass@xyq.jianying.com"`, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), FileName)
+			if !tc.missing {
+				if err := os.WriteFile(path, []byte(tc.content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadFile(path)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("LoadFile() error = %v, wantErr=%v", err, tc.wantErr)
+			}
+			if err == nil && (cfg.BaseURL != tc.wantURL || cfg.PPEEnv != tc.wantEnv) {
+				t.Fatalf("routing = %q, %q; want %q, %q", cfg.BaseURL, cfg.PPEEnv, tc.wantURL, tc.wantEnv)
+			}
+		})
+	}
+}
 
 func TestLoadUsesDefaultConfig(t *testing.T) {
 	t.Setenv(EnvXYQAccessKey, "")

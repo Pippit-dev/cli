@@ -8,6 +8,28 @@ permissions:
   contents: read
 
 jobs:
+  promote-workflow:
+    name: Promote workflow
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/promote-workflow.test.js
+
+  rollback-workflow:
+    name: Rollback workflow
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: node scripts/rollback-workflow.test.js
+
   canvas-command:
     name: Canvas command (Node ${{ matrix.node-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -46,6 +68,9 @@ jobs:
 
       - name: Test assembled runtime capabilities and output budgets
         run: node scripts/canvas-command-runtime.test.js
+
+      - name: Test material and cloud media identity boundaries
+        run: node scripts/canvas-media-identity.test.js
 
       - name: Test Canvas, Scene3D and Timeline operations
         run: npm run test:canvas-operations

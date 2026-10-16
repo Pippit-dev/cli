@@ -1,0 +1,117 @@
+name: Rollback CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "回滚渠道（stable 对应 npm latest）"
+        required: true
+        type: choice
+        default: stable
+        options:
+          - stable
+          - canary
+      expected_version:
+        description: "预期渠道当前版本（X.Y.Z，不带 v）"
+        required: true
+        type: string
+      target_version:
+        description: "已验证的目标旧版本（X.Y.Z，不带 v，必须低于当前版本）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-channels
+  cancel-in-progress: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Roll back npm channel
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          EXPECTED_VERSION: ${{ inputs.expected_version }}
+          TARGET_VERSION: ${{ inputs.target_version }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          case "$CHANNEL" in
+            stable) tag=latest ;;
+            canary) tag=canary ;;
+            *) echo "Channel must be stable or canary." >&2; exit 1 ;;
+          esac
+          for version in "$EXPECTED_VERSION" "$TARGET_VERSION"; do
+            if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+              echo "Versions must be X.Y.Z without a v prefix or prerelease suffix." >&2
+              exit 1
+            fi
+          done
+          node <<'NODE'
+          const expected = process.env.EXPECTED_VERSION.split('.').map(BigInt);
+          const target = process.env.TARGET_VERSION.split('.').map(BigInt);
+          const index = target.findIndex((part, i) => part !== expected[i]);
+          if (index < 0 || target[index] > expected[index]) {
+            throw new Error('Rollback target must be older than the expected current version.');
+          }
+          NODE
+
+          check_current() {
+            # Query the tag endpoint; package metadata can lag behind a successful tag write.
+            current="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk -v tag="$tag:" '$1 == tag { print $2 }')"
+            if [[ "$current" != "$EXPECTED_VERSION" ]]; then
+              echo "Current $tag is '$current', expected $EXPECTED_VERSION. Inspect npm dist-tags before retrying." >&2
+              exit 1
+            fi
+          }
+          check_current
+          published="$(npm view "@pippit-dev/cli@$TARGET_VERSION" version --prefer-online)"
+          if [[ "$published" != "$TARGET_VERSION" ]]; then
+            echo "Target npm version was not found: $TARGET_VERSION." >&2
+            exit 1
+          fi
+
+          gh api "repos/Pippit-dev/cli/releases/tags/v$TARGET_VERSION" > "$RUNNER_TEMP/rollback-release.json"
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const version = process.env.TARGET_VERSION;
+          const release = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'rollback-release.json'), 'utf8'));
+          if (release.tag_name !== `v${version}` || release.draft !== false) {
+            throw new Error('Target GitHub Release must be published with the matching version tag.');
+          }
+          const required = ['checksums.txt'];
+          for (const os of ['darwin', 'linux', 'windows']) {
+            for (const arch of ['amd64', 'arm64']) {
+              required.push(`pippit-tool-cli-${version}-${os}-${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`);
+            }
+          }
+          for (const name of required) {
+            if (!release.assets?.some(asset => asset.name === name && asset.state === 'uploaded' && asset.size > 0)) {
+              throw new Error(`Missing or incomplete release asset: ${name}`);
+            }
+          }
+          NODE
+
+          # Recheck after artifact validation; the shared group only serializes repository workflows.
+          check_current
+          echo "Rolling back @pippit-dev/cli $tag: $current -> $TARGET_VERSION"
+          printf 'Rollback requested: @pippit-dev/cli %s, %s -> %s\n' "$tag" "$current" "$TARGET_VERSION" >> "$GITHUB_STEP_SUMMARY"
+          npm dist-tag add "@pippit-dev/cli@$TARGET_VERSION" "$tag"
+          actual="$(npm dist-tag ls @pippit-dev/cli --prefer-online | awk -v tag="$tag:" '$1 == tag { print $2 }')"
+          if [[ "$actual" != "$TARGET_VERSION" ]]; then
+            echo "Rollback read-back returned '$actual'; expected $TARGET_VERSION. The tag may have changed; inspect npm dist-tags before retrying." >&2
+            exit 1
+          fi
+          printf 'Confirmed: @pippit-dev/cli %s now points to %s. Existing installations are unchanged.\n' "$tag" "$actual" | tee -a "$GITHUB_STEP_SUMMARY"
