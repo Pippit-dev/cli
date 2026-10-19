@@ -141,6 +141,63 @@ async function test() {
     const bridge = await invokeCLI(['marketing', 'generate', '--request', '-'], JSON.stringify(body), 3000, invocation);
     assert.deepStrictEqual(bridge.args, ['marketing', 'generate', '--request', '-']);
     assert.deepStrictEqual(JSON.parse(bridge.input), body);
+    // Relay only the two CLI upgrade notices, after a successful subprocess result.
+    const versionNotice = '[pippit-tool-cli] New version available: 1.0.41 -> 1.0.42';
+    const loginNotice = '[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.';
+    const stderrChunks = [
+      `backend private log\n ${versionNotice}\n[pippit-tool-cli] New ver`,
+      'sion available: 1.0.41 -> 1.0.42\r\n[pippit-tool-cli] If browser author',
+      `ization fails, update the CLI and run pippit-tool-cli login again. backend detail\n${loginNotice}`,
+    ];
+    const rawResult = { ret: 0, data: { exact: '原样 🛍️', values: [false, null, 0] } };
+    async function noticeFixture(mode, args = ['marketing', 'balance']) {
+      fs.writeFileSync(fixture, `
+        const chunks = ${JSON.stringify(stderrChunks)};
+        let index = 0;
+        function writeNext() {
+          if (index < chunks.length) {
+            process.stderr.write(chunks[index++]);
+            setTimeout(writeNext, 10);
+          } else if (${JSON.stringify(mode)} === 'timeout') {
+            setInterval(() => {}, 1000);
+          } else {
+            process.stdout.write(${JSON.stringify(mode === 'help' ? '  --source string  Host identifier\n' : mode === 'invalid' ? 'invalid JSON' : JSON.stringify(rawResult))});
+            process.exitCode = ${mode === 'failed' ? 1 : 0};
+          }
+        }
+        writeNext();
+      `);
+      let stdout = '', stderr = '', result, error;
+      const originalOut = process.stdout.write;
+      const originalErr = process.stderr.write;
+      process.stdout.write = chunk => { stdout += chunk; return true; };
+      process.stderr.write = chunk => { stderr += chunk; return true; };
+      try {
+        try { result = await invokeCLI(args, undefined, mode === 'timeout' ? 300 : 3000, invocation); }
+        catch (failure) { error = failure; }
+      } finally {
+        process.stdout.write = originalOut;
+        process.stderr.write = originalErr;
+      }
+      assert.strictEqual(stdout, '', 'CLI bridge must never write notices or data to parent stdout');
+      return { result, error, stderr };
+    }
+    const successNotice = await noticeFixture('json');
+    assert.ifError(successNotice.error);
+    assert.deepStrictEqual(successNotice.result, rawResult, 'stderr filtering must preserve JSON data');
+    assert.strictEqual(successNotice.stderr, `${versionNotice}\n${loginNotice}\n`, 'mixed and split stderr must relay only complete notice lines, including EOF');
+    const helpNotice = await noticeFixture('help', ['marketing', 'generate', '--help']);
+    assert.ifError(helpNotice.error);
+    assert.strictEqual(helpNotice.result, '  --source string  Host identifier\n');
+    assert.strictEqual(helpNotice.stderr, successNotice.stderr);
+    const failedNotice = await noticeFixture('failed');
+    assert.strictEqual(failedNotice.stderr, '', 'failed CLI stderr must not be printed before returning its error');
+    assert.strictEqual(failedNotice.error.message, `CLI 调用失败：${stderrChunks.join('').trim()}；请求未重试。若不支持 marketing 命令，请更新 CLI。`);
+    for (const mode of ['invalid', 'timeout']) {
+      const failed = await noticeFixture(mode);
+      assert.match(failed.error.message, mode === 'timeout' ? /超时/ : /未返回有效 JSON/);
+      assert.strictEqual(failed.stderr, '', `${mode} results must not relay upgrade notices`);
+    }
     // Standalone Skill + old CLI: probe help, omit unsupported attribution, never replay.
     for (const support of ['new', 'old', 'help-failed']) {
       fs.writeFileSync(fixture, `

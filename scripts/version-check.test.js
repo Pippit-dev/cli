@@ -3,7 +3,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const vm = require("vm");
-const { CHECK_INTERVAL_MS, defaultCacheFile, maybeWarnNewVersion } = require("./version-check");
+const { CHECK_INTERVAL_MS, RETRY_INTERVAL_MS, defaultCacheFile, maybeWarnNewVersion } = require("./version-check");
 const { isCanvasCommand, parseCanvasCommandArgs } = require("./canvas-command");
 
 assert.strictEqual(
@@ -51,12 +51,17 @@ try {
   assert.deepStrictEqual(warnings, []);
 
   const failedCache = path.join(fixture, "failed-check.json");
-  maybeWarnNewVersion(["login"], {
+  let failedFetches = 0;
+  const offlineOptions = {
     ...opts, cacheFile: failedCache,
-    fetchLatestVersion: () => { throw new Error("offline"); },
-  });
+    fetchLatestVersion: () => { failedFetches += 1; throw new Error("offline"); },
+  };
+  maybeWarnNewVersion(["login"], offlineOptions);
+  maybeWarnNewVersion(["status"], { ...offlineOptions, now: 2000 });
   assert.deepStrictEqual(warnings, [], "network failure must stay silent");
-  assert.strictEqual(fs.existsSync(failedCache), false);
+  assert.strictEqual(failedFetches, 1, "offline invocations share a short retry cooldown");
+  maybeWarnNewVersion(["status"], { ...offlineOptions, now: 1000 + RETRY_INTERVAL_MS });
+  assert.strictEqual(failedFetches, 2, "a failed check retries after the short cooldown");
 
   const originalError = console.error;
   try {
@@ -72,6 +77,7 @@ try {
   function launch(args) {
     const notices = [];
     const invocations = [];
+    const nativeEnvironments = [];
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, "run.js"), "utf8"), {
       __dirname,
       process: { argv: ["node", "run.js", ...args], platform: "linux", env: {} },
@@ -79,17 +85,26 @@ try {
       require(name) {
         if (name === "fs") return { existsSync: () => true };
         if (name === "path") return path;
-        if (name === "child_process") return { execFileSync: () => invocations.push("native") };
+        if (name === "child_process") return {
+          execFileSync: (_command, _args, options) => {
+            invocations.push("native");
+            nativeEnvironments.push(options.env);
+          },
+        };
         if (name === "./version-check") return { maybeWarnNewVersion: (actualArgs) => notices.push([...actualArgs]) };
         if (name === "./install-wizard.js") return { main: () => invocations.push("install") };
         if (name === "./canvas-command") return {
           isCanvasCommand, parseCanvasCommandArgs,
-          runCanvasCommand: () => { invocations.push("canvas"); return Promise.resolve(0); },
+          runCanvasCommand: (_args, options) => {
+            invocations.push("canvas");
+            nativeEnvironments.push(options.nativeInvocation.env);
+            return Promise.resolve(0);
+          },
         };
         throw new Error(`Unexpected launcher dependency: ${name}`);
       },
     });
-    return { notices, invocations };
+    return { notices, invocations, nativeEnvironments };
   }
 
   for (const args of [
@@ -98,7 +113,10 @@ try {
     ["canvas", "command", "schema"], ["canvas", "command", "guide"],
     ["canvas", "command", "run", "example", "--canvas-id", "test", "--input", "{}"],
   ]) {
-    assert.deepStrictEqual(launch(args).notices, [args], `missing or duplicate check: ${args.join(" ")}`);
+    const result = launch(args);
+    assert.deepStrictEqual(result.notices, [args], `missing or duplicate check: ${args.join(" ")}`);
+    assert.strictEqual(result.nativeEnvironments.length, 1);
+    assert.strictEqual(result.nativeEnvironments[0].PIPPIT_CLI_UPDATE_CHECKED, "1", "native children must not repeat the launcher check");
   }
   for (const args of [
     [], ["--help"], ["help", "canvas"], ["install", "--help"],

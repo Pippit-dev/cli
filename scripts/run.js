@@ -9,6 +9,8 @@ const { maybeWarnNewVersion } = require('./version-check');
 const ext = process.platform === 'win32' ? '.exe' : '';
 const bin = path.join(__dirname, '..', 'bin', 'pippit-tool-cli' + ext);
 const args = process.argv.slice(2);
+// The launcher owns the notice for this invocation, including native children.
+const nativeEnv = { ...process.env, PIPPIT_CLI_UPDATE_CHECKED: '1' };
 
 const oldBin = bin + '.old';
 function restoreOldBinary() {
@@ -25,7 +27,7 @@ function restoreOldBinary() {
 
 function runCanvas() {
   runCanvasCommand(args, {
-    nativeInvocation: { command: bin },
+    nativeInvocation: { command: bin, env: nativeEnv },
   })
     .then((exitCode) => {
       if (exitCode) process.exitCode = exitCode;
@@ -97,7 +99,7 @@ function main() {
     runCanvas();
   } else {
     try {
-      execFileSync(bin, args, { stdio: 'inherit' });
+      execFileSync(bin, args, { stdio: 'inherit', env: nativeEnv });
     } catch (e) {
       process.exit(e.status || 1);
     }

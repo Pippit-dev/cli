@@ -113,9 +113,17 @@ function invokeCLI(args, input, timeout, invocation = resolveCLI()) {
       clearTimeout(timer);
       if (failure) return reject(failure);
       if (code !== 0) return reject(new Error(`CLI 调用失败：${stderr.trim() || `退出码 ${code}`}；请求未重试。若不支持 marketing 命令，请更新 CLI。`));
-      if (args.includes('--help')) return resolve(stdout);
-      try { resolve(JSON.parse(stdout)); }
-      catch (_) { reject(new Error('CLI 未返回有效 JSON；提交结果可能不明确，请勿自动重提')); }
+      let result;
+      try { result = args.includes('--help') ? stdout : JSON.parse(stdout); }
+      catch (_) { return reject(new Error('CLI 未返回有效 JSON；提交结果可能不明确，请勿自动重提')); }
+      // Only successful CLI notices are safe to relay; backend logs stay buffered.
+      for (const notice of stderr.split(/\r?\n/)) {
+        if (notice.startsWith('[pippit-tool-cli] New version available:') ||
+            notice === '[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.') {
+          process.stderr.write(`${notice}\n`);
+        }
+      }
+      resolve(result);
     });
     child.stdin.end(input);
   });
