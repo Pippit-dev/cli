@@ -86,6 +86,9 @@ function maybeWarnNewVersion(args = [], opts = {}) {
 
   const warn = opts.warn || console.error;
   warn(`[pippit-tool-cli] New version available: ${current} -> ${latest}. Run: pippit-tool-cli update`);
+  if (args[0] === "login") {
+    warn("[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.");
+  }
 }
 
 module.exports = {

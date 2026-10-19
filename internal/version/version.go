@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 )
 
@@ -15,6 +16,18 @@ const packageName = "@pippit-dev/cli"
 type packageJSON struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
+}
+
+// BuildVersion identifies the running binary. A local go run/build must not
+// advertise package.json's release version as a verified binary version.
+func BuildVersion() string {
+	if value := strings.TrimSpace(Version); value != "" && value != "dev" {
+		return value
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return strings.TrimPrefix(info.Main.Version, "v")
+	}
+	return "dev"
 }
 
 func Current() string {
