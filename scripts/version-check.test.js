@@ -4,7 +4,7 @@ const os = require("os");
 const path = require("path");
 const vm = require("vm");
 const { CHECK_INTERVAL_MS, RETRY_INTERVAL_MS, defaultCacheFile, maybeWarnNewVersion } = require("./version-check");
-const { isCanvasCommand, parseCanvasCommandArgs } = require("./canvas-command");
+const { isCanvasCommand, parseCanvasCommandArgs, canvasSpaceArgs } = require("./canvas-command");
 
 assert.strictEqual(
   defaultCacheFile(),
@@ -94,7 +94,7 @@ try {
         if (name === "./version-check") return { maybeWarnNewVersion: (actualArgs) => notices.push([...actualArgs]) };
         if (name === "./install-wizard.js") return { main: () => invocations.push("install") };
         if (name === "./canvas-command") return {
-          isCanvasCommand, parseCanvasCommandArgs,
+          isCanvasCommand, parseCanvasCommandArgs, canvasSpaceArgs,
           runCanvasCommand: (_args, options) => {
             invocations.push("canvas");
             nativeEnvironments.push(options.nativeInvocation.env);
