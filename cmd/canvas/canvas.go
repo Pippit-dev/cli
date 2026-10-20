@@ -18,12 +18,12 @@ import (
 
 const maxApplyRequestBytes = 64 << 20
 
-// NewCommand builds the provider-neutral personal Canvas command tree.
+// NewCommand builds the provider-neutral Canvas command tree.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "canvas",
-		Short: "Create and operate personal novel canvases",
-		Long:  "Create and operate personal novel canvases.\n\n" + CommandDiscoveryHelp,
+		Short: "Create and operate novel canvases",
+		Long:  "Create and operate novel canvases in the selected personal or team space.\n\n" + CommandDiscoveryHelp,
 		Args:  cobra.NoArgs,
 	}
 	cmd.SetOut(stdout)
@@ -62,7 +62,7 @@ func newCreateCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 	var opts canvascore.CreateOptions
 	cmd := &cobra.Command{
 		Use:   "create",
-		Short: "Create a personal novel Canvas project",
+		Short: "Create a novel Canvas project in the selected space",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if strings.TrimSpace(opts.RequestID) == "" {
@@ -100,7 +100,7 @@ func newGetCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comma
 	var assetIDs []string
 	cmd := &cobra.Command{
 		Use:   "get",
-		Short: "Get personal Canvas assets by ID",
+		Short: "Get Canvas assets by ID in the selected space",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := canvascore.Get(cmd.Context(), canvascore.GetOptions{AssetIDs: assetIDs}, runner)
@@ -150,7 +150,7 @@ func newApplyCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
 	flags.StringVar(&filePath, "file", "-", "BatchPatch JSON request file, or - for stdin")
-	flags.StringVar(&projectID, "project-id", "", "personal novel project ID as a decimal string")
+	flags.StringVar(&projectID, "project-id", "", "novel project ID as a decimal string")
 	flags.BoolVar(&transportResult, "transport-result", false, "return explicit transaction outcomes for transport decoding")
 	if err := flags.MarkHidden("transport-result"); err != nil {
 		panic(err)
@@ -162,7 +162,7 @@ func newUploadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 	var opts canvascore.UploadOptions
 	cmd := &cobra.Command{
 		Use:   "upload",
-		Short: "Upload a file to personal assets and wait until it is queryable",
+		Short: "Upload a file to the selected space and wait until it is queryable",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := canvascore.Upload(cmd.Context(), opts, runner)

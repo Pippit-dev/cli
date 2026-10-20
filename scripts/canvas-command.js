@@ -48,6 +48,7 @@ const COMMAND_HELP = `用法:
 list 返回简短索引；describe 按层展示字段和可选操作，使用 --path 展开 schema_path。
 guide 按主题说明时间、引用和工作流；schema 显式导出完整 schema（可能很大）。
 这些发现入口无需登录；run 需要目标画布的访问权限。
+run 使用默认空间，可通过 --team-id <ID> 覆盖；0 为个人空间。
 `;
 
 function canvasSpaceArgs(args) {
@@ -219,6 +220,7 @@ class NativeCanvasClient {
 
   async runJSON(args, input) {
     if (args[0] === "canvas" && this.teamID !== undefined) args = [...args, "--team-id", this.teamID];
+    if (args[0] === "canvas" && this.spaceContext) args = [...args, "--space-context", this.spaceContext];
     const result = await spawnProcess(this.invocation, args, {
       cwd: this.cwd,
       input: input === undefined ? undefined : JSON.stringify(input),
@@ -227,7 +229,12 @@ class NativeCanvasClient {
     let output;
     try {
       output = JSON.parse(result.stdout);
-      if (args[0] === "canvas") this.teamID = "0";
+      // The first canvas get resolves the space in Go. Reuse its binding for
+      // every SDK transport call, even if another process changes the default.
+      if (args[0] === "canvas" && output.team_id !== undefined) {
+        this.teamID = output.team_id;
+        this.spaceContext = output.space_context;
+      }
     } catch (error) {
       throw new Error(`原生 CLI 未返回有效 JSON（${args.join(" ")}）：${error.message}`);
     }
@@ -809,7 +816,6 @@ function executePublicCommand(route, definitions, input) {
 async function runCanvasCommand(args, options = {}) {
   const { teamID } = canvasSpaceArgs(args);
   const parsed = parseCanvasCommandArgs(args);
-  if (parsed.action === "run" && teamID !== undefined && teamID !== "0") throw new Error("canvas 暂仅支持个人空间；请使用 --team-id 0");
   const stdout = options.stdout || process.stdout;
   const stderr = options.stderr || process.stderr;
   if (parsed.action === "help") {
@@ -867,6 +873,9 @@ async function runCanvasCommand(args, options = {}) {
   validatePublicCommandInput(route, input);
   const nativeClient = new NativeCanvasClient(options.nativeInvocation, { cwd, stderr, teamID });
   const authStatus = await nativeClient.ensureCanvasAccess(parsed.canvasId);
+  const credentialScope = authStatus.credential_scope && nativeClient.teamID && nativeClient.teamID !== "0"
+    ? `${authStatus.credential_scope}:team:${nativeClient.teamID}`
+    : authStatus.credential_scope;
   const requiresDurableCheckpoint = CHECKPOINT_COMMANDS.has(parsed.commandName) ||
     (parsed.commandName === "apply_mutations" && input.checkpointBefore === true);
   if (requiresDurableCheckpoint && !authStatus.credential_scope) {
@@ -876,7 +885,7 @@ async function runCanvasCommand(args, options = {}) {
   const checkpointStore = authStatus.credential_scope
     ? createFileCheckpointStore({
         canvasId: parsed.canvasId,
-        credentialScope: authStatus.credential_scope,
+        credentialScope,
         stateDirectory: options.stateDirectory,
       })
     : undefined;
@@ -895,7 +904,7 @@ async function runCanvasCommand(args, options = {}) {
   const persistence = authStatus.credential_scope
     ? createFilePersistence({
         canvasId: parsed.canvasId,
-        credentialScope: authStatus.credential_scope,
+        credentialScope,
         stateDirectory: options.stateDirectory,
       })
     : createMemoryPersistence();

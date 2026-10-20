@@ -16,6 +16,7 @@ import (
 
 	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
+	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/Pippit-dev/pippit-cli/internal/space"
@@ -66,6 +67,8 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 			}
 		}
 		switch r.URL.Path {
+		case canvascore.QueryPath:
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"Assets":[{"PippitAssetID":"canvas"}]}}`))
 		case config.SubmitRunPath:
 			_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread-a","run_id":"run-a"}}}`))
 		case config.GetThreadPath:
@@ -185,6 +188,36 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 	if requests[len(requests)-1] != config.GetCreditBalancePath+":" {
 		t.Fatal(requests)
 	}
+	// Canvas uses the same default, override and cross-process binding as other commands.
+	for _, tc := range []struct {
+		flags  []string
+		teamID string
+	}{
+		{nil, "34"},
+		{[]string{"--team-id", "12"}, "12"},
+		{[]string{"--team-id", "0"}, "0"},
+	} {
+		var result canvascore.GetResult
+		out := must(append([]string{"canvas", "get", "--asset-id", "canvas"}, tc.flags...)...)
+		if err := json.Unmarshal([]byte(out), &result); err != nil {
+			t.Fatal(err)
+		}
+		header := tc.teamID
+		if header == "0" {
+			header = ""
+		}
+		if result.TeamID != tc.teamID || requests[len(requests)-1] != canvascore.QueryPath+":"+header {
+			t.Fatalf("canvas space = %s, requests = %v", out, requests)
+		}
+		binding, err := space.DecodeBinding(result.SpaceContext)
+		if err != nil || binding.TeamID != tc.teamID || binding.Account != store.Account || binding.Origin != store.Origin {
+			t.Fatalf("canvas binding = %+v, %v", binding, err)
+		}
+		must("canvas", "get", "--asset-id", "canvas", "--space-context", result.SpaceContext)
+		if requests[len(requests)-1] != canvascore.QueryPath+":"+header {
+			t.Fatal("canvas binding did not preserve the original space", requests)
+		}
+	}
 	before := len(requests)
 	for _, args := range [][]string{
 		{"get-thread", "--thread-id", "thread-a", "--team-id", "34"},
@@ -193,7 +226,6 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 		{"space", "use"},
 		{"space", "use", "12", "34"},
 		{"space", "current"},
-		{"canvas", "get", "--asset-id", "canvas"},
 	} {
 		if _, err := execute(args...); err == nil {
 			t.Errorf("accepted %v", args)

@@ -24,12 +24,12 @@ x-tt-env = ""
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人或团队 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
 | `xyq-marketing-skill` | 商品图文营销一键成片：剧情广告、品牌大片、达人带货，含素材上传、进度查询与媒体下载。 | `skills/xyq-marketing-skill/` |
 
 ### 技能路由
 
-- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
+- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人或团队 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
 - 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
 - 商品图文营销成片、剧情广告、品牌大片和达人带货视频使用 `xyq-marketing-skill`；由公开营销 API 完成创作编排。
 
@@ -49,7 +49,7 @@ pippit-tool-cli get-credit-balance --team-id 0      # 仅本次使用个人
 
 `space` 仅提供 `list` 和 `use <TEAM_ID>`，统一输出 JSON。`list` 返回完整分页后的 `spaces` 和已保存的默认空间 `current`，列表项用 `current: true` 标记当前选择；`use` 必须指定 ID，不等待交互输入，成功后返回保存的空间。团队 ID 按 int64 的十进制字符串处理，不接受负数、小数或溢出值。切换到团队前核实账号所属团队列表，失败保留旧选择；切回个人不依赖列表接口。
 
-新任务按「单次 `--team-id` → 已保存默认 → 个人」确定空间；上传、提交、轮询固定同一空间。生成、视频处理、短剧、上传、会话查询、文件列表、积分与营销命令均适用。同源 API 请求统一携带当前团队的 `X-Team-Id`，由 API 决定是否使用；模型接口内部仍按个人身份查询；Canvas 本轮仅支持个人，当前默认为团队时显式使用 `canvas … --team-id 0`，正数团队参数会拒绝。帮助、安装和版本命令无需读取空间或登录。
+新任务按「单次 `--team-id` → 已保存默认 → 个人」确定空间；上传、提交、轮询固定同一空间。生成、视频处理、短剧、上传、会话查询、文件列表、积分、营销与 Canvas 命令均适用。同源 API 请求统一携带当前团队的 `X-Team-Id`，由 API 决定是否使用；模型接口内部仍按个人身份查询；Canvas 复用相同空间选择，`--team-id 0` 可单次切回个人。帮助、安装和版本命令无需读取空间或登录。
 
 显式 `--team-id` 不要求 CLI 能读取本地账号标识或空间记录，认证继续使用当前 AK/adapter，由 API 校验团队权限。本地记录可用时照常保存；不可用时本次仍固定使用指定空间，宿主应保存返回的任务 ID 和 `team_id`，后续显式传入原 TeamID。`space use` 保存默认空间仍需要可识别的账号；`space list` 在账号不可识别时返回 `current: null`。
 
@@ -90,7 +90,7 @@ node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID
 | 操作 | CLI | 文档 |
 | --- | --- | --- |
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
-| 个人 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
+| 个人或团队 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
 | 查看可用图片/视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
@@ -187,7 +187,7 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 ## Canvas 原子命令
 
-CLI 提供个人漫剧画布的通用原子命令，不包含特定来源的导入或转换逻辑：
+CLI 提供个人和团队漫剧画布的通用原子命令，不包含特定来源的导入或转换逻辑：
 
 ```bash
 # 首次使用时打开小云雀网页授权
@@ -201,6 +201,8 @@ pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
 pippit-tool-cli canvas upload --path ./reference.png
 pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 ```
+
+五个命令复用 `space use TEAM_ID` 保存的默认空间，也支持单次 `--team-id TEAM_ID`，个人空间使用 `0`。操作已有画布时显式使用其原 `--team-id`，CLI 不根据画布 ID 自动选择团队。`canvas get` 返回实际 `team_id`，本地账号可识别时还返回 `space_context`；`canvas command run` 据此固定后续子进程的空间与账号/API origin，期间切换默认空间不影响当前操作。本地恢复记录和检查点按账号、团队与画布隔离，原有个人记录保持可读。
 
 五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
 

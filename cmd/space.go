@@ -56,17 +56,6 @@ func prepareCommandSpace(cmd *cobra.Command, runner *common.Runner, stderr io.Wr
 	ctx := common.WithSpace(cmd.Context(), session)
 	cmd.SetContext(ctx)
 	// Business requests resolve their space from the final request body.
-	// Canvas has no team scope, so check its personal-only boundary here.
-	if top.Name() != "canvas" {
-		return nil
-	}
-	selected, err := session.Resolve(space.References{})
-	if err != nil {
-		return err
-	}
-	if selected.TeamID != "0" {
-		return fmt.Errorf("canvas 暂仅支持个人空间；请显式使用 --team-id 0")
-	}
 	return nil
 }
 

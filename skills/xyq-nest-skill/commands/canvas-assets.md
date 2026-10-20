@@ -1,6 +1,6 @@
 # Canvas 原生资产命令
 
-本页命令通过 `cli_path` 执行。仅面向个人画布，所有 ID 保持原始字符串，不能转换成 JavaScript Number；`project_id`、`canvas_asset_id`、节点 ID 和媒体 `pippit_asset_id` 不可混用。
+本页命令通过 `cli_path` 执行。支持个人和团队画布，复用默认空间或 `--team-id TEAM_ID`；创建、上传、查询和修改须使用同一空间。所有 ID 保持原始字符串，不能转换成 JavaScript Number；`project_id`、`canvas_asset_id`、节点 ID 和媒体 `pippit_asset_id` 不可混用。
 
 | 命令 | 输入 | 返回与完成判断 |
 | --- | --- | --- |
