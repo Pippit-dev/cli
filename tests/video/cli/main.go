@@ -75,14 +75,26 @@ func (t captureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	if payload["agent_name"] != "pippit_video_part_agent" || payload["call_source"] != "pippit_cli" {
-		return nil, fmt.Errorf("当前 CLI 请求未携带 Video Part Agent 和 call_source=pippit_cli，拒绝提交")
+	switch payload["agent_name"] {
+	case "pippit_video_part_agent":
+		if payload["call_source"] != "pippit_cli" {
+			return nil, fmt.Errorf("当前 Video Part 请求未携带 call_source=pippit_cli，拒绝提交")
+		}
+	case "pippit_nest_agent":
+		settings, _ := payload["general_agent_settings"].(map[string]any)
+		model, _ := settings["image_model"].(string)
+		if strings.TrimSpace(model) == "" {
+			return nil, fmt.Errorf("当前 Nest 请求未指定图片模型，拒绝提交")
+		}
+	default:
+		return nil, fmt.Errorf("测试入口仅支持 Video Part 或指定模型的 Nest 生图请求")
 	}
 	// O_EXCL 在发送前记录尝试；同一证据目录拒绝重交或重定向重放。
 	if err := writeNewJSON(filepath.Join(t.output, "request.json"), map[string]any{
 		"time": time.Now().UTC().Format(time.RFC3339), "env": t.env,
 		"method": req.Method, "path": req.URL.Path, "body": payload,
-		"headers": map[string]string{"x-tt-env": t.env, "x-use-ppe": "1"},
+		"babi_param": req.URL.Query().Get("babi_param"),
+		"headers":    map[string]string{"x-tt-env": t.env, "x-use-ppe": "1", "x-team-id": req.Header.Get("x-team-id")},
 	}); err != nil {
 		return nil, fmt.Errorf("记录请求失败；不得重交本次测试: %w", err)
 	}

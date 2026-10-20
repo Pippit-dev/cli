@@ -40,7 +40,7 @@ python3 -B tests/marketing/check_marketing.py query --output "$OUTPUT" --max-wai
 
 普通 `generate-video` 在 `internal/generate_video/generate_video.go` 构造六个业务标签，经 `internal/common/submit_run.go` 的 `SubmitRunWithBabiParam` JSON 编码为 URL query `babi_param`；显式已有值不覆盖。正式 `marketing generate` 目前未携带此 query，也不接受 ROI 正文字段。用户选择只在测试入口补参，因此生产命令保持原样。
 
-测试可在 submit 加 `--roi tests/marketing/fixtures/roi.json`。脚本把 fixture 复制到该用例目录；已获 API origin 校验的测试 Adapter 只对 submit_marketing_run 读取它、设置 query、在发送前排他记录 `roi-request.json`。只允许业务标签，不注入用户身份/TeamID，不改 entrance_from。没有 --roi 的对照用例保留原始请求。
+测试可在 submit 加 `--roi tests/marketing/fixtures/roi.json`。脚本把 fixture 复制到该用例目录；已获 API origin 校验的测试 Adapter 对 submit_marketing_run 和 skill submit_run 读取它、设置 query、在发送前排他记录 `roi-request.json`，已有 query 不覆盖。后者用于共享入口的图片补参测试，具体执行与范围见 `../video/README.md`。只允许业务标签，不注入用户身份/TeamID，不改 entrance_from。没有 --roi 的对照用例保留原始请求。
 
 示例 fixture **逐值复用现有普通视频 CLI**：`ai_agent / front_tool / instant_video`，tab_name=other、edit_type=instant_video、enter_from=skill。它用于检验补充 ROI 后的服务端行为，**不代表正式营销业务的 ROI 标签口径已确定**；不可把测试补参成功当作生产 CLI 已修复。报告同时保留实际 query、用例 fixture 和同一 Run 下游预扣结果。前一用例已终止且已上传素材时，可将其真实 asset_ids 放入新用例 request、不要再次 --file；新用例是有补参变更的独立执行，不能重发状态不明的旧请求。
 

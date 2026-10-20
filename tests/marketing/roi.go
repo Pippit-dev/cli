@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Pippit-dev/pippit-cli/internal/config"
 )
 
 // PrepareROIRequest mirrors SubmitRunWithBabiParam's query encoding without
-// changing the production marketing command, request body, identity or PPE headers.
+// changing production commands, request bodies, identity or PPE headers.
 func PrepareROIRequest(req *http.Request, evidenceDir string) error {
-	if req.URL.Path != "/api/biz/v1/agent/submit_marketing_run" {
+	if req.URL.Path != "/api/biz/v1/agent/submit_marketing_run" && req.URL.Path != config.SubmitRunPath {
 		return nil
 	}
 	raw, err := os.ReadFile(filepath.Join(evidenceDir, "roi.json"))
@@ -42,7 +44,7 @@ func PrepareROIRequest(req *http.Request, evidenceDir string) error {
 	}
 	query, err := url.ParseQuery(req.URL.RawQuery)
 	if err != nil {
-		return fmt.Errorf("解析营销 query 失败: %w", err)
+		return fmt.Errorf("解析生成 query 失败: %w", err)
 	}
 	encoded, err := json.Marshal(param)
 	if err != nil {
