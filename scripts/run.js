@@ -3,12 +3,14 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { isCanvasCommand, runCanvasCommand } = require('./canvas-command');
+const { isCanvasCommand, parseCanvasCommandArgs, runCanvasCommand } = require('./canvas-command');
 const { maybeWarnNewVersion } = require('./version-check');
 
 const ext = process.platform === 'win32' ? '.exe' : '';
 const bin = path.join(__dirname, '..', 'bin', 'pippit-tool-cli' + ext);
 const args = process.argv.slice(2);
+// The launcher owns the notice for this invocation, including native children.
+const nativeEnv = { ...process.env, PIPPIT_CLI_UPDATE_CHECKED: '1' };
 
 const oldBin = bin + '.old';
 function restoreOldBinary() {
@@ -25,7 +27,7 @@ function restoreOldBinary() {
 
 function runCanvas() {
   runCanvasCommand(args, {
-    nativeInvocation: { command: bin },
+    nativeInvocation: { command: bin, env: nativeEnv },
   })
     .then((exitCode) => {
       if (exitCode) process.exitCode = exitCode;
@@ -44,6 +46,15 @@ function main() {
 
   const helpRequested = args.includes('--help') || args.includes('-h') || args[0] === 'help';
   if (isCanvasCommand(args) && (args[2] !== 'run' || helpRequested)) {
+    // Discovery commands also need update notices. Keep help and invalid
+    // commands free of network checks and cache writes.
+    if (!helpRequested) {
+      try {
+        if (parseCanvasCommandArgs(args).action !== 'help') maybeWarnNewVersion(args);
+      } catch (_) {
+        // runCanvas reports argument errors through the existing path.
+      }
+    }
     return runCanvas();
   }
 
@@ -88,7 +99,7 @@ function main() {
     runCanvas();
   } else {
     try {
-      execFileSync(bin, args, { stdio: 'inherit' });
+      execFileSync(bin, args, { stdio: 'inherit', env: nativeEnv });
     } catch (e) {
       process.exit(e.status || 1);
     }

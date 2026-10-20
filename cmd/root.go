@@ -20,6 +20,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
+	"github.com/Pippit-dev/pippit-cli/internal/versioncheck"
 	"github.com/spf13/cobra"
 )
 
@@ -89,6 +90,9 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	// Only commands already exposing --source receive attribution. Explicit empty
 	// flags suppress fallback, and no source is persisted between CLI processes.
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if policy.CLIOptions().SelfUpdateEnabled && cmd.Runnable() {
+			versioncheck.Check(cmd.Context(), stderr, version.BuildVersion(), cmd.Name())
+		}
 		flag := cmd.Flags().Lookup("source")
 		if flag != nil && !flag.Changed {
 			if source := common.DetectHostSource(); source != "" {

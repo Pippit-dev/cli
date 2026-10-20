@@ -4,6 +4,7 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const {
   createFilePersistence,
@@ -274,7 +275,72 @@ function createFakeSdk() {
   };
 }
 
+function testNativeUpgradeNotices() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "pippit native notice "));
+  const nativePath = path.join(directory, "native child.js");
+  const driverPath = path.join(directory, "canvas driver.js");
+  const loginPath = path.join(directory, "login marker");
+  const upgrade = "[pippit-tool-cli] New version available: 1.0.41 -> 1.0.42. Run: pippit-tool-cli update";
+  const loginHint = "[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.";
+  fs.writeFileSync(nativePath, `
+const fs = require("fs");
+const mode = process.argv[2];
+if (mode === "status") {
+  process.stdout.write(JSON.stringify({ logged_in: fs.existsSync(process.env.FAKE_LOGIN_FILE), checked: process.env.PIPPIT_CLI_UPDATE_CHECKED }) + "\\n");
+} else if (mode === "login") {
+  fs.writeFileSync(process.env.FAKE_LOGIN_FILE, process.env.PIPPIT_CLI_UPDATE_CHECKED);
+} else {
+  process.stderr.write("private backend diagnostic\\r\\n[pippit-tool-cli] internal diagnostic\\r\\n");
+  process.stderr.write(${JSON.stringify(upgrade.slice(0, 38))});
+  setImmediate(() => {
+    process.stderr.write(${JSON.stringify(upgrade.slice(38) + "\r\n" + loginHint + "\r\n")});
+    if (mode === "failure") process.exitCode = 7;
+    else process.stdout.write(mode === "invalid" ? "not-json" : JSON.stringify({ ok: true, checked: process.env.PIPPIT_CLI_UPDATE_CHECKED, data: { value: 7 } }) + "\\n");
+  });
+}
+`);
+  fs.writeFileSync(driverPath, `
+const { NativeCanvasClient } = require(${JSON.stringify(require.resolve("./canvas-command"))});
+const [nativePath, mode, loginPath] = process.argv.slice(2);
+const client = new NativeCanvasClient({ command: process.execPath, prefixArgs: [nativePath], env: { ...process.env, PIPPIT_CLI_UPDATE_CHECKED: "1", FAKE_LOGIN_FILE: loginPath } });
+const result = mode === "authenticate" ? client.ensureAuthenticated() : client.runJSON([mode]);
+result.then(value => process.stdout.write(JSON.stringify(value) + "\\n")).catch(error => { process.stderr.write(error.message + "\\n"); process.exitCode = error.exitCode || 1; });
+`);
+  const run = (mode) => spawnSync(process.execPath, [driverPath, nativePath, mode, loginPath], {
+    encoding: "utf8",
+    timeout: 5000,
+  });
+  try {
+    const success = run("success");
+    assert.strictEqual(success.status, 0, success.stderr);
+    assert.strictEqual(success.stdout, JSON.stringify({ ok: true, checked: "1", data: { value: 7 } }) + "\n");
+    assert.strictEqual(success.stderr, `${upgrade}\n${loginHint}\n`);
+
+    const failed = run("failure");
+    assert.strictEqual(failed.status, 7);
+    assert.strictEqual(failed.stdout, "");
+    assert(failed.stderr.includes("原生 CLI 命令执行失败"));
+    assert(failed.stderr.includes("private backend diagnostic"));
+    assert.strictEqual(failed.stderr.split(upgrade).length - 1, 1, "failure stderr must not be replayed separately");
+
+    const invalid = run("invalid");
+    assert.strictEqual(invalid.status, 1);
+    assert.strictEqual(invalid.stdout, "");
+    assert(invalid.stderr.includes("原生 CLI 未返回有效 JSON"));
+    assert(!invalid.stderr.includes(upgrade));
+    assert(!invalid.stderr.includes("private backend diagnostic"));
+
+    const authenticated = run("authenticate");
+    assert.strictEqual(authenticated.status, 0, authenticated.stderr);
+    assert.deepStrictEqual(JSON.parse(authenticated.stdout), { logged_in: true, checked: "1" });
+    assert.strictEqual(fs.readFileSync(loginPath, "utf8"), "1", "interactive login must receive the invocation environment");
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function main() {
+  testNativeUpgradeNotices();
   const structuredCloneDescriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
   Object.defineProperty(globalThis, "structuredClone", { configurable: true, value: undefined, writable: true });
   ensureNodeRuntimeGlobals();

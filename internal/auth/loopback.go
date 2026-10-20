@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"net"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Pippit-dev/pippit-cli/internal/version"
 )
 
 const maxCallbackBodyBytes = 64 << 10
@@ -37,7 +38,6 @@ type browserFlow struct {
 	secret       string
 	state        string
 	source       string
-	origin       string
 	listener     net.Listener
 	server       *http.Server
 	payload      chan accessKeyPayload
@@ -93,6 +93,9 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader, deviceID, to
 	query.Set("callback", callback.String())
 	query.Set("random_secret_key", secret)
 	query.Set("source", loginSource)
+	query.Set("cli_version", version.BuildVersion())
+	// Protocol 1 supports callbacks from both official login origins.
+	query.Set("auth_protocol", "1")
 	query.Set("device_id", deviceID)
 	if tokenID != "" {
 		query.Set("token_id", tokenID)
@@ -111,7 +114,6 @@ func startBrowserFlow(authBaseURL *url.URL, randomReader io.Reader, deviceID, to
 		secret:      secret,
 		state:       state,
 		source:      loginSource,
-		origin:      originOf(authBaseURL),
 		listener:    listener,
 		payload:     make(chan accessKeyPayload, 1),
 		serveErr:    make(chan error, 1),
@@ -166,11 +168,12 @@ func (f *browserFlow) handleCallback(writer http.ResponseWriter, request *http.R
 		http.Error(writer, "invalid callback target", http.StatusBadRequest)
 		return
 	}
-	if !constantTimeEqual(request.Header.Get("Origin"), f.origin) {
+	origin := request.Header.Get("Origin")
+	if !isAllowedAuthOrigin(origin) {
 		http.Error(writer, "origin not allowed", http.StatusForbidden)
 		return
 	}
-	f.setCORSHeaders(writer.Header())
+	f.setCORSHeaders(writer.Header(), origin)
 
 	if request.Method == http.MethodOptions {
 		if !strings.EqualFold(strings.TrimSpace(request.Header.Get("Access-Control-Request-Method")), http.MethodPost) ||
@@ -288,8 +291,14 @@ func (f *browserFlow) callbackURLHost() string {
 	return parsed.Host
 }
 
-func (f *browserFlow) setCORSHeaders(header http.Header) {
-	header.Set("Access-Control-Allow-Origin", f.origin)
+// Authentication trusts only these official HTTPS origins, independently of
+// runtime business API configuration or browser-supplied query parameters.
+func isAllowedAuthOrigin(origin string) bool {
+	return origin == "https://xyq.jianying.com" || origin == "https://www.xiaoyunque.com"
+}
+
+func (f *browserFlow) setCORSHeaders(header http.Header, origin string) {
+	header.Set("Access-Control-Allow-Origin", origin)
 	header.Set("Access-Control-Allow-Methods", "POST")
 	header.Set("Access-Control-Allow-Headers", "Content-Type")
 	header.Set("Access-Control-Allow-Private-Network", "true")
@@ -317,8 +326,4 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return errors.New("unexpected trailing JSON")
 	}
 	return err
-}
-
-func originOf(value *url.URL) string {
-	return fmt.Sprintf("%s://%s", strings.ToLower(value.Scheme), value.Host)
 }
