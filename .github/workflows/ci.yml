@@ -54,8 +54,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Test launcher help without installation side effects
-        run: node scripts/run-help.test.js
+      - name: Test launcher update notices and help without installation side effects
+        run: node scripts/version-check.test.js && node scripts/run-help.test.js
 
       - name: Test canvas command
         run: node scripts/canvas-command.test.js

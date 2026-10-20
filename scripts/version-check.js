@@ -5,6 +5,7 @@ const { runSilent } = require("./platform");
 const { DEFAULT_PKG } = require("./skills");
 
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const RETRY_INTERVAL_MS = 5 * 60 * 1000;
 
 function defaultCacheFile() {
   return path.join(os.homedir(), ".pippit_tool_cli", "version-check.json");
@@ -49,7 +50,7 @@ function writeCache(cacheFile, data) {
 }
 
 function fetchLatestVersion(pkg = DEFAULT_PKG) {
-  return runSilent("npm", ["view", pkg, "version"], { timeout: 3000 }).toString().trim();
+  return runSilent("npm", ["view", pkg, "version"], { timeout: 1000 }).toString().trim();
 }
 
 function shouldSkip(args, env) {
@@ -70,6 +71,7 @@ function maybeWarnNewVersion(args = [], opts = {}) {
   const cacheFile = opts.cacheFile || defaultCacheFile();
   const cache = readCache(cacheFile);
   const cacheFresh = cache && now - cache.checkedAt < CHECK_INTERVAL_MS;
+  if (cacheFresh && !cache.latest && now - cache.checkedAt < RETRY_INTERVAL_MS) return;
 
   let latest = cacheFresh ? cache.latest : "";
   if (!latest) {
@@ -77,6 +79,7 @@ function maybeWarnNewVersion(args = [], opts = {}) {
       latest = (opts.fetchLatestVersion || fetchLatestVersion)(opts.pkg || DEFAULT_PKG);
       writeCache(cacheFile, { latest, checkedAt: now });
     } catch (_) {
+      writeCache(cacheFile, { latest: "", checkedAt: now });
       return;
     }
   }
@@ -86,10 +89,14 @@ function maybeWarnNewVersion(args = [], opts = {}) {
 
   const warn = opts.warn || console.error;
   warn(`[pippit-tool-cli] New version available: ${current} -> ${latest}. Run: pippit-tool-cli update`);
+  if (args[0] === "login") {
+    warn("[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.");
+  }
 }
 
 module.exports = {
   CHECK_INTERVAL_MS,
+  RETRY_INTERVAL_MS,
   compareSemver,
   defaultCacheFile,
   maybeWarnNewVersion,

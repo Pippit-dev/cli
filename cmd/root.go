@@ -20,6 +20,7 @@ import (
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
 	"github.com/Pippit-dev/pippit-cli/internal/version"
+	"github.com/Pippit-dev/pippit-cli/internal/versioncheck"
 	"github.com/spf13/cobra"
 )
 
@@ -90,6 +91,9 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	// flags allow fallback, and no source is persisted between CLI processes.
 	// 子命令执行 pre hook
 	root.PersistentPreRunE = func(cmd *cobra.Command, _ []string) error {
+		if policy.CLIOptions().SelfUpdateEnabled && cmd.Runnable() {
+			versioncheck.Check(cmd.Context(), stderr, version.BuildVersion(), cmd.Name())
+		}
 		flag := cmd.Flags().Lookup("source")
 		if flag != nil && (!flag.Changed || strings.TrimSpace(flag.Value.String()) == "") {
 			if source := common.DetectHostSource(); source != "" {

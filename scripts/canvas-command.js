@@ -17,6 +17,8 @@ const DEFAULT_SDK_MODULE = path.join(
   "xyq-canvas-command-runtime.cjs"
 );
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
+const UPGRADE_NOTICE_PREFIX = "[pippit-tool-cli] New version available:";
+const LOGIN_UPGRADE_NOTICE = "[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.";
 const PERSISTENCE_VERSION = 1;
 const OPTIONAL_SCHEMA = Symbol("optional canvas command schema");
 const CHECKPOINT_COMMANDS = new Set([
@@ -162,6 +164,7 @@ function spawnProcess(invocation, args, options = {}) {
     }
     const child = spawn(invocation.command, [...(invocation.prefixArgs || []), ...args], {
       cwd: options.cwd,
+      env: invocation.env || process.env,
       shell: false,
       stdio: options.interactive ? "inherit" : ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -221,13 +224,18 @@ class NativeCanvasClient {
       input: input === undefined ? undefined : JSON.stringify(input),
     });
     if (result.exitCode !== 0) throw new NativeCommandError(args, result);
+    let output;
     try {
-      const value = JSON.parse(result.stdout);
+      output = JSON.parse(result.stdout);
       if (args[0] === "canvas") this.teamID = "0";
-      return value;
     } catch (error) {
       throw new Error(`原生 CLI 未返回有效 JSON（${args.join(" ")}）：${error.message}`);
     }
+    const notices = result.stderr.split(/\r?\n/).filter((line) =>
+      line.startsWith(UPGRADE_NOTICE_PREFIX) || line === LOGIN_UPGRADE_NOTICE
+    );
+    if (notices.length) this.stderr.write(`${notices.join("\n")}\n`);
+    return output;
   }
 
   async ensureAuthenticated() {
