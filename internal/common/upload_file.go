@@ -94,12 +94,12 @@ func UploadFile(ctx context.Context, opts UploadFileOptions, runner *Runner) (*U
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, fmt.Errorf("上传文件请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
+		return nil, NewLogIDError(fmt.Sprintf("上传文件请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 
 	assetID := strings.TrimSpace(resp.Data.PippitAssetID)
 	if assetID == "" {
-		return nil, fmt.Errorf("上传文件响应缺少 pippit_asset_id")
+		return nil, NewLogIDError("上传文件响应缺少 pippit_asset_id", resp.LogID)
 	}
 
 	return &UploadFileResult{

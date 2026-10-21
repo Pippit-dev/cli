@@ -45,17 +45,17 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		return nil, err
 	}
 
-	imageAssetIDs, err := uploadMediaList(ctx, opts.ImagePaths, runner)
+	imageAssetIDs, err := uploadMediaList(ctx, "张参考图片", opts.ImagePaths, runner)
 	if err != nil {
-		return nil, fmt.Errorf("上传图片失败: %w", err)
+		return nil, err
 	}
-	videoAssetIDs, err := uploadMediaList(ctx, opts.VideoPaths, runner)
+	videoAssetIDs, err := uploadMediaList(ctx, "个参考视频", opts.VideoPaths, runner)
 	if err != nil {
-		return nil, fmt.Errorf("上传视频失败: %w", err)
+		return nil, err
 	}
-	audioAssetIDs, err := uploadMediaList(ctx, opts.AudioPaths, runner)
+	audioAssetIDs, err := uploadMediaList(ctx, "段参考音频", opts.AudioPaths, runner)
 	if err != nil {
-		return nil, fmt.Errorf("上传音频失败: %w", err)
+		return nil, err
 	}
 
 	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
@@ -99,16 +99,16 @@ func validateMediaExtensions(kind string, paths []string, allowed map[string]str
 	return nil
 }
 
-func uploadMediaList(ctx context.Context, paths []string, runner *common.Runner) ([]string, error) {
+func uploadMediaList(ctx context.Context, mediaLabel string, paths []string, runner *common.Runner) ([]string, error) {
 	assetIDs := make([]string, 0, len(paths))
-	for _, path := range paths {
+	for i, path := range paths {
 		expanded, err := common.ExpandPath(path)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("第%d%s %q 路径解析失败: %w", i+1, mediaLabel, filepath.Base(path), err)
 		}
 		result, err := common.UploadFile(ctx, common.UploadFileOptions{Path: expanded}, runner)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("第%d%s %q 上传失败: %w", i+1, mediaLabel, filepath.Base(path), err)
 		}
 		assetIDs = append(assetIDs, result.AssetID)
 	}
