@@ -16,7 +16,7 @@ import (
 
 func newOriginTestFlow(t *testing.T) (*browserFlow, accessKeyPayload) {
 	t.Helper()
-	authURL, _ := url.Parse(config.DefaultBaseURL)
+	authURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	deviceID, _ := randomEncoded(bytes.NewReader(bytes.Repeat([]byte{0x21}, deviceIDBytes)), deviceIDBytes)
 	flow, err := startBrowserFlow(authURL, bytes.NewReader(bytes.Repeat([]byte{0x42}, 2*randomBindingBytes)), deviceID, "", "", false)
 	if err != nil {

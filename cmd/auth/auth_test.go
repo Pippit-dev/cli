@@ -75,7 +75,7 @@ func (manager *fakeAuthManager) CredentialScope(context.Context) (string, error)
 
 func TestLoginCommandPrintsMetadataWithoutAccessKey(t *testing.T) {
 	const accessKey = "must-never-be-printed"
-	const loginURL = "https://xyq.jianying.com/cli/pippit-tool-login?callback=http%3A%2F%2F127.0.0.1%3A1234&random_secret_key=one-time-secret"
+	const loginURL = "https://www.xiaoyunque.com/cli/pippit-tool-login?callback=http%3A%2F%2F127.0.0.1%3A1234&random_secret_key=one-time-secret"
 	expiresAt := time.Now().Add(time.Hour).Unix()
 	manager := &fakeAuthManager{credential: &internal_auth.Credential{
 		AccessKey: accessKey, UID: "123", CredentialScope: "device-scope", ExpiredAt: expiresAt,

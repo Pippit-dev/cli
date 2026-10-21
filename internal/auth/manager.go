@@ -46,7 +46,7 @@ func WithCredentialStore(store CredentialStore) ManagerOption {
 // API configuration does not affect the browser identity origin.
 func NewManager(cfg *config.Config, options ...ManagerOption) *Manager {
 	serviceName := config.DefaultAuthStoreServiceName
-	authBaseURL, _ := url.Parse(config.DefaultBaseURL)
+	authBaseURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	manager := &Manager{
 		localCredentialsEnabled: true,
 		cfg:                     cfg,

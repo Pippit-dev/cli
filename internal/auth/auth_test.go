@@ -96,7 +96,7 @@ func (s *memoryCredentialStore) Delete(ctx context.Context) error {
 }
 
 func TestBrowserFlowUsesDedicatedPageAndStrictBoundCallback(t *testing.T) {
-	authURL, _ := url.Parse(config.DefaultBaseURL)
+	authURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	deviceID, _ := randomEncoded(bytes.NewReader(bytes.Repeat([]byte{0x21}, deviceIDBytes)), deviceIDBytes)
 	flow, err := startBrowserFlow(
 		authURL, bytes.NewReader(bytes.Repeat([]byte{0x42}, 2*randomBindingBytes)),
@@ -111,7 +111,7 @@ func TestBrowserFlowUsesDedicatedPageAndStrictBoundCallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loginURL.Scheme+"://"+loginURL.Host != config.DefaultBaseURL || loginURL.Path != loginPagePath {
+	if loginURL.Scheme+"://"+loginURL.Host != config.DefaultAuthBaseURL || loginURL.Path != loginPagePath {
 		t.Fatalf("login URL target = %s://%s%s", loginURL.Scheme, loginURL.Host, loginURL.Path)
 	}
 	query := loginURL.Query()
@@ -152,30 +152,30 @@ func TestBrowserFlowUsesDedicatedPageAndStrictBoundCallback(t *testing.T) {
 	}
 	wrongSecret := payload
 	wrongSecret.RandomSecretKey = "wrong-secret"
-	if status := sendCallback(t, callbackURL, config.DefaultBaseURL, wrongSecret); status != http.StatusBadRequest {
+	if status := sendCallback(t, callbackURL, config.DefaultAuthBaseURL, wrongSecret); status != http.StatusBadRequest {
 		t.Fatalf("wrong secret status = %d", status)
 	}
-	if status := postRawCallback(t, callbackURL, config.DefaultBaseURL, `{"type":"access_key","unknown":true}`); status != http.StatusBadRequest {
+	if status := postRawCallback(t, callbackURL, config.DefaultAuthBaseURL, `{"type":"access_key","unknown":true}`); status != http.StatusBadRequest {
 		t.Fatalf("unknown field status = %d", status)
 	}
-	if status := sendCallback(t, callbackURL+"&state=duplicate", config.DefaultBaseURL, payload); status != http.StatusBadRequest {
+	if status := sendCallback(t, callbackURL+"&state=duplicate", config.DefaultAuthBaseURL, payload); status != http.StatusBadRequest {
 		t.Fatalf("duplicate state status = %d", status)
 	}
-	if status := sendCallback(t, callbackURL+"&unexpected=value", config.DefaultBaseURL, payload); status != http.StatusBadRequest {
+	if status := sendCallback(t, callbackURL+"&unexpected=value", config.DefaultAuthBaseURL, payload); status != http.StatusBadRequest {
 		t.Fatalf("unexpected transport query status = %d", status)
 	}
-	if status := sendPreflight(t, callbackURL, config.DefaultBaseURL); status != http.StatusNoContent {
+	if status := sendPreflight(t, callbackURL, config.DefaultAuthBaseURL); status != http.StatusNoContent {
 		t.Fatalf("preflight status = %d", status)
 	}
 	securityRuntimeCallback := callbackURL + "&a_bogus=signed-request&msToken=transport-token"
-	if status := sendCallback(t, securityRuntimeCallback, config.DefaultBaseURL, payload); status != http.StatusOK {
+	if status := sendCallback(t, securityRuntimeCallback, config.DefaultAuthBaseURL, payload); status != http.StatusOK {
 		t.Fatalf("security-runtime callback status = %d", status)
 	}
 	got, err := flow.wait(context.Background())
 	if err != nil || got.AccessKey != payload.AccessKey || got.UID != payload.UID || got.TokenID != payload.TokenID {
 		t.Fatalf("callback payload = %#v, %v", credentialPayloadWithoutSecret(got), err)
 	}
-	if status := sendCallback(t, callbackURL, config.DefaultBaseURL, payload); status != http.StatusConflict {
+	if status := sendCallback(t, callbackURL, config.DefaultAuthBaseURL, payload); status != http.StatusConflict {
 		t.Fatalf("replayed callback status = %d", status)
 	}
 }
@@ -185,6 +185,7 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 	store := &memoryCredentialStore{}
 	cfg := config.Load()
 	cfg.AccessKey = ""
+	cfg.BaseURL = "https://untrusted.invalid"
 	manager := NewManager(
 		cfg,
 		WithCredentialStore(store),
@@ -204,6 +205,9 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 			if parseErr != nil {
 				return parseErr
 			}
+			if loginURL.Scheme != "https" || loginURL.Host != "www.xiaoyunque.com" {
+				t.Errorf("login origin = %s://%s, want https://www.xiaoyunque.com", loginURL.Scheme, loginURL.Host)
+			}
 			if loginURL.Path != loginPagePath || loginURL.Query().Get("force") != "" {
 				return fmt.Errorf("unexpected login URL")
 			}
@@ -218,7 +222,7 @@ func TestManagerLoginStoresPageIssuedCredentialWithoutServerExchange(t *testing.
 				Source:          loginSource,
 				CallbackURL:     loginURL.Query().Get("callback"),
 			}
-			if status := sendCallback(t, payload.CallbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
+			if status := sendCallback(t, payload.CallbackURL, loginURL.Scheme+"://"+loginURL.Host, payload); status != http.StatusOK {
 				return fmt.Errorf("callback status %d", status)
 			}
 			return nil
@@ -273,7 +277,7 @@ func TestManagerWaitsForCallbackWhenBrowserOpenFails(t *testing.T) {
 				Source:          loginSource,
 				CallbackURL:     loginURL.Query().Get("callback"),
 			}
-			if status := sendCallback(t, payload.CallbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
+			if status := sendCallback(t, payload.CallbackURL, config.DefaultAuthBaseURL, payload); status != http.StatusOK {
 				return fmt.Errorf("callback status %d", status)
 			}
 			return errors.New("browser opener unavailable")
@@ -347,7 +351,7 @@ func TestManagerReauthenticationPinsAccountAndRequiresRotation(t *testing.T) {
 }
 
 func TestBrowserFlowRequiresExpectedAccountForForceAndNeverUsesRawUID(t *testing.T) {
-	authURL, _ := url.Parse(config.DefaultBaseURL)
+	authURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	deviceID, _ := randomEncoded(bytes.NewReader(bytes.Repeat([]byte{0x22}, deviceIDBytes)), deviceIDBytes)
 	if _, err := startBrowserFlow(
 		authURL, bytes.NewReader(bytes.Repeat([]byte{0x42}, 2*randomBindingBytes)),
@@ -378,7 +382,7 @@ func TestBrowserFlowRequiresExpectedAccountForForceAndNeverUsesRawUID(t *testing
 }
 
 func TestBrowserFlowSendsStoredTokenIDOnNormalLogin(t *testing.T) {
-	authURL, _ := url.Parse(config.DefaultBaseURL)
+	authURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	deviceID, _ := randomEncoded(bytes.NewReader(bytes.Repeat([]byte{0x23}, deviceIDBytes)), deviceIDBytes)
 	flow, err := startBrowserFlow(
 		authURL, bytes.NewReader(bytes.Repeat([]byte{0x44}, 2*randomBindingBytes)),
@@ -398,7 +402,7 @@ func TestBrowserFlowSendsStoredTokenIDOnNormalLogin(t *testing.T) {
 }
 
 func TestBrowserFlowAllowsLogoutIdentityTokenWithoutAccountBinding(t *testing.T) {
-	authURL, _ := url.Parse(config.DefaultBaseURL)
+	authURL, _ := url.Parse(config.DefaultAuthBaseURL)
 	deviceID, _ := randomEncoded(bytes.NewReader(bytes.Repeat([]byte{0x24}, deviceIDBytes)), deviceIDBytes)
 	flow, err := startBrowserFlow(
 		authURL, bytes.NewReader(bytes.Repeat([]byte{0x45}, 2*randomBindingBytes)),
@@ -464,7 +468,7 @@ func TestManagerDerivesExpectedAccountFromDurableScope(t *testing.T) {
 				Source:          loginSource,
 				CallbackURL:     loginURL.Query().Get("callback"),
 			}
-			if status := sendCallback(t, payload.CallbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
+			if status := sendCallback(t, payload.CallbackURL, config.DefaultAuthBaseURL, payload); status != http.StatusOK {
 				return fmt.Errorf("callback status %d", status)
 			}
 			return nil
@@ -488,7 +492,7 @@ func TestResolveStatusLogoutAndAuthOrigin(t *testing.T) {
 	cfg.AccessKey = " env-ak "
 	cfg.BaseURL = "https://untrusted.invalid"
 	manager := NewManager(cfg, WithCredentialStore(store), withClockForTest(func() time.Time { return fixedNow }))
-	if manager.authBaseURL.String() != config.DefaultBaseURL {
+	if manager.authBaseURL.String() != config.DefaultAuthBaseURL {
 		t.Fatalf("browser login followed runtime business base URL: %q", manager.authBaseURL)
 	}
 	if key, err := manager.ResolveAccessKey(context.Background()); err != nil || key != "env-ak" {
@@ -738,7 +742,7 @@ func callbackOpener(t *testing.T, expiry time.Time, uid, tokenID, accessKey stri
 			Source:          loginSource,
 			CallbackURL:     loginURL.Query().Get("callback"),
 		}
-		if status := sendCallback(t, payload.CallbackURL, config.DefaultBaseURL, payload); status != http.StatusOK {
+		if status := sendCallback(t, payload.CallbackURL, config.DefaultAuthBaseURL, payload); status != http.StatusOK {
 			return fmt.Errorf("callback status %d", status)
 		}
 		return nil
