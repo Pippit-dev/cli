@@ -8,14 +8,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/bytedance/sonic"
 )
 
 func TestGenerateVideo(t *testing.T) {
-	assetIDs := []string{"image_asset_1", "image_asset_2", "video_asset_1", "video_asset_2", "audio_asset_1"}
-	uploadIndex := 0
+	assetIDs := map[string]string{
+		"cat1.jpg": "image_asset_1", "cat2.jpg": "image_asset_2",
+		"video1.mp4": "video_asset_1", "video2.mp4": "video_asset_2", "bgm.wav": "audio_asset_1",
+	}
+	var uploadCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
@@ -25,9 +29,6 @@ func TestGenerateVideo(t *testing.T) {
 		case "/api/biz/v1/skill/upload_file":
 			if r.Method != http.MethodPost {
 				t.Fatalf("upload method = %s, want POST", r.Method)
-			}
-			if uploadIndex >= len(assetIDs) {
-				t.Fatalf("unexpected upload %d", uploadIndex)
 			}
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
 				t.Fatalf("ParseMultipartForm(): %v", err)
@@ -39,11 +40,15 @@ func TestGenerateVideo(t *testing.T) {
 			if files[0].Filename == "bgm.wav" && !strings.HasPrefix(files[0].Header.Get("Content-Type"), "audio/") {
 				t.Fatalf("audio content type = %q, want audio content type", files[0].Header.Get("Content-Type"))
 			}
-			uploadIndex++
-			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"` + assetIDs[uploadIndex-1] + `"}}`))
+			assetID, ok := assetIDs[files[0].Filename]
+			if !ok {
+				t.Errorf("unexpected upload %q", files[0].Filename)
+			}
+			uploadCount.Add(1)
+			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"pippit_asset_id":"` + assetID + `"}}`))
 		case "/api/biz/v1/skill/submit_run":
-			if uploadIndex != len(assetIDs) {
-				t.Fatalf("submit called after %d uploads, want %d", uploadIndex, len(assetIDs))
+			if got := uploadCount.Load(); int(got) != len(assetIDs) {
+				t.Fatalf("submit called after %d uploads, want %d", got, len(assetIDs))
 			}
 			data, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -288,19 +293,24 @@ func TestGenerateVideoAcceptsReferencesBeyondFormerLimits(t *testing.T) {
 		}
 	}
 
-	uploadIndex := 0
+	var uploadCount atomic.Int32
 	submitted := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/biz/v1/skill/upload_file":
-			if uploadIndex >= len(assetIDs) {
-				t.Fatalf("unexpected upload %d", uploadIndex)
+			file, header, err := r.FormFile("file")
+			if err != nil {
+				t.Errorf("FormFile(): %v", err)
+				http.Error(w, "invalid upload", http.StatusBadRequest)
+				return
 			}
-			_, _ = w.Write([]byte(`{"ret":"0","data":{"pippit_asset_id":"` + assetIDs[uploadIndex] + `"}}`))
-			uploadIndex++
+			file.Close()
+			defer r.MultipartForm.RemoveAll()
+			uploadCount.Add(1)
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"pippit_asset_id":"` + header.Filename + `"}}`))
 		case "/api/biz/v1/skill/submit_run":
-			if uploadIndex != len(assetIDs) {
-				t.Fatalf("uploaded %d references, want %d", uploadIndex, len(assetIDs))
+			if got := uploadCount.Load(); int(got) != len(assetIDs) {
+				t.Fatalf("uploaded %d references, want %d", got, len(assetIDs))
 			}
 			data, err := io.ReadAll(r.Body)
 			if err != nil {

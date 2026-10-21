@@ -6,17 +6,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 )
 
 // Session is one command's immutable account/origin/team choice. It is not an
 // authorization grant: every request still uses the current credential.
 // Store is optional when a command explicitly selects its space.
+// Concurrent requests share one selection; local records and diagnostics are
+// serialized without holding the lock during network uploads.
 type Session struct {
 	Store    *Store
 	Explicit *string
 	Expected *Binding
 	Identity func(context.Context) (string, error)
 	Stderr   io.Writer
+	mu       sync.Mutex
 	selected *Selection
 }
 
@@ -49,6 +53,9 @@ func (s *Session) CheckIdentity(ctx context.Context) error {
 // Resolve selects and freezes the command's space, checking each request's
 // records even after freezing. CheckIdentity belongs at the request boundary.
 func (s *Session) Resolve(ref References) (Selection, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	explicit := s.Explicit
 	fixed := s.selected
 	if s.Expected != nil {
@@ -129,25 +136,40 @@ func (s *Session) Resolve(ref References) (Selection, error) {
 }
 
 func (s *Session) TeamID() string {
-	if s == nil || s.selected == nil {
+	if s == nil {
+		return "0"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.selected == nil {
 		return "0"
 	}
 	return s.selected.TeamID
 }
 
 func (s *Session) Token() string {
-	if s == nil || s.selected == nil || s.Store == nil {
+	if s == nil {
 		return ""
 	}
-	data, _ := json.Marshal(Binding{Selection: Selection{TeamID: s.TeamID()}, Account: s.Store.Account, Origin: s.Store.Origin})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.selected == nil || s.Store == nil {
+		return ""
+	}
+	data, _ := json.Marshal(Binding{Selection: Selection{TeamID: s.selected.TeamID}, Account: s.Store.Account, Origin: s.Store.Origin})
 	return base64.RawURLEncoding.EncodeToString(data)
 }
 
 func (s *Session) Remember(ref References) {
-	if s == nil || s.selected == nil || s.Store == nil || s.Store.Account == "" {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.selected == nil || s.Store == nil || s.Store.Account == "" {
 		return
 	}
 	if err := s.Store.Remember(ref, *s.selected); err != nil && s.Stderr != nil {
-		fmt.Fprintf(s.Stderr, "请求已成功，但空间记录保存失败：%v；保留 thread_id=%s run_id=%s asset_ids=%v，后续使用 --team-id %s 查询，不要重复提交。\n", err, ref.ThreadID, ref.RunID, ref.AssetIDs, s.TeamID())
+		fmt.Fprintf(s.Stderr, "请求已成功，但空间记录保存失败：%v；保留 thread_id=%s run_id=%s asset_ids=%v，后续使用 --team-id %s 查询，不要重复提交。\n", err, ref.ThreadID, ref.RunID, ref.AssetIDs, s.selected.TeamID)
 	}
 }
