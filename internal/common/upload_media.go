@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const mediaUploadWorkers = 5
+const mediaUploadWorkers = 10
 
 // UploadMediaGroup keeps the original order and type-local numbering of references.
 type UploadMediaGroup struct {

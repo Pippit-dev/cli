@@ -28,10 +28,15 @@ func (c mediaUploadClient) SendMultipartRequest(ctx context.Context, _ string, _
 }
 
 func TestUploadMediaGroupsConcurrentAndOrdered(t *testing.T) {
+	const wantConcurrency = 10
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	groups := []UploadMediaGroup{{Label: "张参考图片"}, {Label: "个参考视频"}, {Label: "段参考音频"}}
-	want := [][]string{{"a.jpg", "b.jpg", "c.jpg"}, {"a.mp4", "b.mp4"}, {"a.wav", "b.wav"}}
+	want := [][]string{
+		{"a.jpg", "b.jpg", "c.jpg", "d.jpg"},
+		{"a.mp4", "b.mp4", "c.mp4", "d.mp4"},
+		{"a.wav", "b.wav", "c.wav", "d.wav"},
+	}
 	release := make(map[string]chan struct{})
 	dir := t.TempDir()
 	for g, names := range want {
@@ -75,7 +80,7 @@ func TestUploadMediaGroupsConcurrentAndOrdered(t *testing.T) {
 		done <- outcome{ids, err}
 	}()
 	var first []string
-	for i := 0; i < mediaUploadWorkers; i++ {
+	for i := 0; i < wantConcurrency; i++ {
 		select {
 		case name := <-started:
 			first = append(first, name)
@@ -103,8 +108,8 @@ func TestUploadMediaGroupsConcurrentAndOrdered(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("uploads did not finish")
 	}
-	if got := peak.Load(); got != int32(mediaUploadWorkers) {
-		t.Fatalf("peak uploads = %d, want %d", got, mediaUploadWorkers)
+	if got := peak.Load(); got != wantConcurrency {
+		t.Fatalf("peak uploads = %d, want %d", got, wantConcurrency)
 	}
 }
 
