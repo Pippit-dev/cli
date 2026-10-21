@@ -141,8 +141,8 @@ func TestStatusDoesNotMistakeSpaceFailureForLoggedOut(t *testing.T) {
 	if err := os.WriteFile(path, []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	manager := &fakeAuthManager{status: &internal_auth.Status{LoggedIn: true, Source: "environment"}}
-	runner := &common.Runner{Config: &config.Config{AccessKey: "test-key"}, Auth: manager, SpaceStore: &space.Store{Dir: path}}
+	manager := &fakeAuthManager{status: &internal_auth.Status{LoggedIn: true, Source: "browser", UID: "123"}}
+	runner := &common.Runner{Config: &config.Config{}, Auth: manager, SpaceStore: &space.Store{Dir: path}}
 	var out, warnings bytes.Buffer
 	if err := NewStatusCommand(&out, &warnings, runner).Execute(); err != nil {
 		t.Fatal(err)

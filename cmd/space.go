@@ -122,7 +122,14 @@ func loadSpaces(ctx context.Context, runner *common.Runner, store *space.Store) 
 }
 
 func newSpaceCommand(stdout io.Writer, runner *common.Runner) *cobra.Command {
-	root := &cobra.Command{Use: commandnames.Space, Short: "查看和切换个人或团队默认空间"}
+	root := &cobra.Command{
+		Use:   commandnames.Space,
+		Short: "查看和切换个人或团队默认空间",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
 	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, Short: "列出个人和团队空间，标记当前选择", RunE: func(cmd *cobra.Command, _ []string) error {
 		store, err := common.SpaceStoreForRunner(cmd.Context(), runner)
 		if err != nil {
