@@ -13,6 +13,7 @@ import (
 
 const (
 	DefaultBaseURL               = "https://xyq.jianying.com"
+	DefaultAuthBaseURL           = "https://www.xiaoyunque.com"
 	DefaultHTTPTimeout           = 30 * time.Minute
 	DefaultAuthTTL               = 30 * time.Second
 	DefaultAuthStoreServiceName  = "pippit-cli"
