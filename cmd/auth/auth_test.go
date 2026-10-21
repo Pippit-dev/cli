@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	"github.com/Pippit-dev/pippit-cli/internal/space"
 )
 
 type fakeAuthManager struct {
@@ -130,5 +133,25 @@ func TestStatusAndLogoutDoNotModifyExplicitEnvironmentCredential(t *testing.T) {
 	}
 	if !result.LoggedOut || !result.RemoteCredentialPreserved || !strings.Contains(logoutErr.String(), "远程 Access Key 未撤销") {
 		t.Fatalf("logout result/stderr = %#v/%q", result, logoutErr.String())
+	}
+}
+
+func TestStatusDoesNotMistakeSpaceFailureForLoggedOut(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(path, []byte("file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manager := &fakeAuthManager{status: &internal_auth.Status{LoggedIn: true, Source: "browser", UID: "123"}}
+	runner := &common.Runner{Config: &config.Config{}, Auth: manager, SpaceStore: &space.Store{Dir: path}}
+	var out, warnings bytes.Buffer
+	if err := NewStatusCommand(&out, &warnings, runner).Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var result loginResult
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.LoggedIn || result.DefaultSpace != nil || !strings.Contains(warnings.String(), "无法读取默认空间") {
+		t.Fatalf("status=%s warning=%s", out.String(), warnings.String())
 	}
 }

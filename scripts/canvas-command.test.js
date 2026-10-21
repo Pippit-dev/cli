@@ -7,6 +7,7 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const {
+  canvasSpaceArgs,
   createFilePersistence,
   ensureNodeRuntimeGlobals,
   isCanvasCommand,
@@ -404,6 +405,7 @@ async function main() {
   const logPath = path.join(tempRoot, "native.jsonl");
   const loginPath = path.join(tempRoot, "login-state");
   const authRejectPath = path.join(tempRoot, "auth-rejected");
+  const defaultTeamPath = path.join(tempRoot, "default-team");
   const inputPath = path.join(tempRoot, "input file.json");
   fs.writeFileSync(inputPath, '{"nodeKind":"role"}');
   fs.writeFileSync(nativePath, String.raw`
@@ -424,8 +426,13 @@ else if (args[1] === "get" && process.env.FAKE_AUTH_REJECT_FILE && !fs.existsSyn
   process.exit(7);
 }
 else if (args[1] === "get") {
+  const teamFlag = args.indexOf("--team-id");
+  const teamID = teamFlag >= 0 ? args[teamFlag + 1]
+    : fs.existsSync(process.env.FAKE_DEFAULT_TEAM_FILE) ? fs.readFileSync(process.env.FAKE_DEFAULT_TEAM_FILE, "utf8") : "0";
+  if (teamID === "99") { process.stderr.write("canvas get failed: ret=14023 no access\n"); process.exit(7); }
+  if (process.env.FAKE_CHANGE_DEFAULT_ON_GET) fs.writeFileSync(process.env.FAKE_DEFAULT_TEAM_FILE, process.env.FAKE_CHANGE_DEFAULT_ON_GET);
   const ids = args.flatMap((arg, index) => arg === "--asset-id" ? [args[index + 1]] : []);
-  out({ assets: ids.map((id) => id === "role_1"
+  out({ team_id: teamID, ...(process.env.FAKE_NO_SCOPE === "1" ? {} : { space_context: "binding:" + teamID }), assets: ids.map((id) => id === "role_1"
     ? { PippitAssetID: id, TextInfo: { Content: "", download_url: "https://example.com/role" }, version: 5 }
     : { PippitAssetID: id, TextInfo: { Content: JSON.stringify({ root_canvas_id: id, assets: { [id]: { content: { edges: {}, nodes: {} }, extra: {}, pippitAssetId: id, type: "canvas" } } }) }, version: 5 }) });
 } else if (args[1] === "allocate") out({ asset_ids: ["allocated_role"] });
@@ -437,8 +444,10 @@ else if (args[1] === "apply") {
 `);
   const previousLog = process.env.FAKE_COMMAND_LOG;
   const previousLogin = process.env.FAKE_LOGIN_FILE;
+  const previousDefaultTeam = process.env.FAKE_DEFAULT_TEAM_FILE;
   process.env.FAKE_COMMAND_LOG = logPath;
   process.env.FAKE_LOGIN_FILE = loginPath;
+  process.env.FAKE_DEFAULT_TEAM_FILE = defaultTeamPath;
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
     assert.strictEqual(url, "https://example.com/role");
@@ -456,8 +465,46 @@ else if (args[1] === "apply") {
     const calls = fs.readFileSync(logPath, "utf8").trim().split("\n").map(JSON.parse);
     assert.deepStrictEqual(calls.slice(0, 2).map((call) => call.args), [["status"], ["login"]]);
     const apply = calls.find((call) => call.args[1] === "apply");
-    assert.deepStrictEqual(apply.args, ["canvas", "apply", "--transport-result", "--file", "-"]);
+    assert.deepStrictEqual(apply.args, ["canvas", "apply", "--transport-result", "--file", "-", "--team-id", "0", "--space-context", "binding:0"]);
+    assert.deepStrictEqual(canvasSpaceArgs(["--team-id=0", "canvas", "command", "list"]), { args: ["canvas", "command", "list"], teamID: "0" });
+    assert(isCanvasCommand(["--team-id", "0", "canvas", "command", "list"]));
+    assert.throws(() => canvasSpaceArgs(["--team-id", "-1"]), /team-id/);
     assert.strictEqual(JSON.parse(apply.input).transactions.length, 1);
+
+    for (const { flags, selected, noScope } of [
+      { flags: [], selected: "12" },
+      { flags: ["--team-id", "34"], selected: "34" },
+      { flags: ["--team-id=0"], selected: "0" },
+      { flags: ["--team-id", "12"], selected: "12", noScope: true },
+    ]) {
+      fs.writeFileSync(defaultTeamPath, "12");
+      process.env.FAKE_CHANGE_DEFAULT_ON_GET = "99";
+      if (noScope) process.env.FAKE_NO_SCOPE = "1";
+      const before = fs.readFileSync(logPath, "utf8").trim().split("\n").length;
+      await runCanvasCommand(
+        ["canvas", "command", "run", "create_biz_node", "--canvas-id", "canvas_1", "--file", inputPath, ...flags],
+        { cwd: tempRoot, nativeInvocation, sdk, stateDirectory: path.join(tempRoot, "state"), stdout: outputBuffer() }
+      );
+      const transport = fs.readFileSync(logPath, "utf8").trim().split("\n").slice(before)
+        .map(JSON.parse).filter((call) => call.args[0] === "canvas");
+      assert(transport.some((call) => call.args[1] === "allocate"));
+      assert(transport.some((call) => call.args[1] === "apply"));
+      for (const call of transport.slice(1)) {
+        assert.strictEqual(call.args[call.args.indexOf("--team-id") + 1], selected);
+        if (noScope) assert(!call.args.includes("--space-context"));
+        else assert.strictEqual(call.args[call.args.indexOf("--space-context") + 1], `binding:${selected}`);
+      }
+      delete process.env.FAKE_NO_SCOPE;
+    }
+    delete process.env.FAKE_CHANGE_DEFAULT_ON_GET;
+    fs.writeFileSync(defaultTeamPath, "0");
+    const beforeDenied = fs.readFileSync(logPath, "utf8").trim().split("\n").length;
+    await assert.rejects(runCanvasCommand(
+      ["canvas", "command", "run", "role.update", "--team-id", "99", "--canvas-id", "canvas_1", "--input", "{}"],
+      { cwd: tempRoot, nativeInvocation, sdk, stateDirectory: path.join(tempRoot, "state"), stdout: outputBuffer() }
+    ), /14023/);
+    const deniedCalls = fs.readFileSync(logPath, "utf8").trim().split("\n").slice(beforeDenied).map(JSON.parse);
+    assert.deepStrictEqual(deniedCalls.map((call) => call.args.slice(0, 2)), [["status"], ["canvas", "get"]]);
 
     const checkpointOut = outputBuffer();
     await runCanvasCommand(
@@ -471,6 +518,19 @@ else if (args[1] === "apply") {
       { cwd: tempRoot, nativeInvocation, sdk, stateDirectory: path.join(tempRoot, "state"), stdout: checkpointsOut }
     );
     assert.strictEqual(JSON.parse(checkpointsOut.value).data.checkpoints[0].checkpointId, "checkpoint_1");
+    // The same account/canvas must not load a checkpoint from another space.
+    for (const teamID of ["12", "34"]) {
+      const isolatedOut = outputBuffer();
+      await runCanvasCommand(
+        ["canvas", "command", "run", "list_checkpoints", "--team-id", teamID, "--canvas-id", "canvas_1", "--input", "{}"],
+        { cwd: tempRoot, nativeInvocation, sdk, stateDirectory: path.join(tempRoot, "state"), stdout: isolatedOut }
+      );
+      assert.deepStrictEqual(JSON.parse(isolatedOut.value).data.checkpoints, []);
+      await runCanvasCommand(
+        ["canvas", "command", "run", "create_checkpoint", "--team-id", teamID, "--canvas-id", "canvas_1", "--input", "{}"],
+        { cwd: tempRoot, nativeInvocation, sdk, stateDirectory: path.join(tempRoot, "state"), stdout: outputBuffer() }
+      );
+    }
 
     const registeredOut = outputBuffer();
     await runCanvasCommand(
@@ -551,6 +611,10 @@ else if (args[1] === "apply") {
     else process.env.FAKE_COMMAND_LOG = previousLog;
     if (previousLogin === undefined) delete process.env.FAKE_LOGIN_FILE;
     else process.env.FAKE_LOGIN_FILE = previousLogin;
+    if (previousDefaultTeam === undefined) delete process.env.FAKE_DEFAULT_TEAM_FILE;
+    else process.env.FAKE_DEFAULT_TEAM_FILE = previousDefaultTeam;
+    delete process.env.FAKE_CHANGE_DEFAULT_ON_GET;
+    delete process.env.FAKE_NO_SCOPE;
     globalThis.fetch = previousFetch;
     delete process.env.FAKE_APPLY_FAILURE;
     fs.rmSync(tempRoot, { force: true, recursive: true });

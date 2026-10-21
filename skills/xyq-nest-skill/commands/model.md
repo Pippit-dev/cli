@@ -1,6 +1,6 @@
 # model：发现可用图片与视频模型
 
-需要有效登录或 `XYQ_ACCESS_KEY`。生成前可查询当前账号可用的模型及参数配置。`--type image` 查询图片，`--type video` 查询视频；省略时保持查询视频。两类查询共用 Skill 模型接口，图片请求的 `scene=web_image_agent`，视频请求的 `scene=web_turbo_video_generator`，`source_model_key` 为空。身份沿用个人 AK，不传入团队范围。
+需要有效登录或 `XYQ_ACCESS_KEY`。生成前可查询当前账号可用的模型及参数配置。`--type image` 查询图片，`--type video` 查询视频；省略时保持查询视频。两类查询共用 Skill 模型接口，图片请求的 `scene=web_image_agent`，视频请求的 `scene=web_turbo_video_generator`，`source_model_key` 为空。身份沿用当前 AK；团队空间请求携带 `X-Team-Id`（可用 `--team-id` 单次指定），API 内部仍按个人身份查询，模型列表不代表团队生成权限。
 
 使用旧版 CLI 时先检查 `model --help` 是否支持图片名称查询，并确认 `generate-image --help` 的 `--model` 接受完整名称；仅支持视频或仍要求图片 key 时先升级，不能用视频结果回答图片模型问题。
 

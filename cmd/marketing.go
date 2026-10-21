@@ -18,8 +18,8 @@ import (
 )
 
 var marketingPaths = map[string]string{
-	"generate": "/api/biz/v1/agent/submit_marketing_run",
-	"query":    "/api/biz/v1/agent/query_generate_video_result",
+	"generate": config.SubmitMarketingRunPath,
+	"query":    config.QueryGenerateVideoResultPath,
 	"upload":   config.UploadFilePath,
 	"balance":  config.GetCreditBalancePath,
 }
@@ -103,7 +103,19 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 			}
 			body = value
 			if !execute {
-				return common.WriteJSON(stdout, map[string]any{"dry_run": true, "url": config.DefaultBaseURL + marketingPaths[action], "body": body})
+				if session := common.SpaceSession(cmd.Context()); session != nil {
+					if err := session.CheckIdentity(cmd.Context()); err != nil {
+						return err
+					}
+					ref, err := common.SpaceReferences(body)
+					if err != nil {
+						return err
+					}
+					if _, err := session.Resolve(ref); err != nil {
+						return err
+					}
+				}
+				return common.WriteJSON(stdout, map[string]any{"dry_run": true, "url": config.DefaultBaseURL + marketingPaths[action], "body": body, "team_id": common.SpaceTeamID(cmd.Context())})
 			}
 		case "query":
 			if strings.TrimSpace(threadID) == "" || strings.TrimSpace(runID) == "" {
@@ -142,6 +154,10 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 			_ = json.Unmarshal(result["errmsg"], &message)
 			_ = json.Unmarshal(result["log_id"], &logID)
 			return common.NewLogIDError(fmt.Sprintf("营销 API 失败: ret=%s errmsg=%s", ret, message), logID)
+		}
+		result["team_id"], _ = json.Marshal(common.SpaceTeamID(ctx))
+		if session := common.SpaceSession(ctx); session != nil {
+			result["space_context"], _ = json.Marshal(session.Token())
 		}
 		return common.WriteJSON(stdout, result)
 	}

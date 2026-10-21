@@ -11,15 +11,17 @@ import (
 	internal_auth "github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
+	"github.com/Pippit-dev/pippit-cli/internal/space"
 	"github.com/spf13/cobra"
 )
 
 type loginResult struct {
-	LoggedIn        bool   `json:"logged_in"`
-	Source          string `json:"source"`
-	UID             string `json:"uid,omitempty"`
-	CredentialScope string `json:"credential_scope,omitempty"`
-	ExpiresAt       string `json:"expires_at,omitempty"`
+	DefaultSpace    *space.Selection `json:"default_space,omitempty"`
+	LoggedIn        bool             `json:"logged_in"`
+	Source          string           `json:"source"`
+	UID             string           `json:"uid,omitempty"`
+	CredentialScope string           `json:"credential_scope,omitempty"`
+	ExpiresAt       string           `json:"expires_at,omitempty"`
 }
 
 type logoutResult struct {
@@ -80,6 +82,18 @@ func NewStatusCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 				return err
 			}
 			result := loginResult{LoggedIn: status.LoggedIn, Source: status.Source, UID: status.UID, CredentialScope: status.CredentialScope}
+			store, scopeErr := common.SpaceStoreForRunner(command.Context(), runner)
+			if scopeErr == nil && store != nil {
+				selected, err := store.Current()
+				scopeErr = err
+				if err == nil {
+					result.DefaultSpace = &selected
+				}
+			}
+			if scopeErr != nil {
+				// Space metadata failures must not be mistaken for expired login.
+				fmt.Fprintf(stderr, "无法读取默认空间：%v\n", scopeErr)
+			}
 			if !status.ExpiresAt.IsZero() {
 				result.ExpiresAt = status.ExpiresAt.Format(time.RFC3339)
 			}

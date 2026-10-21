@@ -180,11 +180,15 @@ function bootstrapFixture({ failure, platform = "linux", version = "9.9.9", miss
             } else {
               assert.strictEqual(args[args.length - 1], "--help");
               const commandName = args.slice(0, -1).join(" ");
-              if (commandName === missingCommand && fs.existsSync(command)
-                  && fs.readFileSync(command, "utf8").includes("missing-command")) {
+              const outdated = fs.existsSync(command) && fs.readFileSync(command, "utf8").includes("missing-command");
+              if (commandName === missingCommand && outdated) {
                 throw Object.assign(new Error("unknown command"), { status: 1 });
               }
               if (failure === commandName) throw Object.assign(new Error("unknown command"), { status: 1 });
+              if (commandName === "generate-image") {
+                return Buffer.from(failure === "--team-id" || (missingCommand === "--team-id" && outdated)
+                  ? "  --help  Show help\n" : "  --team-id string  Space ID\n");
+              }
             }
             return Buffer.from("");
           },
@@ -207,7 +211,7 @@ function checkBootstrap() {
     assert(result.cli_path.endsWith(platform === "win32" ? "pippit-tool-cli.exe" : "pippit-tool-cli"));
     assert.strictEqual(result.cli_path, JSON.parse(next.output[0]).cli_path);
     assert.strictEqual(fixture.dirs.length, 1, "Subsequent invocations must reuse the cached CLI");
-    for (const command of ["status", "login", "logout", "query-result",
+    for (const command of ["status", "login", "logout", "query-result", "space list", "space use",
       "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
       assert.strictEqual(fixture.calls.filter((call) => call.args.slice(0, -1).join(" ") === command).length, 2);
     }
@@ -237,8 +241,8 @@ function checkBootstrap() {
       assert.strictEqual(fixture.dirs.length, missingCommand ? 1 : 0, "An old PATH CLI must not cause repeated upgrades when cache is usable");
     }
   }
-  // Every retained command participates in compatibility checks and cache reuse.
-  for (const missingCommand of ["status", "login", "logout", "query-result", "generate-image",
+  // Required commands and the global space flag participate in compatibility checks and cache reuse.
+  for (const missingCommand of ["status", "login", "logout", "query-result", "space list", "space use", "--team-id", "generate-image",
     "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
@@ -288,7 +292,7 @@ function checkBootstrap() {
   assert.strictEqual(load(bootstrap, failedUpgrade.options).proc.exitCode, 1);
   assert.strictEqual(failedUpgrade.dirs.length, 1, "An incompatible latest release must fail without an upgrade loop");
   assert.strictEqual(fs.readFileSync(oldPath, "utf8"), "missing-command");
-  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "generate-image", "query-result", "model list", "model describe"]) {
+  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "space list", "space use", "--team-id", "generate-image", "query-result", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ failure });
     const result = load(bootstrap, fixture.options);
     assert.strictEqual(result.proc.exitCode, 1, failure);

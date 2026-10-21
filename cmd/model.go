@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/Pippit-dev/pippit-cli/internal/models"
 	"github.com/spf13/cobra"
@@ -40,11 +41,11 @@ func newModelCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 		return common.WriteJSON(stdout, output)
 	}
 	cmd := &cobra.Command{
-		Use:   "model [name-or-key]",
+		Use:   commandnames.Model + " [name-or-key]",
 		Short: "Discover available image and video models and their server configuration",
 		Long:  "Query available image and video models using your current credentials. Select images by their full display name (in quotes), videos by key. Successful queries are cached locally for 5 minutes. Use --refresh to bypass the cache; retry if a query fails.",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: withErrorLog("model", nil, func(cmd *cobra.Command, args []string) error {
+		RunE: withErrorLog(commandnames.Model, nil, func(cmd *cobra.Command, args []string) error {
 			return query(cmd, args, len(args) > 0)
 		}),
 	}
@@ -56,14 +57,14 @@ func newModelCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Com
 		Use: "list [query]", Aliases: []string{"search"},
 		Short: "List models; search images by name, videos by key or name",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: withErrorLog("model list", nil, func(cmd *cobra.Command, args []string) error {
+		RunE: withErrorLog(commandnames.Model+" list", nil, func(cmd *cobra.Command, args []string) error {
 			return query(cmd, args, false)
 		}),
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use: "describe <name-or-key>", Short: "Show model parameters; use the full image name or video key",
 		Args: cobra.ExactArgs(1),
-		RunE: withErrorLog("model describe", nil, func(cmd *cobra.Command, args []string) error {
+		RunE: withErrorLog(commandnames.Model+" describe", nil, func(cmd *cobra.Command, args []string) error {
 			return query(cmd, args, true)
 		}),
 	})

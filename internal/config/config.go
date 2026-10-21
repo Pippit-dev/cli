@@ -12,18 +12,21 @@ import (
 )
 
 const (
-	DefaultBaseURL              = "https://xyq.jianying.com"
-	DefaultHTTPTimeout          = 30 * time.Minute
-	DefaultAuthTTL              = 30 * time.Second
-	DefaultAuthStoreServiceName = "pippit-cli"
-	SubmitRunPath               = "/api/biz/v1/skill/submit_run"
-	GetCreditBalancePath        = "/api/biz/v1/skill/get_credit_balance"
-	GetAvailableModelListPath   = "/api/biz/v1/skill/get_available_model_list"
-	GetThreadPath               = "/api/biz/v1/skill/get_thread"
-	UploadFilePath              = "/api/biz/v1/skill/upload_file"
-	ListThreadFilePath          = "/api/biz/v1/skill/list_thread_file"
-	EnvXYQAccessKey             = "XYQ_ACCESS_KEY"
-	FileName                    = "config.toml"
+	DefaultBaseURL               = "https://xyq.jianying.com"
+	DefaultHTTPTimeout           = 30 * time.Minute
+	DefaultAuthTTL               = 30 * time.Second
+	DefaultAuthStoreServiceName  = "pippit-cli"
+	SubmitRunPath                = "/api/biz/v1/skill/submit_run"
+	SubmitMarketingRunPath       = "/api/biz/v1/agent/submit_marketing_run"
+	QueryGenerateVideoResultPath = "/api/biz/v1/agent/query_generate_video_result"
+	GetCreditBalancePath         = "/api/biz/v1/skill/get_credit_balance"
+	GetLiteTeamListPath          = "/api/biz/v1/skill/get_lite_team_list"
+	GetAvailableModelListPath    = "/api/biz/v1/skill/get_available_model_list"
+	GetThreadPath                = "/api/biz/v1/skill/get_thread"
+	UploadFilePath               = "/api/biz/v1/skill/upload_file"
+	ListThreadFilePath           = "/api/biz/v1/skill/list_thread_file"
+	EnvXYQAccessKey              = "XYQ_ACCESS_KEY"
+	FileName                     = "config.toml"
 )
 
 // Config holds runtime settings selected by the root command and passed down

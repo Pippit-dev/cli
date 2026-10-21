@@ -21,7 +21,7 @@ PIPPIT_CLI_INSTALL_PACKAGE can override the package/version to install.
 
 Options:
   --source HOST  Real host identifier reported as host_platform; unknown hosts omit it
-                 Defaults to PIPPIT_CLI_SOURCE, then known host runtime markers; an explicit empty value omits host_platform
+                 Missing or blank values default to PIPPIT_CLI_SOURCE, then known host runtime markers
   -h, --help  Show this help without installing, updating, or sending telemetry
 `;
 

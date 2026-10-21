@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/spf13/cobra"
 )
@@ -14,10 +15,10 @@ func newDownloadResultCommand(stdout, stderr io.Writer, runner *common.Runner) *
 	var opts common.DownloadResultOptions
 
 	cmd := &cobra.Command{
-		Use:   "download-result",
+		Use:   commandnames.DownloadResult,
 		Short: "Download a generated result URL",
 		Args:  cobra.NoArgs,
-		RunE: withErrorLog("download-result", func() map[string]string {
+		RunE: withErrorLog(commandnames.DownloadResult, func() map[string]string {
 			fields := map[string]string{
 				"output_path": opts.OutputPath,
 				"has_url":     strconv.FormatBool(strings.TrimSpace(opts.URL) != ""),

@@ -14,6 +14,8 @@ type GetOptions struct {
 }
 
 type GetResult struct {
+	TeamID            string            `json:"team_id"`
+	SpaceContext      string            `json:"space_context,omitempty"`
 	RequestedAssetIDs []string          `json:"requested_asset_ids"`
 	Assets            []json.RawMessage `json:"assets"`
 	LogID             string            `json:"log_id,omitempty"`
@@ -77,11 +79,16 @@ func queryAssets(ctx context.Context, assetIDs []string, requireAll bool, runner
 			envelope.LogID,
 		)
 	}
-	return &GetResult{
+	result := &GetResult{
+		TeamID:            common.SpaceTeamID(ctx),
 		RequestedAssetIDs: append([]string(nil), assetIDs...),
 		Assets:            ordered,
 		LogID:             strings.TrimSpace(envelope.LogID),
-	}, nil
+	}
+	if session := common.SpaceSession(ctx); session != nil {
+		result.SpaceContext = session.Token()
+	}
+	return result, nil
 }
 
 func normalizeAssetIDs(values []string) ([]string, error) {

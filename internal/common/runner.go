@@ -5,6 +5,7 @@ import (
 
 	"github.com/Pippit-dev/pippit-cli/internal/auth"
 	"github.com/Pippit-dev/pippit-cli/internal/config"
+	"github.com/Pippit-dev/pippit-cli/internal/space"
 )
 
 // AuthManager is the credential boundary shared by native CLI commands. It
@@ -20,9 +21,10 @@ type AuthManager interface {
 
 // Runner carries runtime dependencies for command execution.
 type Runner struct {
-	Config *config.Config
-	Client Client
-	Auth   AuthManager
+	Config     *config.Config
+	Client     Client
+	Auth       AuthManager
+	SpaceStore *space.Store
 }
 
 func NewRunner(cfg *config.Config, client Client) *Runner {

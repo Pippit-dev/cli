@@ -15,6 +15,7 @@ const AgentNameVideoPart = "pippit_video_part_agent"
 
 // SubmitRunResult is the shared successful submit_run output.
 type SubmitRunResult struct {
+	TeamID        string `json:"team_id"`
 	ThreadID      string `json:"thread_id"`
 	RunID         string `json:"run_id"`
 	WebThreadLink string `json:"web_thread_link"`
@@ -86,6 +87,7 @@ func submitRun(ctx context.Context, command, path string, body any, runner *Runn
 	}
 
 	return &SubmitRunResult{
+		TeamID:        SpaceTeamID(ctx),
 		ThreadID:      resp.Data.Run.ThreadID,
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,

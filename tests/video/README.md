@@ -4,7 +4,9 @@
 
 `cli/main.go` 通过现有 `cmd.ExecuteWithAdapter` 复用正式命令、运行时 `config.toml`、请求头路由和本机登录态；测试 Adapter 只核验与记录，不再自行注入 PPE header。不会增加生产命令参数，不读取或打印 AK；证据只记录允许的 PPE 请求头、测试 body 和响应标识。`check_billing.py` 使用 Python 3.11+ 标准库（包含 `tomllib`）。
 
-同一测试入口也供 `tests/marketing` 复用：营销用例显式提供 roi.json 时，仅对 submit_marketing_run 在测试 Adapter 内补 babi_param query 并记录；实现维护在 tests/marketing/roi.go。Video Part 请求、生产 marketing 命令及 PPE header 注入逻辑保持原样，详见营销测试 README。
+同一测试入口也供 `tests/marketing` 复用。用例目录显式提供 roi.json 时，测试 Adapter 对 submit_marketing_run / skill submit_run 补 babi_param query 并记录，已有 query 不覆盖；实现维护在 tests/marketing/roi.go。skill submit_run 接受 Video Part，或指定 image_model 的 Nest 生图请求；保留视频 call_source 校验。request.json 记录实际 ROI 与 x-team-id，便于核对团队测试。生产命令及 PPE header 注入逻辑保持原样。
+
+图片补参联调可复用现有 `tests/marketing/fixtures/roi.json` 作为测试占位，不代表正式图片归因口径。新建独立用例目录、复制为 roi.json，指定 VIDEO_TEST_OUTPUT 后调用测试 binary 的 generate-image / generate-video，并显式使用 --team-id 固定团队；生成参数、身份、上传和查询仍由正式 CLI 处理。图片模型使用 model list 返回的完整名称。`check_billing.py` 的三元组断言仍只适用于下面说明的 Video Part 用例，不自动扩展到图片。
 
 覆盖普通文生视频及 `Seedance_2.5_draft --draft` 的 480p 预览（`reference_mode=none`）；Draft 转成片、参考视频、编辑、延长和团队隔离需要各自的输入与断言，不由本脚本推断。使用原 CLI 已认证的身份，不额外注入 UID / TeamID。
 

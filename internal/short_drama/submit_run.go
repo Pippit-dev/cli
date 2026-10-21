@@ -15,14 +15,7 @@ type SubmitRunOptions struct {
 	AssetIDs []string `json:"asset_ids,omitempty"`
 }
 
-// SubmitRunResult is the JSON envelope printed by `pippit-tool-cli short-drama +submit-run`.
-type SubmitRunResult struct {
-	ThreadID      string `json:"thread_id"`
-	RunID         string `json:"run_id"`
-	WebThreadLink string `json:"web_thread_link"`
-}
-
-func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runner) (*SubmitRunResult, error) {
+func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runner) (*common.SubmitRunResult, error) {
 	if runner == nil || runner.Client == nil {
 		return nil, fmt.Errorf("submit_run 运行器客户端缺失")
 	}
@@ -55,7 +48,8 @@ func SubmitRun(ctx context.Context, opts *SubmitRunOptions, runner *common.Runne
 	if resp.Data.Run.RunID == "" {
 		return nil, fmt.Errorf("short_drama 响应缺少 data.run.run_id")
 	}
-	return &SubmitRunResult{
+	return &common.SubmitRunResult{
+		TeamID:        common.SpaceTeamID(ctx),
 		ThreadID:      resp.Data.Run.ThreadID,
 		RunID:         resp.Data.Run.RunID,
 		WebThreadLink: resp.Data.WebThreadLink,

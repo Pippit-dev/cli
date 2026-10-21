@@ -1,6 +1,6 @@
-# Canvas：个人画布与命令发现
+# Canvas：画布空间与命令发现
 
-用于小云雀个人漫剧画布操作，不适用于其他产品的画布或团队空间。与 [生图](generate-image.md)、[生视频](generate-video.md) 区分：修改画布文档不等于生成媒体，独立生成也不会自动写回指定节点。
+用于小云雀个人或团队漫剧画布操作，不适用于其他产品的画布。与 [生图](generate-image.md)、[生视频](generate-video.md) 区分：修改画布文档不等于生成媒体，独立生成也不会自动写回指定节点。
 
 ## 两个入口
 
@@ -13,6 +13,8 @@
 - 原生资产命令：`pippit-tool-cli canvas ...`，命令名替换为 `cli_path`。
 - SDK 语义命令：`node "CANVAS_ENTRY" canvas command ...`，`CANVAS_ENTRY` 替换为返回的 `canvas_entry`。不要把 Go 二进制的帮助输出当作语义命令可执行的证明。
 - 切换 shell 时仍使用保存的绝对路径；Windows PowerShell 原生命令用 `& "CLI_PATH" ...`，Node 命令用 `node "CANVAS_ENTRY" ...`。授权复用 [CLI 凭据](auth.md)。
+
+原生命令和 `canvas command run` 均复用 `space use TEAM_ID` 保存的默认空间，也可加 `--team-id TEAM_ID` 单次覆盖，`0` 表示个人。沿用 [Space Selection](../SKILL.md#space-selection) 规则，创建、上传、编辑和回读使用同一 TeamID。操作已有画布必须使用其原空间；不按画布 ID 自动查找所属团队，也不在失败后改用个人空间。一次 `run` 内部会固定首次查询确定的空间；多个独立命令仍须显式使用相同 `--team-id`。
 
 ## 按用户意图发现操作
 
@@ -29,7 +31,7 @@
 | 图片/视频节点提示词和已有引用 | `xyq.generation.update_prompt` | 先读 `guide prompt-references`；保留其他生成参数，不触发生成 |
 | 3D 导演台对象、摄像机、关键帧、动作 | `xyq.scene3d.query` / `xyq.scene3d.apply` | 先读 `guide scene3d` 和 `guide time` |
 | 多轨草稿、轨道、片段、输出尺寸 | `xyq.timeline.query` / `xyq.timeline.apply` | 先读 `guide timeline` 和 `guide time`，使用最新 `expectedRevision` |
-| 检查点创建、列表、比较、恢复 | `create_checkpoint`、`list_checkpoints`、`compare_checkpoint`、`restore_checkpoint` | 需要网页登录的 credential_scope；本地检查点按账号与画布隔离，不是跨机器备份 |
+| 检查点创建、列表、比较、恢复 | `create_checkpoint`、`list_checkpoints`、`compare_checkpoint`、`restore_checkpoint` | 需要网页登录的 credential_scope；本地检查点按账号、团队与画布隔离，不是跨机器备份 |
 
 ```bash
 node "CANVAS_ENTRY" canvas command list

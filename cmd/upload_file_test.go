@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,7 +78,8 @@ func TestUploadFileMediaContract(t *testing.T) {
 			if err := root.Execute(); err != nil {
 				t.Fatal(err)
 			}
-			if stdout.String() != "{\"asset_id\":\"asset_original\"}\n" || calls != 1 {
+			var output map[string]string
+			if json.Unmarshal(stdout.Bytes(), &output) != nil || output["asset_id"] != "asset_original" || output["team_id"] != "0" || calls != 1 {
 				t.Fatalf("stdout = %q, requests = %d", stdout.String(), calls)
 			}
 		})
