@@ -139,15 +139,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Check the outcome even if npm publish returned a transient error.
-          published="$(npm view "@pippit-dev/cli@${RELEASE_TAG#v}" version --prefer-online)"
-          npm dist-tag ls @pippit-dev/cli --prefer-online > "$RUNNER_TEMP/npm-tags-after.txt"
           before_latest="$(awk '$1 == "latest:" { print $2 }' "$RUNNER_TEMP/npm-tags-before.txt")"
-          after_latest="$(awk '$1 == "latest:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
-          after_canary="$(awk '$1 == "canary:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
-          if [[ "$published" != "${RELEASE_TAG#v}" || "$after_canary" != "${RELEASE_TAG#v}" || "$after_latest" != "$before_latest" ]]; then
-            echo "Publication read-back did not match; inspect npm before retrying." >&2
-            cat "$RUNNER_TEMP/npm-tags-after.txt"
-            exit 1
-          fi
-          printf 'Confirmed: canary=%s; latest=%s (unchanged).\n' "$after_canary" "$after_latest" | tee -a "$GITHUB_STEP_SUMMARY"
+          # npm can accept a publish before the version and channel become visible.
+          # Retry only reads; never submit another publish from this loop.
+          for attempt in {1..12}; do
+            : > "$RUNNER_TEMP/npm-readback-error.txt"
+            published="$(npm view "@pippit-dev/cli@${RELEASE_TAG#v}" version --prefer-online --fetch-retries=0 --fetch-timeout=10000 2>> "$RUNNER_TEMP/npm-readback-error.txt")" || published=""
+            if npm dist-tag ls @pippit-dev/cli --prefer-online --fetch-retries=0 --fetch-timeout=10000 > "$RUNNER_TEMP/npm-tags-after.txt" 2>> "$RUNNER_TEMP/npm-readback-error.txt"; then
+              after_latest="$(awk '$1 == "latest:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
+              after_canary="$(awk '$1 == "canary:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
+              if [[ -n "$after_latest" && "$after_latest" != "$before_latest" ]]; then
+                echo "Latest changed during publication; inspect npm before any further action." >&2
+                exit 1
+              fi
+              if [[ "$published" == "${RELEASE_TAG#v}" && "$after_canary" == "${RELEASE_TAG#v}" && "$after_latest" == "$before_latest" ]]; then
+                printf 'Confirmed: canary=%s; latest=%s (unchanged).\n' "$after_canary" "$after_latest" | tee -a "$GITHUB_STEP_SUMMARY"
+                exit 0
+              fi
+            fi
+            if (( attempt < 12 )); then
+              echo "npm publication is not visible yet (check $attempt/12); waiting before read-back."
+              sleep 15
+            fi
+          done
+          cat "$RUNNER_TEMP/npm-readback-error.txt" >&2
+          cat "$RUNNER_TEMP/npm-tags-after.txt"
+          echo "Publication is still unconfirmed after bounded read-back; it may be processing. Do not republish without checking npm." >&2
+          exit 1
