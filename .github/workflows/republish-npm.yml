@@ -1,0 +1,153 @@
+name: Republish npm from Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已有 GitHub Release 的版本 tag（vX.Y.Z）"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-release-channels
+  cancel-in-progress: false
+
+jobs:
+  republish:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      npm_config_fetch_retries: "2"
+      npm_config_fetch_timeout: "60000"
+    steps:
+      - name: Validate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo "Tag must be vX.Y.Z without a prerelease suffix." >&2
+            exit 1
+          }
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify source and existing Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api "repos/Pippit-dev/cli/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/npm-release.json"
+          gh release download "$RELEASE_TAG" --repo Pippit-dev/cli --pattern checksums.txt --dir .
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { createHash } = require('crypto');
+          const pkg = require('./package.json');
+          const lock = require('./package-lock.json');
+          const release = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'npm-release.json'), 'utf8'));
+          if (pkg.name !== '@pippit-dev/cli' || `v${pkg.version}` !== process.env.RELEASE_TAG ||
+              lock.version !== pkg.version || lock.packages[''].version !== pkg.version ||
+              release.tag_name !== process.env.RELEASE_TAG || release.draft !== false) {
+            throw new Error('Source versions and published GitHub Release must match the requested tag.');
+          }
+          const names = ['checksums.txt'];
+          for (const os of ['darwin', 'linux', 'windows']) {
+            for (const arch of ['amd64', 'arm64']) {
+              names.push(`pippit-tool-cli-${pkg.version}-${os}-${arch}.${os === 'windows' ? 'zip' : 'tar.gz'}`);
+            }
+          }
+          const checksums = fs.readFileSync('checksums.txt');
+          const entries = new Map(checksums.toString().trim().split(/\r?\n/).map(line => {
+            const match = /^([a-f0-9]{64})\s+\*?(.+)$/.exec(line);
+            if (!match) throw new Error('Invalid Release checksum entry.');
+            return [match[2], match[1]];
+          }));
+          for (const name of names) {
+            const asset = release.assets?.find(asset => asset.name === name);
+            if (!asset || asset.state !== 'uploaded' || asset.size <= 0) {
+              throw new Error(`Missing or incomplete Release asset: ${name}`);
+            }
+            const digest = name === 'checksums.txt' ? createHash('sha256').update(checksums).digest('hex') : entries.get(name);
+            if (!digest || (asset.digest && asset.digest !== `sha256:${digest}`)) {
+              throw new Error(`Release checksum mismatch: ${name}`);
+            }
+          }
+          NODE
+          printf 'Source: %s (%s); binaries reused from existing GitHub Release.\n' "$RELEASE_TAG" "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prepare and inspect npm package
+        run: |
+          npm run prepare:canvas-runtime
+          npm pack --dry-run
+
+      - name: Verify npm version and channels before publishing
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm dist-tag ls @pippit-dev/cli --prefer-online > "$RUNNER_TEMP/npm-tags-before.txt"
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const tags = Object.fromEntries(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'npm-tags-before.txt'), 'utf8')
+            .trim().split(/\r?\n/).map(line => line.split(/:\s+/)));
+          const target = process.env.RELEASE_TAG.slice(1).split('.').map(BigInt);
+          for (const tag of ['latest', 'canary']) {
+            if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tags[tag] || '')) {
+              throw new Error(`Cannot verify current ${tag}.`);
+            }
+            const current = tags[tag].split('.').map(BigInt);
+            const index = target.findIndex((value, i) => value !== current[i]);
+            if (index < 0 || target[index] < current[index]) {
+              throw new Error(`Target must be newer than current ${tag} ${tags[tag]}; inspect npm before retrying.`);
+            }
+          }
+          NODE
+          if npm view "@pippit-dev/cli@${RELEASE_TAG#v}" version --json --prefer-online > "$RUNNER_TEMP/npm-version.json"; then
+            echo "Version already exists on npm; inspect its contents and dist-tags instead of publishing again." >&2
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const result = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'npm-version.json'), 'utf8'));
+          if (result.error?.code !== 'E404') throw new Error('npm lookup failed; publication state is unknown.');
+          NODE
+
+      - name: Publish npm canary
+        continue-on-error: true
+        run: npm publish --provenance --access public --tag canary
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify publication and unchanged latest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Check the outcome even if npm publish returned a transient error.
+          published="$(npm view "@pippit-dev/cli@${RELEASE_TAG#v}" version --prefer-online)"
+          npm dist-tag ls @pippit-dev/cli --prefer-online > "$RUNNER_TEMP/npm-tags-after.txt"
+          before_latest="$(awk '$1 == "latest:" { print $2 }' "$RUNNER_TEMP/npm-tags-before.txt")"
+          after_latest="$(awk '$1 == "latest:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
+          after_canary="$(awk '$1 == "canary:" { print $2 }' "$RUNNER_TEMP/npm-tags-after.txt")"
+          if [[ "$published" != "${RELEASE_TAG#v}" || "$after_canary" != "${RELEASE_TAG#v}" || "$after_latest" != "$before_latest" ]]; then
+            echo "Publication read-back did not match; inspect npm before retrying." >&2
+            cat "$RUNNER_TEMP/npm-tags-after.txt"
+            exit 1
+          fi
+          printf 'Confirmed: canary=%s; latest=%s (unchanged).\n' "$after_canary" "$after_latest" | tee -a "$GITHUB_STEP_SUMMARY"
