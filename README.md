@@ -153,7 +153,7 @@ GitHub Release 已成功、npm 发布失败时的补发步骤：
 
 1. 在 GitHub Actions 选择 `Republish npm from Release`，点击 `Run workflow`，填写已有的 `vX.Y.Z` tag。该 workflow 须先合入默认分支，复用已有 `NPM_TOKEN`。
 2. 流程检出指定 tag，校验源码版本、已发布的六个平台产物及 `checksums.txt`，复用这些二进制，只准备并发布 npm canary，不运行 GoReleaser。
-3. 目标必须高于当前 latest 和 canary，且 npm 上尚无该版本；查询异常会停止。发布后回读确认 canary 指向目标版本、latest 保持原值。失败后先核实 npm 实际状态，不连续重复发布，也不删除已有 Release 或重打 tag。
+3. 目标必须高于当前 latest 和 canary，且 npm 上尚无该版本；发布前查询异常会停止。npm 接收发布后可能暂时返回 404，流程会有上限地重试读取版本与渠道，确认 canary 指向目标版本、latest 保持原值。回读超时只表示结果尚未确认，先核实 npm 实际处理状态，不连续重复发布，也不删除已有 Release 或重打 tag。
 
 维护者回滚步骤：
 
