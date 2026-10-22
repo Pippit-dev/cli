@@ -72,6 +72,9 @@ jobs:
       - name: Test material and cloud media identity boundaries
         run: node scripts/canvas-media-identity.test.js
 
+      - name: Test video ratio validation in packaged runtime
+        run: node scripts/canvas-video-ratio.test.js
+
       - name: Test Canvas, Scene3D and Timeline operations
         run: npm run test:canvas-operations
 
