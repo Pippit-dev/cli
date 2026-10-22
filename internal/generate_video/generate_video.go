@@ -45,20 +45,16 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*Result, er
 		return nil, err
 	}
 
-	imageAssetIDs, err := uploadMediaList(ctx, "张参考图片", opts.ImagePaths, runner)
-	if err != nil {
-		return nil, err
-	}
-	videoAssetIDs, err := uploadMediaList(ctx, "个参考视频", opts.VideoPaths, runner)
-	if err != nil {
-		return nil, err
-	}
-	audioAssetIDs, err := uploadMediaList(ctx, "段参考音频", opts.AudioPaths, runner)
+	assetIDs, err := common.UploadMediaGroups(ctx, runner,
+		common.UploadMediaGroup{Label: "张参考图片", Paths: opts.ImagePaths},
+		common.UploadMediaGroup{Label: "个参考视频", Paths: opts.VideoPaths},
+		common.UploadMediaGroup{Label: "段参考音频", Paths: opts.AudioPaths},
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	body := buildSubmitRunBody(opts, imageAssetIDs, videoAssetIDs, audioAssetIDs)
+	body := buildSubmitRunBody(opts, assetIDs[0], assetIDs[1], assetIDs[2])
 	// Business attribution belongs to this command, regardless of the selected model.
 	return common.SubmitRunWithBabiParam(ctx, "generate-video", body, runner, map[string]string{
 		"scene_lv1":  "ai_agent",
@@ -97,22 +93,6 @@ func validateMediaExtensions(kind string, paths []string, allowed map[string]str
 		}
 	}
 	return nil
-}
-
-func uploadMediaList(ctx context.Context, mediaLabel string, paths []string, runner *common.Runner) ([]string, error) {
-	assetIDs := make([]string, 0, len(paths))
-	for i, path := range paths {
-		expanded, err := common.ExpandPath(path)
-		if err != nil {
-			return nil, fmt.Errorf("第%d%s %q 路径解析失败: %w", i+1, mediaLabel, filepath.Base(path), err)
-		}
-		result, err := common.UploadFile(ctx, common.UploadFileOptions{Path: expanded}, runner)
-		if err != nil {
-			return nil, fmt.Errorf("第%d%s %q 上传失败: %w", i+1, mediaLabel, filepath.Base(path), err)
-		}
-		assetIDs = append(assetIDs, result.AssetID)
-	}
-	return assetIDs, nil
 }
 
 func buildSubmitRunBody(opts *Options, imageAssetIDs []string, videoAssetIDs []string, audioAssetIDs []string) map[string]any {

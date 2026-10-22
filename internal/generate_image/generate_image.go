@@ -58,12 +58,14 @@ func Run(ctx context.Context, opts *Options, runner *common.Runner) (*common.Sub
 		return nil, err
 	}
 
-	imageAssetIDs, err := uploadImageList(ctx, opts.ImagePaths, runner)
+	assetIDs, err := common.UploadMediaGroups(ctx, runner,
+		common.UploadMediaGroup{Label: "张参考图片", Paths: opts.ImagePaths},
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	body := buildSubmitRunBody(opts, modelKey, imageAssetIDs)
+	body := buildSubmitRunBody(opts, modelKey, assetIDs[0])
 
 	var resp common.SubmitRunResponse
 	if err := runner.Client.SendRequest(ctx, common.SubmitRunPath(runner), body, &resp); err != nil {
@@ -124,22 +126,6 @@ func validateImageExtensions(paths []string) error {
 
 func SupportedRatioUsage() string {
 	return ratioUsage
-}
-
-func uploadImageList(ctx context.Context, paths []string, runner *common.Runner) ([]string, error) {
-	assetIDs := make([]string, 0, len(paths))
-	for i, path := range paths {
-		expanded, err := common.ExpandPath(path)
-		if err != nil {
-			return nil, fmt.Errorf("第%d张参考图片 %q 路径解析失败: %w", i+1, filepath.Base(path), err)
-		}
-		result, err := common.UploadFile(ctx, common.UploadFileOptions{Path: expanded}, runner)
-		if err != nil {
-			return nil, fmt.Errorf("第%d张参考图片 %q 上传失败: %w", i+1, filepath.Base(path), err)
-		}
-		assetIDs = append(assetIDs, result.AssetID)
-	}
-	return assetIDs, nil
 }
 
 func buildSubmitRunBody(opts *Options, modelKey string, imageAssetIDs []string) map[string]any {
