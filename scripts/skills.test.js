@@ -112,6 +112,7 @@ const visited = collectSkillDocuments(generalSkillPath);
 const skillDocuments = [...visited].map((file) => readRequiredFile(file)).join("\n");
 const commandModules = {
   auth: ["status", "login", "logout"],
+  "upload-file": ["upload-file"],
   canvas: ["canvas"],
   "generate-image": ["generate-image"],
   "generate-video": ["generate-video"],
@@ -149,7 +150,7 @@ function checkSkillFiles(dir) {
     if (entry.isDirectory()) checkSkillFiles(file);
     else if (/\.(md|js)$/.test(entry.name)) {
       const content = readRequiredFile(file);
-      assert(!/submit[-_]run|get[-_]thread|upload[-_]file|download[-_]results?/.test(content), `Removed command still in Skill: ${file}`);
+      assert(!/submit[-_]run|get[-_]thread|download[-_]results?/.test(content), `Removed command still in Skill: ${file}`);
       assert(!content.includes("xyq-short-drama-skill"), `Unexpected Skill dependency: ${file}`);
     }
   }

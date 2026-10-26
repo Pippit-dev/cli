@@ -12,7 +12,9 @@ node "{baseDir}/scripts/ensure-cli.js"
 
 ## 查找与复用
 
-脚本依次检查 PATH 中的 CLI 和自身缓存，验证版本及本 Skill 使用命令的 `--help`；命令集合维护在脚本的 `REQUIRED_COMMANDS`，包含 `model list`、`model describe`、`space list` 和 `space use`。同时从 `generate-image --help` 检查各业务命令共用的全局 `--team-id` 参数；缺少该参数时沿用缺少必需命令的升级流程。帮助检查不调用生成服务，也不需要凭据，不证明账号权限或服务端运行状态。
+脚本依次检查 PATH 中的 CLI 和自身缓存，验证版本及本 Skill 使用命令的 `--help`；命令集合维护在脚本的 `REQUIRED_COMMANDS`，包含 `upload-file`、`model list`、`model describe`、`space list` 和 `space use`。同时从 `generate-image --help` 检查各业务命令共用的全局 `--team-id` 参数；缺少该参数时沿用缺少必需命令的升级流程。帮助检查不调用生成服务，也不需要凭据，不证明账号权限或服务端运行状态。
+
+可选参数按实际任务检查帮助：URL 导入前核对 `upload-file --help` 含 `--url`，缺少时先更新到支持版本。安装脚本只检查必需命令，不因未使用的 URL 参数自动升级，也不证明服务端已部署 URL 导入能力。
 
 命令齐全则直接复用，不检查最新版本；不存在或缺少必需命令时，获取 `@pippit-dev/cli@latest`。PATH 旧版本缺少命令但缓存完整时复用缓存，避免每次升级。版本命令不能运行或检查超时则报告运行错误。
 

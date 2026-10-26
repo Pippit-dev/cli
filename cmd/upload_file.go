@@ -18,12 +18,18 @@ func newUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobr
 	var opts common.UploadFileOptions
 	cmd := &cobra.Command{
 		Use:   "upload-file",
-		Short: "Upload an image, video, or MP3/WAV audio file",
+		Short: "Upload a local media file or import media from an HTTPS URL",
 		Args:  cobra.NoArgs,
 		RunE: withErrorLog("upload-file", nil, func(cmd *cobra.Command, _ []string) error {
 			opts.Path = strings.TrimSpace(opts.Path)
-			if err := validateMediaUpload(opts.Path); err != nil {
+			opts.URL = strings.TrimSpace(opts.URL)
+			if err := opts.ValidateSource(); err != nil {
 				return err
+			}
+			if opts.Path != "" {
+				if err := validateMediaUpload(opts.Path); err != nil {
+					return err
+				}
 			}
 			result, err := common.UploadFile(cmd.Context(), opts, runner)
 			if err != nil {
@@ -34,7 +40,8 @@ func newUploadFileCommand(stdout, stderr io.Writer, runner *common.Runner) *cobr
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.Path, "path", "", "local media file to upload (required, less than 500 MB)")
+	cmd.Flags().StringVar(&opts.Path, "path", "", "local media file to upload (less than 500 MB; choose exactly one of --path or --url)")
+	cmd.Flags().StringVar(&opts.URL, "url", "", "HTTPS media URL to import on the server (choose exactly one of --path or --url)")
 	return cmd
 }
 
