@@ -36,7 +36,7 @@ metadata:
 | 用户意图 | CLI | 必读文档 |
 | --- | --- | --- |
 | 查看登录状态、登录、退出或切换账号 | `status` / `login` / `logout` | [授权](commands/auth.md) |
-| 上传本地素材，或从对象存储、签名链接等 HTTPS URL 导入素材 | `upload-file` | [素材上传与 URL 导入](commands/upload-file.md) |
+| 上传本地素材，或从 HTTPS URL 导入素材 | `upload-file`；画布流程可用 `canvas upload` | [素材上传与 URL 导入](commands/upload-file.md)；[Canvas 上传与查询等待](commands/canvas-assets.md#url-import) |
 | 创建或查询小云雀个人或团队画布，编辑节点、布局、连线、角色/场景、提示词、3D 或多轨草稿 | `canvas` | [Canvas 能力与命令发现](commands/canvas.md) |
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
 | 查询当前可用的图片/视频模型、比例、分辨率及推理强度等参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
@@ -58,7 +58,7 @@ metadata:
 - 图片模型对用户只展示服务端返回的名称；列表、选择、详情与生成命令均使用完整名称，不解释或展示对应底层枚举。名称到提交标识由 CLI 解析，详见 [模型发现](commands/model.md)。
 - 用户明确要求生成或处理，即可在该范围内执行；仅咨询用法、费用或方案时不提交。范围、必填信息或消耗 credits 的授权不明确时，先确认，不重复索要已给出的授权。
 - 提问优先使用宿主实际提供且当前模式允许的工具：Codex 的 `request_user_input` 或 `request_user_input_async`，WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。需要答案时等待答复。
-- 生成和视频处理命令的素材参数接收本地文件路径，CLI 内部上传，单文件必须小于 500 MB（500000000 字节）；不能把 URL 或资产 ID 填入这些路径参数。用户要求从外链导入素材时，使用 `upload-file --url`，由服务端读取源文件，无需先下载到本机；参数、限制及后续资产复用见 [上传说明](commands/upload-file.md)。
+- 生成和视频处理命令的素材参数接收本地文件路径，CLI 内部上传，单文件必须小于 500 MB（500000000 字节）；不能把 URL 或资产 ID 填入这些路径参数。用户要求从外链导入素材时，使用 `upload-file --url`，或在画布流程中使用 `canvas upload --url` 并保留其查询等待与输出，由服务端读取源文件，无需先下载到本机；参数、限制及后续资产复用见 [上传说明](commands/upload-file.md)。
 - `generate-image` / `generate-video` 上传素材失败时，向用户说明 CLI 返回的素材类型、类型内序号、文件名、原始原因和可用的 LogID，并说明尚未提交生成任务。序号按同类型参数的传入顺序从 1 开始，不是所有附件的混合序号；只有服务端明确返回审核拒绝时才说明审核未通过，不能把网络、权限等失败都归为审核问题。
 - `generate-image` / `generate-video` 将所有参考素材按最多 10 个并发上传，等待本批上传结束后统一返回全部失败项；某个素材失败不会跳过其他素材。错误按图片、视频、音频分组及各自输入顺序列出，生成引用也保留输入顺序，不按上传完成先后排序。任一素材失败均不提交生成；向用户一次性列全失败素材，不只转述第一项。网络失败、取消或超时不代表审核通过。根据失败原因等待用户替换对应素材或解决问题，不自动删减素材、重传或重新提交生成。旧 CLI 如首错即停或未返回文件定位，须如实说明其结果范围，不凭图片内容猜测未检查素材的审核结论。
 - 提交成功后立即展示真实 `web_thread_link`；未返回链接时如实说明，保留任务 ID。后续查询和下载失败不能触发重复生成。

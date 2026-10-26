@@ -31,7 +31,7 @@ URL 模式只向已有上传接口发送 `url`，CLI 不下载、读取或缓存
 
 成功输出保持 `{"team_id":"0","asset_id":"..."}`，其中 `asset_id` 是服务端返回的 `pippit_asset_id`，后续复用此 ID。`upload-file` 不额外等待查询素材；导入失败不会自动重试，也不会回退成本地下载再上传。未拿到资产 ID 的超时应先检查结果，避免重复导入。批量调用需控制并发，不代表支持几百上千路同时导入。
 
-`canvas upload` 和 `short-drama +upload-file` 保持原有本地文件用法。
+`canvas upload` 同样支持 `--path` 或 `--url` 二选一，并保留素材可查询等待及 `state`、`locator`、`pippit_asset_id` 输出；其旧 `asset_id` 是来源 ID，不等同于 `upload-file.asset_id`。两种 URL 入口都需要服务端部署对应能力。`short-drama +upload-file` 保持原有本地文件用法。
 
 ## 技能列表
 
@@ -222,8 +222,11 @@ pippit-tool-cli canvas create --title "CLI Canvas" --wait
 pippit-tool-cli canvas allocate --count 3
 pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
 pippit-tool-cli canvas upload --path ./reference.png
+pippit-tool-cli canvas upload --url 'https://example.com/reference?signature=...' --team-id 123456
 pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 ```
+
+`canvas upload` 的 `--path` 与 `--url` 必须且只能提供一个。URL 模式不在本机下载或缓存素材；`--timeout` 仍只控制上传返回后的素材查询等待，查询超时保留资产 ID 和 warning，不自动再次导入。上传成功不代表已插入画布。
 
 五个命令复用 `space use TEAM_ID` 保存的默认空间，也支持单次 `--team-id TEAM_ID`，个人空间使用 `0`。操作已有画布时显式使用其原 `--team-id`，CLI 不根据画布 ID 自动选择团队。`canvas get` 返回实际 `team_id`，本地账号可识别时还返回 `space_context`；`canvas command run` 据此固定后续子进程的空间与账号/API origin，期间切换默认空间不影响当前操作。本地恢复记录和检查点按账号、团队与画布隔离，原有个人记录保持可读。
 

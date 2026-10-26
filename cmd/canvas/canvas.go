@@ -162,12 +162,16 @@ func newUploadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 	var opts canvascore.UploadOptions
 	cmd := &cobra.Command{
 		Use:   "upload",
-		Short: "Upload a file to the selected space and wait until it is queryable",
+		Short: "Upload a local file or import an HTTPS URL and wait until the asset is queryable",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			result, err := canvascore.Upload(cmd.Context(), opts, runner)
 			if err != nil {
-				logCanvasError("canvas upload", err, map[string]string{"file_name": filepath.Base(strings.TrimSpace(opts.Path))})
+				fields := map[string]string{}
+				if path := strings.TrimSpace(opts.Path); path != "" {
+					fields["file_name"] = filepath.Base(path)
+				}
+				logCanvasError("canvas upload", err, fields)
 				return err
 			}
 			return common.WriteJSON(stdout, result)
@@ -176,7 +180,8 @@ func newUploadCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Co
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
-	flags.StringVar(&opts.Path, "path", "", "local file path to upload")
+	flags.StringVar(&opts.Path, "path", "", "local file path to upload (choose exactly one of --path or --url)")
+	flags.StringVar(&opts.URL, "url", "", "HTTPS media URL to import on the server (choose exactly one of --path or --url)")
 	flags.DurationVar(&opts.PollInterval, "poll-interval", time.Second, "asset visibility polling interval")
 	flags.DurationVar(&opts.WaitTimeout, "timeout", 2*time.Minute, "maximum asset visibility wait time")
 	return cmd

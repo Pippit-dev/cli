@@ -37,4 +37,4 @@ pippit-tool-cli upload-file --url 'https://example.com/reference?signature=...' 
 
 收到资产 ID 后复用已有资产。超时或请求结果不确定时，保留已有 ID 和错误信息；有 ID 可在原空间查询，没有 ID 时不能猜测或声称导入成功，也不自动重放请求。批量调用控制并发，逐项保留成功 ID 与失败原因，不重跑已成功项。
 
-URL 导入失败不自动改为本地下载再上传；`canvas upload` 的本地路径用法保持不变，不给它添加 `--url`。
+URL 导入失败不自动改为本地下载再上传。画布流程也可以使用 [`canvas upload --url`](canvas-assets.md#url-import)，它复用相同服务端导入接口，但另有素材查询等待和 `state` / `locator` 输出；稳定 ID 取 `pippit_asset_id`，不能套用本命令的 `asset_id` 含义。已导入素材直接复用，不为等待就绪再调用另一个上传入口。

@@ -29,6 +29,7 @@ var uploadContentTypeFallbacks = map[string]string{
 
 type UploadOptions struct {
 	Path         string
+	URL          string
 	PollInterval time.Duration
 	WaitTimeout  time.Duration
 }
@@ -69,34 +70,40 @@ func Upload(ctx context.Context, opts UploadOptions, runner *common.Runner) (*Up
 	if opts.PollInterval < 0 || opts.WaitTimeout < 0 {
 		return nil, fmt.Errorf("canvas upload polling durations must not be negative")
 	}
-	path := strings.TrimSpace(opts.Path)
-	if path == "" {
-		return nil, fmt.Errorf("canvas upload path is required")
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, fmt.Errorf("inspect canvas upload file: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("canvas upload path %q is not a regular file", path)
-	}
-	fileName := filepath.Base(path)
-	extension := strings.ToLower(filepath.Ext(fileName))
-	contentType := mime.TypeByExtension(extension)
-	if contentType == "" {
-		contentType = uploadContentTypeFallbacks[extension]
-	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
+	source := common.UploadFileOptions{Path: opts.Path, URL: opts.URL}
+	if err := source.ValidateSource(); err != nil {
+		return nil, err
 	}
 
 	var envelope responseEnvelope
-	if err := client.SendMultipartRequest(ctx, UploadPath, nil, common.MultipartFile{
-		FieldName:   "file",
-		Path:        path,
-		FileName:    fileName,
-		ContentType: contentType,
-	}, &envelope); err != nil {
+	if sourceURL := strings.TrimSpace(opts.URL); sourceURL != "" {
+		err = client.SendRequest(ctx, UploadPath, map[string]string{"url": sourceURL}, &envelope)
+	} else {
+		path := strings.TrimSpace(opts.Path)
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return nil, fmt.Errorf("inspect canvas upload file: %w", statErr)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("canvas upload path %q is not a regular file", path)
+		}
+		fileName := filepath.Base(path)
+		extension := strings.ToLower(filepath.Ext(fileName))
+		contentType := mime.TypeByExtension(extension)
+		if contentType == "" {
+			contentType = uploadContentTypeFallbacks[extension]
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		err = client.SendMultipartRequest(ctx, UploadPath, nil, common.MultipartFile{
+			FieldName:   "file",
+			Path:        path,
+			FileName:    fileName,
+			ContentType: contentType,
+		}, &envelope)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("canvas upload request failed; outcome may be ambiguous, check assets before retrying: %w", err)
 	}
 	if err := envelope.validate("canvas upload"); err != nil {
