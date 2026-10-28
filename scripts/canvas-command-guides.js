@@ -36,7 +36,7 @@ const GUIDES = [
       "先用 list 确认 xyq.generation.update_prompt 可用，再 describe 获取参数。该命令接收 nodeId、prompt、可选 dryRun；nodeId 是当前 Canvas 的目标图片或视频节点 ID。get_snapshot 可查节点，get_asset 可读节点资产与 generation.references；用 describe 查看这两个查询命令的输入，避免混淆 Canvas ID、节点 ID 与媒体 Pippit ID。",
       '<node-asset>NODE_ASSET_ID</node-asset> 引用已有节点。标签 ID 来自查询结果中的真实节点资产身份；不要用展示名称代替。CLI 复用 Web 标签匹配、节点连边和角色默认选材，保留标签属性。角色已有 data-reference-selection="IMAGE_ID,VOICE_ID" 属性使用逗号分隔选择 ID，需与角色已有资料匹配，不另传 selectedIds 或 reference 数组。',
       "独立上传/素材库媒体可以没有节点。对已在目标 generation.references 中的素材，用 <pippit-asset-id>MEDIA_PIPPIT_ASSET_ID</pippit-asset-id>，ID 取自该草稿的 pippitAssetId。视频目标可使用已有图片、视频、音频候选；图片目标须符合自身支持的引用类型。无须新增 referenceSource 入参。",
-      "只有 canvas upload 返回的 ID 还不够：本命令不会查询未知媒体并加入草稿。canvas get 只查询，不添加引用。找不到的普通标签返回 UNRESOLVED_PROMPT_REFERENCE，不写文档。相同媒体若匹配到已有 Canvas 源节点，沿用 Web 节点优先规则连边。新独立素材先通过现有 Web 上传/素材库流程建立草稿。",
+      "外链素材可用 canvas upload --url 导入并等待查询，复用其 pippit_asset_id；同一素材不重复导入。只有 upload-file 或 canvas upload 返回的素材 ID 还不够：本命令不会查询未知媒体并加入草稿。canvas get 只查询，不添加引用。找不到的普通标签返回 UNRESOLVED_PROMPT_REFERENCE，不写文档。需要画布参考节点时，先用 create_biz_node 的 initialData.pippitAssetId 关联已导入素材，再引用实际节点；upload-file.asset_id 是稳定 Pippit ID，canvas upload 则取 pippit_asset_id。相同媒体若匹配到已有 Canvas 源节点，沿用 Web 节点优先规则连边。新独立素材也可通过现有 Web 上传/素材库流程建立草稿。",
       "dryRun:true 在隔离文档预演，不改变原文档。成功编辑保留其他 generation 参数及 caption/title/name；空 prompt 清空文本并保留现有引用与连边。本命令不触发生成。不要浅覆盖整个 generation。故事板有自己的脚本与引用流程，见 storyboard 指南。",
     ].join("\n\n"),
     next_commands: [

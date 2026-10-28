@@ -7,7 +7,7 @@ const os = require("os");
 const path = require("path");
 
 const REQUIRED_COMMANDS = [
-  "status", "login", "logout", "query-result",
+  "status", "login", "logout", "query-result", "upload-file",
   "space list", "space use",
   "generate-image", "generate-video", "video-super-resolution",
   "erase-video-subtitle", "get-credit-balance", "model list", "model describe",

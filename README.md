@@ -17,6 +17,22 @@ x-tt-env = ""
 
 `tests/` 中的验证脚本随源码仓库维护，不包含在 npm 发布包中，也不接入正式 CLI 二进制入口。
 
+## 上传素材
+
+通用 `upload-file` 支持本地文件或服务端 URL 导入，`--path` 与 `--url` 必须且只能提供一个：
+
+```bash
+pippit-tool-cli upload-file --path ./reference.png
+pippit-tool-cli upload-file --url 'https://example.com/reference?signature=...'
+pippit-tool-cli upload-file --url 'https://example.com/reference' --team-id 123456
+```
+
+URL 模式只向已有上传接口发送 `url`，CLI 不下载、读取或缓存源素材；类型和内部文件名由服务端识别，无需提供 `asset_type` 或 `file_name`。支持服务端可访问的 HTTPS 图片、视频或音频直链，包括有效的签名 URL；链接不必有文件后缀，服务端拒绝自动重定向。URL 模式依赖服务端部署对应能力，素材受服务端格式、大小（当前 200 MiB）和审核限制。
+
+成功输出保持 `{"team_id":"0","asset_id":"..."}`，其中 `asset_id` 是服务端返回的 `pippit_asset_id`，后续复用此 ID。`upload-file` 不额外等待查询素材；导入失败不会自动重试，也不会回退成本地下载再上传。未拿到资产 ID 的超时应先检查结果，避免重复导入。批量调用需控制并发，不代表支持几百上千路同时导入。
+
+`canvas upload` 同样支持 `--path` 或 `--url` 二选一，并保留素材可查询等待及 `state`、`locator`、`pippit_asset_id` 输出；其旧 `asset_id` 是来源 ID，不等同于 `upload-file.asset_id`。两种 URL 入口都需要服务端部署对应能力。`short-drama +upload-file` 保持原有本地文件用法。
+
 ## 技能列表
 
 本仓库在 `skills/` 目录下包含三个智能体技能：
@@ -24,12 +40,12 @@ x-tt-env = ""
 | 技能 | 说明 | 路径 |
 |-------|-------------|------|
 | `xyq-short-drama-skill` | 短剧工作流技能，支持提交创作任务、上传参考文件、查询进度、列出会话文件和下载产物。 | `skills/short-drama/` |
-| `xyq-skill` | 图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人或团队 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
+| `xyq-skill` | 素材上传与 URL 导入、图片生成与参考图编辑、视频生成、视频超分与擦字幕、异步结果交付、个人或团队 Canvas 编辑、积分查询及登录授权。 | `skills/xyq-nest-skill/` |
 | `xyq-marketing-skill` | 商品图文营销一键成片：剧情广告、品牌大片、达人带货，含素材上传、进度查询与媒体下载。 | `skills/xyq-marketing-skill/` |
 
 ### 技能路由
 
-- 图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人或团队 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
+- 素材上传与 URL 导入、图片生成与参考图编辑、视频生成（含首尾帧和参考素材）、视频超分、擦字幕、结果查询、个人或团队 Canvas 编辑、积分和授权由 `xyq-skill` 处理。
 - 短剧生成、续写、改写、人物设定、分集创作和短剧会话文件处理使用 `xyq-short-drama-skill`。
 - 商品图文营销成片、剧情广告、品牌大片和达人带货视频使用 `xyq-marketing-skill`；由公开营销 API 完成创作编排。
 
@@ -90,6 +106,7 @@ node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID
 | 操作 | CLI | 文档 |
 | --- | --- | --- |
 | 登录授权 | `status` / `login` / `logout` | [授权](skills/xyq-nest-skill/commands/auth.md) |
+| 上传本地素材或导入 HTTPS URL 素材 | `upload-file` | [上传与导入](skills/xyq-nest-skill/commands/upload-file.md) |
 | 个人或团队 Canvas 画布与节点编辑 | `canvas` | [画布](skills/xyq-nest-skill/commands/canvas.md) |
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
 | 查看可用图片/视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
@@ -205,8 +222,11 @@ pippit-tool-cli canvas create --title "CLI Canvas" --wait
 pippit-tool-cli canvas allocate --count 3
 pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
 pippit-tool-cli canvas upload --path ./reference.png
+pippit-tool-cli canvas upload --url 'https://example.com/reference?signature=...' --team-id 123456
 pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 ```
+
+`canvas upload` 的 `--path` 与 `--url` 必须且只能提供一个。URL 模式不在本机下载或缓存素材；`--timeout` 仍只控制上传返回后的素材查询等待，查询超时保留资产 ID 和 warning，不自动再次导入。上传成功不代表已插入画布。
 
 五个命令复用 `space use TEAM_ID` 保存的默认空间，也支持单次 `--team-id TEAM_ID`，个人空间使用 `0`。操作已有画布时显式使用其原 `--team-id`，CLI 不根据画布 ID 自动选择团队。`canvas get` 返回实际 `team_id`，本地账号可识别时还返回 `space_context`；`canvas command run` 据此固定后续子进程的空间与账号/API origin，期间切换默认空间不影响当前操作。本地恢复记录和检查点按账号、团队与画布隔离，原有个人记录保持可读。
 
@@ -287,7 +307,7 @@ pippit-tool-cli canvas command run xyq.generation.update_prompt \
   --input '{"nodeId":"TARGET_IMAGE_NODE_ID","prompt":"参考 <pippit-asset-id label=\"参考图\">PIPPIT_ASSET_ID_IN_DRAFT</pippit-asset-id> 的人物"}'
 ```
 
-当前版本只解析已有画布候选与目标草稿中的引用；找不到的普通标签返回 `UNRESOLVED_PROMPT_REFERENCE`，不写入文档。仅拿到 `canvas upload` 返回的 ID，还不会自动查询并加入草稿。新独立素材 ID 的自动解析属于后续能力。已有独立素材草稿可由前端上传或素材库流程产生，视频生成可使用其中的图片、视频和音频。同一媒体 ID 若同时匹配到画布源节点，则遵循前端现有的节点优先规则建立关联。`canvas get --asset-id PIPPIT_ASSET_ID` 可查询外部素材，但查询本身不添加引用。
+当前版本只解析已有画布候选与目标草稿中的引用；找不到的普通标签返回 `UNRESOLVED_PROMPT_REFERENCE`，不写入文档。仅拿到 `upload-file` 或 `canvas upload` 返回的素材 ID，还不会自动查询并加入草稿。需要画布参考节点时，按 [URL 导入与资产复用](skills/xyq-nest-skill/commands/canvas-assets.md#url-import) 先关联素材创建节点，再通过真实节点引用。新独立素材 ID 的自动解析属于后续能力。已有独立素材草稿可由前端上传或素材库流程产生，视频生成可使用其中的图片、视频和音频。同一媒体 ID 若同时匹配到画布源节点，则遵循前端现有的节点优先规则建立关联。`canvas get --asset-id PIPPIT_ASSET_ID` 可查询外部素材，但查询本身不添加引用。
 
 该命令先在隔离文档上按前端原有顺序执行 SDK commands，再把实际补丁一次性提交，保留模型参数、已有引用及 caption/title/name 等展示字段。`dryRun:true` 只执行隔离预演，原文档和撤销历史不变；清空 prompt 不移除引用。节点引用由现有生成流程转换成 `node_asset_refs`，独立图片进入 `pippit_asset_ids`，视频生成的独立素材按类型进入 `images`、`videos`、`audios`。本命令不触发生成、上传或远端素材查询。不要用浅合并的 `update_asset.contentPatch.generation` 更新提示词，否则可能覆盖其他生成参数。
 

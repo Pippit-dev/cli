@@ -22,7 +22,8 @@
 
 | 操作 | 入口或可定位的语义命令 | 要点 |
 | --- | --- | --- |
-| 创建画布、查资产、上传素材、分配 ID、提交事务 | `canvas create/get/upload/allocate/apply` | 见 [原生资产命令](canvas-assets.md) |
+| 创建画布、查资产、上传本地或 URL 素材、分配 ID、提交事务 | `canvas create/get/upload/allocate/apply` | 见 [原生资产命令](canvas-assets.md) |
+| 导入外链素材并用于画布 | `canvas upload --url`（带查询等待）或 `upload-file --url`，再按需创建节点 | 见 [URL 导入与资产复用](canvas-assets.md#url-import) |
 | 读取画布和资产 | `get_snapshot`、`get_asset`、`get_permissions` | 取得真实节点/资产 ID，不用名称猜 ID |
 | 创建业务节点 | `create_biz_node` | 支持类型和初始字段用 `--node-kind` 查看；不要手拼业务节点结构 |
 | 节点位置、大小、样式、布局、分组 | `move_nodes`、`resize_node`、`set_node_style`、`align_nodes`、`arrange_nodes`、`group_nodes` 等 | 先查询目标和归属；删除与重排仅限用户请求范围 |

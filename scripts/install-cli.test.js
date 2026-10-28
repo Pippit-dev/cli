@@ -211,7 +211,7 @@ function checkBootstrap() {
     assert(result.cli_path.endsWith(platform === "win32" ? "pippit-tool-cli.exe" : "pippit-tool-cli"));
     assert.strictEqual(result.cli_path, JSON.parse(next.output[0]).cli_path);
     assert.strictEqual(fixture.dirs.length, 1, "Subsequent invocations must reuse the cached CLI");
-    for (const command of ["status", "login", "logout", "query-result", "space list", "space use",
+    for (const command of ["status", "login", "logout", "query-result", "upload-file", "space list", "space use",
       "generate-image", "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
       assert.strictEqual(fixture.calls.filter((call) => call.args.slice(0, -1).join(" ") === command).length, 2);
     }
@@ -242,7 +242,7 @@ function checkBootstrap() {
     }
   }
   // Required commands and the global space flag participate in compatibility checks and cache reuse.
-  for (const missingCommand of ["status", "login", "logout", "query-result", "space list", "space use", "--team-id", "generate-image",
+  for (const missingCommand of ["status", "login", "logout", "query-result", "upload-file", "space list", "space use", "--team-id", "generate-image",
     "generate-video", "video-super-resolution", "erase-video-subtitle", "get-credit-balance", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
@@ -255,7 +255,7 @@ function checkBootstrap() {
     assert.strictEqual(fixture.dirs.length, 1, `Reuse cache after upgrading ${missingCommand}`);
   }
   // Removed Skill commands must not force an otherwise usable CLI to upgrade.
-  for (const missingCommand of ["submit-run", "get-thread", "upload-file", "download-result"]) {
+  for (const missingCommand of ["submit-run", "get-thread", "download-result"]) {
     const fixture = bootstrapFixture({ missingCommand });
     const existing = path.join(fixture.npmDir, "pippit-tool-cli");
     fs.writeFileSync(existing, "missing-command");
@@ -292,7 +292,7 @@ function checkBootstrap() {
   assert.strictEqual(load(bootstrap, failedUpgrade.options).proc.exitCode, 1);
   assert.strictEqual(failedUpgrade.dirs.length, 1, "An incompatible latest release must fail without an upgrade loop");
   assert.strictEqual(fs.readFileSync(oldPath, "utf8"), "missing-command");
-  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "space list", "space use", "--team-id", "generate-image", "query-result", "model list", "model describe"]) {
+  for (const failure of ["npm", "missing-installer", "download", "version", "status", "logout", "space list", "space use", "--team-id", "generate-image", "query-result", "upload-file", "model list", "model describe"]) {
     const fixture = bootstrapFixture({ failure });
     const result = load(bootstrap, fixture.options);
     assert.strictEqual(result.proc.exitCode, 1, failure);
