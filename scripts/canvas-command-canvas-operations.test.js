@@ -926,6 +926,12 @@ for (const scenario of ['dryRun', 'unresolved reference', 'missing generation in
 
 async function main() {
   for (const [index, entry] of cases.entries()) {
+    const previousIdPool = globalThis.__canvas_cli_id_pool;
+    // Match the CLI's allocated ID pool; document tests must not depend on the
+    // legacy timestamp/random fallback when V2 history creates several assets.
+    globalThis.__canvas_cli_id_pool = Array.from(
+      { length: 256 }, (_, offset) => String(8000000000000 + index * 256 + offset),
+    );
     const f = fixture(index);
     try {
       await entry.execute(f);
@@ -942,6 +948,8 @@ async function main() {
       console.error(`FAIL ${entry.command} / ${entry.scenario}: ${error.stack}`);
     } finally {
       f.standalone.canvas.dispose();
+      if (previousIdPool === undefined) delete globalThis.__canvas_cli_id_pool;
+      else globalThis.__canvas_cli_id_pool = previousIdPool;
     }
   }
   const expected = [

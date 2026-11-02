@@ -76,13 +76,13 @@ const GUIDES = [
       "多轨 TimelineDraft 的时间字段使用整数微秒：1 秒 = 1000000 µs。输出 width/height 使用像素。草稿 duration 由片段推导；frameRate 当前只读，没有设置帧率 command。expectedRevision 是草稿版本号，不是时间。",
       "3D 关键帧与动作片段 startFrame/durationFrames 使用帧，timeline.fps 定义帧时长；move_keyframes.deltaFrames 是整数帧偏移。动作片段 trimStart/trimEnd 使用源动画秒数，可带小数，不是帧。",
       "通用 generate-video --duration 使用整数秒，由该视频入口处理；它不会在本地把故事板 duration-ms 标签自动转换成该参数。其模型/时长能力不能替代故事板当前模型约束。",
-      "ID 从所属查询取得：Timeline 的轨道/片段/来源 ID 由 xyq.timeline.query 返回；3D 对象/动画 ID 由 xyq.scene3d.query 返回。外层 nodeId 始终从当前 Canvas 节点查询取得。",
+      "ID 从所属查询取得：Timeline 的轨道/片段/来源 ID 由 xyq.timeline.query 返回；当前 CLI 未提供 3D V2 内部对象编辑入口。外层 nodeId 始终从当前 Canvas 节点查询取得。",
     ].join("\n\n"),
     next_commands: [
       "pippit-tool-cli canvas command guide storyboard",
       "pippit-tool-cli canvas command guide timeline",
       "pippit-tool-cli canvas command guide scene3d",
-      "pippit-tool-cli canvas command describe xyq.scene3d.apply --operation move_keyframes",
+      "pippit-tool-cli canvas command list",
     ],
     examples: [
       {
@@ -125,31 +125,21 @@ const GUIDES = [
   },
   {
     name: "scene3d",
-    summary: "3D 导演文档、对象 ID、空间与动画单位及编辑边界。",
+    summary: "3D V2 文档的能力边界、空间与动画单位。",
     content: [
-      "3D 导演台由外层 Canvas 节点和独立导演文档组成。create_biz_node 使用 nodeKind: scene3d；先 list 确认当前安装版本支持的命令，再 describe --node-kind 查看工厂参数。",
-      "xyq.scene3d.query 的 nodeId 是外层 Canvas 节点 ID；返回的对象、摄像机、关键帧等 ID 属于导演文档，不能与 Canvas 节点 ID 混用。先查询文档与可动画属性通道，再引用已有 ID。创建新对象时选文档内未占用的 ID。",
-      "xyq.scene3d.apply.operations 是 {command,args} 数组，command 使用现有 Scene3D SDK 命令名。describe --operation 查看一种操作及其 args，schema 可导出完整输入。dryRun:true 预演编辑，不改变原文档。",
-      "transform.position 使用米，rotation 为 XYZ Euler 角度，scale 为无单位 XYZ 倍率；camera FOV 使用角度。几何体 theta/phi/arc 等参数使用弧度，以对应 kind 的 schema 为准。",
-      "关键帧与 startFrame/durationFrames 使用帧，帧时长取决于 timeline.fps；动作片段 trimStart/trimEnd 使用源动画秒数，可为小数。不要把微秒、毫秒或旋转弧度填入帧或角度字段。",
-      "这套命令编辑导演文档；截图、渲染导出、上传与生成需要相应运行环境和现有入口。资源/动作引用应来自已查询到的真实资源，不用临时 URL 或虚构 ID 代替。",
+      "当前 SDK 主干的 3D 导演文档已迁移到 V2，旧 xyq.scene3d.apply/query 入口已移除。本版本不提供内部对象编辑命令，也不能通过通用资产补丁绕过该边界。内部编辑请使用 Web 3D 导演台。",
+      "外层节点仍可通过 create_biz_node 的 nodeKind: scene3d 创建；参数以 describe --node-kind 和当前 schema 为准。",
+      "transform.position 使用米，rotation 为 XYZ Euler 角度，scale 为无单位 XYZ 倍率；camera FOV 使用角度。几何体 theta/phi/arc 等参数使用弧度。",
+      "关键帧使用帧，帧时长取决于 timeline.fps；动作片段 trimStart/trimEnd 使用源动画秒数。此处仅说明单位，不代表 CLI 已提供编辑能力。",
     ].join("\n\n"),
     next_commands: [
+      "pippit-tool-cli canvas command list",
       "pippit-tool-cli canvas command describe create_biz_node --node-kind scene3d",
-      'pippit-tool-cli canvas command run xyq.scene3d.query --canvas-id CANVAS_ID --input \'{"nodeId":"DIRECTOR_NODE_ID"}\'',
-      "pippit-tool-cli canvas command describe xyq.scene3d.apply --operation create_node",
-      "pippit-tool-cli canvas command schema xyq.scene3d.apply",
     ],
     examples: [
       {
-        description: "填入真实外层 nodeId，并确保 camera-new 在导演文档内未占用，再预演创建摄像机。",
-        command:
-          "pippit-tool-cli canvas command run xyq.scene3d.apply --canvas-id CANVAS_ID --file ./scene3d-input.json",
-        input: {
-          nodeId: "DIRECTOR_NODE_ID",
-          operations: [{ command: "create_node", args: { kind: "camera", id: "camera-new", name: "Close-up" } }],
-          dryRun: true,
-        },
+        description: "只查询外层 3D 节点的创建 schema，不提交文档编辑。",
+        command: "pippit-tool-cli canvas command describe create_biz_node --node-kind scene3d",
       },
     ],
     related: ["time", "timeline"],
@@ -163,7 +153,9 @@ function listGuides() {
 function getGuide(name) {
   const guide = GUIDES.find((item) => item.name === name);
   if (!guide) {
-    throw new Error(`未知的画布指南：${String(name)}。运行 pippit-tool-cli canvas command guide 查看主题。`);
+    throw new Error(
+      `未知的画布指南：${String(name)}。运行 pippit-tool-cli canvas command guide 查看主题。`,
+    );
   }
   return JSON.parse(JSON.stringify(guide));
 }

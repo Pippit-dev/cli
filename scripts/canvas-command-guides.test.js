@@ -9,16 +9,26 @@ assert.deepStrictEqual(
   index.map(({ name }) => name),
   expectedNames,
 );
-assert(Buffer.byteLength(JSON.stringify(index, null, 2), "utf8") <= 2 * 1024, "guide index must fit in 2 KiB");
+assert(
+  Buffer.byteLength(JSON.stringify(index, null, 2), "utf8") <= 2 * 1024,
+  "guide index must fit in 2 KiB",
+);
 
 for (const entry of index) {
-  assert.deepStrictEqual(Object.keys(entry).sort(), ["name", "summary"], "index must not embed guide bodies");
+  assert.deepStrictEqual(
+    Object.keys(entry).sort(),
+    ["name", "summary"],
+    "index must not embed guide bodies",
+  );
   assert(entry.summary.length > 0);
   const guide = getGuide(entry.name);
   assert.strictEqual(guide.name, entry.name);
   assert.strictEqual(guide.summary, entry.summary);
   assert(guide.content.length > 0);
-  assert(Buffer.byteLength(JSON.stringify(guide, null, 2), "utf8") <= 12 * 1024, `${entry.name} must fit in 12 KiB`);
+  assert(
+    Buffer.byteLength(JSON.stringify(guide, null, 2), "utf8") <= 12 * 1024,
+    `${entry.name} must fit in 12 KiB`,
+  );
   assert(guide.next_commands.length > 0);
   assert(guide.next_commands.every((command) => command.startsWith("pippit-tool-cli canvas ")));
   assert(guide.examples.length > 0);
@@ -35,7 +45,9 @@ assert(
   !storyboard.next_commands.some((command) => /canvas apply|command run/.test(command)),
   "storyboard guide must not route users around missing domain operations",
 );
-const durationTags = [...storyboard.examples[0].prompt.matchAll(/<duration-ms>(\d+)<\/duration-ms>/g)];
+const durationTags = [
+  ...storyboard.examples[0].prompt.matchAll(/<duration-ms>(\d+)<\/duration-ms>/g),
+];
 assert.strictEqual(durationTags.length, 2);
 assert(durationTags.every((match) => Number(match[1]) > 0));
 assert.strictEqual(
@@ -73,8 +85,9 @@ const scene3d = getGuide("scene3d");
 assert.match(scene3d.content, /position 使用米/);
 assert.match(scene3d.content, /rotation 为 XYZ Euler 角度/);
 assert.match(scene3d.content, /theta\/phi\/arc.*弧度/);
-assert.strictEqual(scene3d.examples[0].input.operations[0].args.kind, "camera");
-for (const name of ["prompt-references", "timeline", "scene3d"]) {
+assert.match(scene3d.content, /旧 xyq\.scene3d\.apply\/query 入口已移除/);
+assert(!scene3d.next_commands.some((command) => /command run|canvas apply/.test(command)));
+for (const name of ["prompt-references", "timeline"]) {
   assert(
     getGuide(name).examples.every(({ input }) => input.dryRun === true),
     "mutation examples must start with domain dryRun previews",
@@ -90,4 +103,6 @@ assert.notStrictEqual(getGuide("storyboard").examples[0].prompt, "changed");
 assert.throws(() => getGuide("unknown"), /canvas command guide/);
 assert.throws(() => getGuide("__proto__"), /未知的画布指南/);
 
-console.log("Canvas command guide tests passed (5 topics, budgets, examples and capability boundaries)");
+console.log(
+  "Canvas command guide tests passed (5 topics, budgets, examples and capability boundaries)",
+);

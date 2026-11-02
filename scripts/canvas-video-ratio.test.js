@@ -221,7 +221,10 @@ async function main() {
     });
     assert.strictEqual(created.status, 0, created.output);
     assert.strictEqual(active.assets[nodeId].content.generation.ratio, '9:16');
-    assert.deepStrictEqual(active.assets[nodeId].content.ratio, { width: 9, height: 16 });
+    assert.strictEqual(active.assets[nodeId].content.ratio, undefined,
+      'master stores an empty video ratio in generation rather than persisting a media ratio');
+    const node = active.assets[canvasId].content.nodes[nodeId];
+    assert(Math.abs(node.w / node.h - 9 / 16) < 0.002, 'draft layout must reserve the generation ratio');
 
     await seed(true, '16:9');
     const edited = await execute('update_asset', {
