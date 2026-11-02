@@ -455,7 +455,7 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。Run 失败也视为终态，`completed=true` 且填充 `error_message`；Run 未到终态时 `completed=false`。
+`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`、`status="succeeded"`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。`status` 是机读状态，共 5 种取值：`running`（运行中，对应服务端已提交、处理中、生成中、程序中断等继续轮询的状态）、`succeeded`（成功）、`failed`（失败并填充 `error_message`）、`canceled`（已取消）、`unknown`（未指定、等待补充输入、人工交互中断等无法自动判定的状态）。`completed` 只表示是否到终态（成功、失败、已取消时为 true），判断成功失败请使用 `status`；查询或下载本身失败时 `status="unknown"`、`completed=false`，具体原因见 `error_message`。
 
 ## Adapter 接入边界
 

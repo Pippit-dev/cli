@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -496,6 +497,9 @@ func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
 	if got["completed"] != true {
 		t.Fatalf("completed = %v, want true", got["completed"])
 	}
+	if got["status"] != "succeeded" {
+		t.Fatalf("status = %v, want succeeded", got["status"])
+	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
@@ -600,6 +604,9 @@ func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {
 	if got["completed"] != false {
 		t.Fatalf("completed = %v, want false", got["completed"])
 	}
+	if got["status"] != "unknown" {
+		t.Fatalf("status = %v, want unknown", got["status"])
+	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
@@ -627,6 +634,9 @@ func TestQueryResultValidationErrorReturnsJSON(t *testing.T) {
 	got := decodeJSON(t, stdout.Bytes())
 	if got["completed"] != false {
 		t.Fatalf("completed = %v, want false", got["completed"])
+	}
+	if got["status"] != "unknown" {
+		t.Fatalf("status = %v, want unknown", got["status"])
 	}
 	if got["thread_id"] != "" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want empty thread_id and run_id", got["thread_id"], got["run_id"])
@@ -664,11 +674,14 @@ func TestQueryResultGetThreadBusinessErrorReturnsErrorMessage(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 	got := decodeJSON(t, stdout.Bytes())
-	if got["completed"] != true {
-		t.Fatalf("completed = %v, want true", got["completed"])
+	if got["completed"] != false {
+		t.Fatalf("completed = %v, want false", got["completed"])
 	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
+	}
+	if got["status"] != "unknown" {
+		t.Fatalf("status = %v, want unknown", got["status"])
 	}
 	if got["error_message"] != "创作失败：暂时无法生成 log_id=log_456" {
 		t.Fatalf("error_message = %v, want get_thread business error", got["error_message"])
@@ -705,6 +718,9 @@ func TestQueryResultFailedReturnsErrorMessage(t *testing.T) {
 	got := decodeJSON(t, stdout.Bytes())
 	if got["completed"] != true {
 		t.Fatalf("completed = %v, want true", got["completed"])
+	}
+	if got["status"] != "failed" {
+		t.Fatalf("status = %v, want failed", got["status"])
 	}
 	if _, ok := got["state"]; ok {
 		t.Fatalf("state should not be returned: %#v", got)
@@ -745,6 +761,9 @@ func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	if got["completed"] != false {
 		t.Fatalf("completed = %v, want false", got["completed"])
 	}
+	if got["status"] != "running" {
+		t.Fatalf("status = %v, want running", got["status"])
+	}
 	if _, ok := got["state"]; ok {
 		t.Fatalf("state should not be returned: %#v", got)
 	}
@@ -754,6 +773,58 @@ func TestQueryResultPendingDoesNotDownload(t *testing.T) {
 	videos, ok := got["videos"].([]any)
 	if !ok || len(videos) != 0 {
 		t.Fatalf("videos = %#v, want empty", got["videos"])
+	}
+}
+
+func TestQueryResultRunStateMapping(t *testing.T) {
+	// state=3 needs artifacts and is covered by the dedicated success tests;
+	// every other state must map deterministically, including unknown values.
+	tests := []struct {
+		state         int
+		wantStatus    string
+		wantCompleted bool
+	}{
+		{0, "unknown", false},
+		{1, "running", false},
+		{2, "running", false},
+		{4, "failed", true},
+		{5, "canceled", true},
+		{6, "unknown", false},
+		{7, "running", false},
+		{8, "running", false},
+		{9, "unknown", false},
+		{99, "unknown", false},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("state=%d", tt.state), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/biz/v1/skill/get_thread" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				payload := fmt.Sprintf(`{"ret":"0","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":%d}]}}}`, tt.state)
+				_, _ = w.Write([]byte(payload))
+			}))
+			defer server.Close()
+
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs([]string{
+				"query-result",
+				"--thread-id", "thread_123",
+				"--run-id", "run_456",
+				"--download-dir", t.TempDir(),
+			})
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+			}
+			got := decodeJSON(t, stdout.Bytes())
+			if got["status"] != tt.wantStatus {
+				t.Fatalf("status = %v, want %s", got["status"], tt.wantStatus)
+			}
+			if got["completed"] != tt.wantCompleted {
+				t.Fatalf("completed = %v, want %v", got["completed"], tt.wantCompleted)
+			}
+		})
 	}
 }
 

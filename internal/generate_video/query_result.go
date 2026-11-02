@@ -14,9 +14,53 @@ import (
 )
 
 const (
-	successRunState = 3
-	failedRunState  = 4
+	successRunState  = 3
+	failedRunState   = 4
+	canceledRunState = 5
 )
+
+// Query-result status values. "completed" stays a terminal flag; "status"
+// carries the machine-readable result so integrators need not parse text.
+const (
+	statusRunning   = "running"
+	statusSucceeded = "succeeded"
+	statusFailed    = "failed"
+	statusCanceled  = "canceled"
+	statusUnknown   = "unknown"
+)
+
+// runStateStatus maps the server-side run state (0-9) to the user-facing
+// status. Any unmapped value falls back to unknown instead of being guessed.
+var runStateStatus = map[int]string{
+	0: statusUnknown, // Unspecified
+	1: statusRunning, // Submitted
+	2: statusRunning, // Working
+	3: statusSucceeded,
+	4: statusFailed,
+	5: statusCanceled,
+	6: statusUnknown, // InputRequired
+	7: statusRunning, // Generating
+	8: statusRunning, // Interrupt
+	9: statusUnknown, // HITL_Interrupt
+}
+
+var terminalRunStates = map[int]struct{}{
+	successRunState:  {},
+	failedRunState:   {},
+	canceledRunState: {},
+}
+
+func statusForRunState(state int) string {
+	if s, ok := runStateStatus[state]; ok {
+		return s
+	}
+	return statusUnknown
+}
+
+func isTerminalRunState(state int) bool {
+	_, ok := terminalRunStates[state]
+	return ok
+}
 
 // QueryResultOptions is the command-facing request shape for query-result.
 type QueryResultOptions struct {
@@ -27,6 +71,7 @@ type QueryResultOptions struct {
 
 // QueryResultResult describes the user-facing query-result outcome.
 type QueryResultResult struct {
+	Status       string             `json:"status,omitempty"`
 	Completed    bool               `json:"completed"`
 	ThreadID     string             `json:"thread_id"`
 	RunID        string             `json:"run_id"`
@@ -112,10 +157,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		RunID:    opts.RunID,
 	}, runner)
 	if err != nil {
-		if result, ok := queryResultFromGetThreadBusinessError(err, opts); ok {
-			return result, nil
-		}
-		return nil, fmt.Errorf("查询失败：%w", err)
+		return nil, queryResultQueryError(err)
 	}
 
 	thread, err := parseQueryThread(threadResult)
@@ -129,7 +171,8 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 	if run.State != successRunState {
 		result := &QueryResultResult{
-			Completed: run.State == failedRunState,
+			Status:    statusForRunState(run.State),
+			Completed: isTerminalRunState(run.State),
 			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 			RunID:     opts.RunID,
 			Videos:    []QueryResultVideo{},
@@ -209,6 +252,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 
 	return &QueryResultResult{
+		Status:    statusSucceeded,
 		Completed: true,
 		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
 		RunID:     opts.RunID,
@@ -217,26 +261,39 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}, nil
 }
 
-func queryResultFromGetThreadBusinessError(err error, opts *QueryResultOptions) (*QueryResultResult, bool) {
+// queryResultQueryError converts a get_thread failure into a Go error while
+// keeping a clean, customer-facing message. The command layer maps it to
+// status=unknown; the technical envelope stays in the local error log.
+func queryResultQueryError(err error) error {
 	var logErr *common.LogIDError
-	if !errors.As(err, &logErr) {
-		return nil, false
+	if errors.As(err, &logErr) {
+		message := getThreadBusinessErrorMessage(logErr.Message)
+		if message == "" {
+			message = "查询失败"
+		}
+		if logID := logErr.LogID(); logID != "" {
+			return fmt.Errorf("%s log_id=%s", message, logID)
+		}
+		return fmt.Errorf("%s", message)
 	}
-	message := getThreadBusinessErrorMessage(logErr.Message)
-	if message == "" {
-		message = "查询失败"
-	}
-	if logID := logErr.LogID(); logID != "" {
-		message = fmt.Sprintf("%s log_id=%s", message, logID)
-	}
-	return &QueryResultResult{
-		Completed:    true,
-		ThreadID:     opts.ThreadID,
-		RunID:        opts.RunID,
-		ErrorMessage: message,
+	return fmt.Errorf("查询失败：%w", err)
+}
+
+// NewQueryResultError builds the user-facing result for a failed query. A
+// failed call never produces a run status, so it reports unknown rather than
+// guessing; the concrete cause stays in error_message.
+func NewQueryResultError(err error, opts *QueryResultOptions) *QueryResultResult {
+	result := &QueryResultResult{
+		Status:       statusUnknown,
+		ErrorMessage: err.Error(),
 		Videos:       []QueryResultVideo{},
 		Images:       []QueryResultImage{},
-	}, true
+	}
+	if opts != nil {
+		result.ThreadID = strings.TrimSpace(opts.ThreadID)
+		result.RunID = strings.TrimSpace(opts.RunID)
+	}
+	return result
 }
 
 func getThreadBusinessErrorMessage(message string) string {
