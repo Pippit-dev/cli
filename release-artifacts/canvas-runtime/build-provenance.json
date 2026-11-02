@@ -1,25 +1,36 @@
 {
-  "source_base_commit": "d1a1915fee83c8f54bcfc43ed0abfb15e85771d1",
-  "baseline_patch_commits": [
-    "0fadc755ad4e5dd75dcadb090c89fe892519223d",
-    "2dfe29a254b2f559188dfdbe2cf2479c26024cc9"
-  ],
-  "source_commit": "120c5e3d386d15d9a48673aaeb4a691cda5fbf39",
-  "source_branch": "codex/cli-video-ratio-runtime",
-  "fix_status": "committed CLI ratio validation backport; registry package not published",
+  "source_base_commit": "3dd42022c2318126caa9a6264d425ce1ffb4301d",
+  "source_commit": "68546ebeed38e57510f7de0f7869144922416983",
+  "source_branch": "feat/novel_canvas_cli",
+  "previous_runtime_source_commit": "120c5e3d386d15d9a48673aaeb4a691cda5fbf39",
+  "fix_status": "committed CLI sizing and reference protocol update; registry package not published",
   "fix_source_files_sha256": {
     "packages/xyq-canvas-sdk/src/nodes/media-identity.ts": "cf1decb0448c7fa78838d300b0408422e10120f4ef28f2cf39401420bbeb335f",
     "packages/xyq-canvas-sdk/src/opencode/media-identity-guard.ts": "1c789b98563d6213260bcf7a4c300ff1c27ae3d897e5fc0bad6fa49d397bb8d5",
     "packages/xyq-canvas-sdk/src/opencode/resolve-media-mutations.ts": "f40804aae089e2cc753cdde54a95dfdac55e950d32149efcab3058a40295407c",
-    "packages/xyq-canvas-sdk/src/opencode/index.ts": "b2cfe309c9ec263303b85e5a2e886b3216303069846f9b43426a9c9282e2fc9f",
-    "packages/xyq-canvas-sdk/src/opencode/schema-media.ts": "375294baa9b2e7bf8b6a35c628fb61f37ed3c4616072bdae26b609c6da3a765b",
-    "packages/xyq-canvas-sdk/src/generation/submit-reference-payload.ts": "7c31b4bb5ac8d1ee430cf8e2791273e597f44d368e7953d6c183dad8f93faa9b",
+    "packages/xyq-canvas-sdk/src/opencode/index.ts": "75e579e5fdc5c25e5ead8bc5a82e115a942278128b1c46a0feb51be647842fcd",
+    "packages/xyq-canvas-sdk/src/opencode/schema-media.ts": "cf1b94add4e01331ff1422d9b186703392020c7bbac03a7afb231f4aa9334dc6",
+    "packages/xyq-canvas-sdk/src/generation/submit-reference-payload.ts": "f2fc99e3c2864804a8e019a4418f9229942b9854c077758a4311d32303a81a02",
     "packages/xyq-canvas-sdk/src/canvas-command-runtime-core.ts": "a6c542a834da0c45e1d9a1ebb0fb703513279c4c709e62aafead729a01a61f5f",
-    "packages/xyq-canvas-sdk/src/command-runtime-video-validation.ts": "9df321ce461b968edd718544c965f5e46da6f32428289e0f385245faf923a0a4"
+    "packages/xyq-canvas-sdk/src/command-runtime-video-validation.ts": "9df321ce461b968edd718544c965f5e46da6f32428289e0f385245faf923a0a4",
+    "packages/xyq-canvas-sdk/src/nodes/media-size.ts": "ae5850e60993f691edc0d064d564e4daa173d0c2215e95c0f8c9885e8b745a1f",
+    "packages/xyq-canvas-sdk/src/generation/output-size.ts": "8423857819ad0933a5882c250f2aa757c397cbd578d888d7b2d4b060232d9d13",
+    "packages/xyq-canvas-sdk/src/generation/aspect-ratio-size.ts": "bf2a51981ad4b657801116b6e3c8cf021eef4e3b82f072ad196413e96bad9d97",
+    "packages/xyq-canvas-sdk/src/headless/media-asset-size-sync.ts": "3dc56204cd70b73d70f5b09af76164f9a3440694c918ddad8dbd1877d53ad753",
+    "packages/xyq-canvas-sdk/src/canvas-page/node-factory.ts": "ac5ccf8fd2d544e5ea42cb4273edbc7854bbbb2f9820501d6dcfe3041179e387",
+    "packages/xyq-canvas-sdk/src/command-runtime-opencode.ts": "f7edfcadaced6bed56159c08edfa69e3e4c0d8bcc59e70ee38a3cd59ed0e8c37",
+    "packages/xyq-canvas-sdk/src/generation/reference-sync.ts": "27913a344cbc553958bea99faf9729b941a8dc58bef1d067e19783217c3a78cc",
+    "packages/xyq-canvas-sdk/src/opencode/apply-reference-mutations.ts": "b18e8abbaac174e4e976404ed89135692a7313c82a6c0598ab6ab53da647dbd7",
+    "packages/xyq-canvas-sdk/src/command-domains/timeline-protocol-schema.ts": "54604eb6535b464b3f29a45c36697a2c855221b07f718a6db3dd5ac2e4a754a4"
   },
-  "fix_source_fingerprint_sha256": "f0540193f0df3aaef5207b77c1301291c55ad3fb80156298fc60d8c48ed2f7c9",
-  "dependency_source": "reused locally installed workspace dependencies",
-  "runtime_sha256": "8e14b9a2c496491c2ee44da3ed950ac8301b67981dfaba3ab1e042cf8b937298",
-  "runtime_bytes": 1119989,
-  "legal_sha256": "3b97217c41dfb3c298185c80b1e70c2b469f552450e53d00fc1dcf7098740ffb"
+  "fix_source_fingerprint_sha256": "d4b00e1e1c5d8f3fdb331316a22a120284249676a72dbc464dc927bbecd33e7d",
+  "dependency_source": "emo-installed source worktree dependencies",
+  "dependency_lock_sha256": "fb3d266e8160d610e0219981036f353956ef33c0754fda92efe729183eedbc21",
+  "build_command": "node packages/xyq-canvas-sdk/scripts/build-canvas-command-runtime.mjs --out-dir <output>",
+  "build_node_version": "v24.16.0",
+  "runtime_target": "node16",
+  "reproducible_builds": 2,
+  "runtime_sha256": "16de3965b598b718c553a09683ee70be5316d392cd6bfa2c17e8942e20668769",
+  "runtime_bytes": 1187212,
+  "legal_sha256": "cfd0e832f58fe01a0797303a0be2d9e49e708b095547ac4f9fb9add0cdae9311"
 }
