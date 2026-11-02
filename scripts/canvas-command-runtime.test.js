@@ -44,7 +44,7 @@ async function main() {
     return result;
   }
   const listed = await discover(["list"]);
-  assert.strictEqual(listed.commands.length, 41);
+  assert.strictEqual(listed.commands.length, 45);
   for (const command of listed.commands) {
     assert.strictEqual(
       command.input_schema,
@@ -57,25 +57,26 @@ async function main() {
     assert(command.category.length > 0);
   }
   const { commands } = await discover(["schema"]);
-  assert.strictEqual(commands.length, 41);
+  assert.strictEqual(commands.length, 45);
   assert.deepStrictEqual(
     commands.map(({ name }) => name),
     listed.commands.map(({ name }) => name),
   );
-  for (const removed of [
-    "create_edge",
-    "delete_edges",
-    "reconnect_edge",
-    "update_edge_data",
-    "xyq.scene3d.apply",
-    "xyq.scene3d.query",
-  ]) {
+  for (const name of ["create_edge", "delete_edges", "reconnect_edge", "update_edge_data"]) {
     assert(
-      !commands.some(({ name }) => name === removed),
-      `${removed} must not be advertised by this runtime`,
+      commands.some((command) => command.name === name),
+      `${name} must remain discoverable`,
     );
   }
+  for (const name of [
+    "xyq.scene3d.apply",
+    "xyq.scene3d.query",
+    "xyq.generation.update_references",
+  ]) {
+    assert(!commands.some((command) => command.name === name), `${name} must not be advertised`);
+  }
   const create = commands.find(({ name }) => name === "create_biz_node");
+  assert.strictEqual(create.input_schema.properties.references, undefined);
   for (const kind of ["scene3d", "timeline-composition"]) {
     assert(create.input_schema.properties.nodeKind.enum.includes(kind));
   }

@@ -261,6 +261,8 @@ pippit-tool-cli canvas command run create_biz_node \
 
 `list [--category <category>]` 返回精简命令目录；`describe <command>` 说明入口参数，按 `--operation <name>` 查看一种领域操作、按 `--node-kind <kind>` 查看业务节点初始字段、按 `--path <schema.path>` 查看 schema 子路径。需要完整嵌套结构时使用 `schema [command]` 显式导出。`create_biz_node.nodeKind` 包含 `scene3d` 与 `timeline-composition`；字段枚举、必填项、默认值与动态来源以当前安装版本的 schema 为准。
 
+引用边通过 `create_edge`、`reconnect_edge`、`update_edge_data` 和 `delete_edges` 显式维护，参数以当前 `describe` 为准。`create_biz_node` 不提供顶层 `references`；`update_node_data` 写入 `generation.references` 只更新草稿数据，不自动创建、替换或删除边，修改其他生成参数也无需携带引用列表。
+
 发现输出使用 `schema_version: 2`：`list` 只包含名称、分类和摘要；`describe` 的 `schema_view: "summary"` 表示展示视图，嵌套内容通过 `schema_path` 继续展开，不能直接当作完整校验 schema。原来从 `list` 或 `describe` 读取完整 `input_schema` 的脚本应改用 `schema [command]`。默认索引预算为 16 KiB，单次字段说明预算为 32 KiB；完整导出需要显式调用，执行命令的输入与返回值不受这一发现协议调整影响。
 
 `guide [topic]` 提供无需登录的离线帮助。无主题时仅返回索引，可选 `storyboard`、`prompt-references`、`time`、`timeline`、`scene3d`；正文包含单位、ID 来源、前置条件和最小示例。指南不启用新能力，先用 `list` 确认本机运行时支持哪些命令。故事板指南说明原生 `<duration-ms>` 标签累加与引用格式；目前没有公开的故事板脚本编辑、镜头排序或指定镜头生成领域命令，通用视频生成与资产补丁不能替代其业务流程。
