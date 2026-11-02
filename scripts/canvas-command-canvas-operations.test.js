@@ -65,7 +65,10 @@ function fixture(index) {
   });
   const store = standalone.store;
   const runtime = { store, permissions, createCheckpointId: () => `checkpoint-${index}` };
-  const definitions = sdk.createXyqCanvasOpencodeToolDefinitions({ schema: createSchemaFactory(), runtime });
+  const definitions = sdk.createXyqCanvasOpencodeToolDefinitions({
+    schema: createSchemaFactory(),
+    runtime,
+  });
   const root = () => store.getRootCanvasContent();
   const node = (id) => root().nodes[id];
   const asset = (id) => store.getState().assets[id];
@@ -78,7 +81,11 @@ function fixture(index) {
       ? { ...input, kind: name }
       : { kind: 'invoke_command', name, args: [input] };
     return JSON.parse(
-      await defs.apply_mutations.execute({ atomic: true, intent: `execute ${name}`, mutations: [mutation] }),
+      await defs.apply_mutations.execute({
+        atomic: true,
+        intent: `execute ${name}`,
+        mutations: [mutation],
+      }),
     );
   }
   const write = async (name, input) => success(await call(name, input));
@@ -108,7 +115,18 @@ function fixture(index) {
     return ['a', 'b', 'c'];
   }
   async function edge(id = 'edge', source = 'a', target = 'b') {
-    await write('create_edge', { edge: { id, type: 'reference', source, target, data: {} } });
+    // Layout/deletion fixtures use raw persisted edges. User reference edits are
+    // exercised below through generation.references, without edge commands.
+    await write('apply_patches', {
+      patches: [
+        {
+          assetId: store.getState().rootCanvasId,
+          op: 'add',
+          path: `/content/edges/${id}`,
+          value: { id, type: 'reference', source, target, data: {} },
+        },
+      ],
+    });
     return id;
   }
   async function group(ids = ['a', 'b']) {
@@ -153,8 +171,9 @@ test('set_cover', 'set durable asset reference', async (f) => {
 test('set_cover', 'empty cover is a no-op as advertised by schema', async (f) => {
   await f.biz('image', 'cover-node');
   await f.write('set_cover', { cover: { pippitAssetId: 'cover-node' } });
-  const description = sdk.XYQ_CANVAS_OPENCODE_MUTATION_DEFINITIONS.find(({ kind }) => kind === 'set_cover')
-    .inputSchema.properties.cover.description;
+  const description = sdk.XYQ_CANVAS_OPENCODE_MUTATION_DEFINITIONS.find(
+    ({ kind }) => kind === 'set_cover',
+  ).inputSchema.properties.cover.description;
   assert.match(description, /no-op/);
   assert.match(description, /cannot clear/);
   const before = clone(f.store.getState());
@@ -185,7 +204,8 @@ test('set_node_style', 'style round trip', async (f) => {
   await f.nodes();
   const style = { background: '#123456', borderRadius: 8, opacity: 0.6 };
   await f.write('set_node_style', { id: 'a', style });
-  for (const [key, value] of Object.entries(style)) assert.strictEqual(f.node('a').style[key], value);
+  for (const [key, value] of Object.entries(style))
+    assert.strictEqual(f.node('a').style[key], value);
 });
 test('update_asset', 'content and extra retain siblings', async (f) => {
   await f.nodes();
@@ -252,7 +272,10 @@ for (const axis of ['horizontal', 'vertical']) {
     const coordinate = axis === 'horizontal' ? 'x' : 'y';
     const size = axis === 'horizontal' ? 'w' : 'h';
     const [a, b, c] = ids.map(f.node);
-    assert.strictEqual(b[coordinate] - a[coordinate] - a[size], c[coordinate] - b[coordinate] - b[size]);
+    assert.strictEqual(
+      b[coordinate] - a[coordinate] - a[size],
+      c[coordinate] - b[coordinate] - b[size],
+    );
   });
 }
 for (const layout of [
@@ -276,8 +299,10 @@ for (const layout of [
       assert(Number.isFinite(f.node(id).x) && Number.isFinite(f.node(id).y));
       assert.strictEqual(f.asset(id).content.plainText, id);
     }
-    if (layout === 'horizontal') assert.strictEqual(f.node('b').x - f.node('a').x - f.node('a').w, 32);
-    if (layout === 'vertical') assert.strictEqual(f.node('b').y - f.node('a').y - f.node('a').h, 24);
+    if (layout === 'horizontal')
+      assert.strictEqual(f.node('b').x - f.node('a').x - f.node('a').w, 32);
+    if (layout === 'vertical')
+      assert.strictEqual(f.node('b').y - f.node('a').y - f.node('a').h, 24);
   });
 }
 for (const strategy of [
@@ -364,33 +389,115 @@ test('set_group_collapsed', 'collapse expand preserves membership', async (f) =>
   assert.strictEqual(f.node(id).w, before.w);
   assert.strictEqual(f.node(id).h, before.h);
 });
-test('create_edge', 'reference endpoints', async (f) => {
-  await f.nodes();
-  await f.edge();
-  assert.strictEqual(f.root().edges.edge.source, 'a');
-  assert.strictEqual(f.root().edges.edge.target, 'b');
+test('create_biz_node', 'declared references create edges in the same atomic batch', async (f) => {
+  await f.write('apply_mutations', {
+    atomic: true,
+    intent: 'Create referenced media',
+    mutations: [
+      { kind: 'create_biz_node', nodeKind: 'image', id: 'source' },
+      { kind: 'create_biz_node', nodeKind: 'video', id: 'target', references: ['source'] },
+    ],
+  });
+  assert(Object.values(f.root().edges).some((e) => e.source === 'source' && e.target === 'target'));
 });
-test('reconnect_edge', 'replaces endpoints', async (f) => {
-  await f.nodes();
-  await f.edge();
-  await f.write('reconnect_edge', { id: 'edge', patch: { source: 'b', target: 'c' } });
-  assert.strictEqual(f.root().edges.edge.source, 'b');
-  assert.strictEqual(f.root().edges.edge.target, 'c');
-});
-test('update_edge_data', 'label edit retains endpoints', async (f) => {
-  await f.nodes();
-  await f.edge();
-  await f.write('update_edge_data', { id: 'edge', patch: { label: 'Uses reference' } });
-  assert.strictEqual(f.root().edges.edge.data.label, 'Uses reference');
-  assert.strictEqual(f.root().edges.edge.source, 'a');
-});
-test('delete_edges', 'deletes edge without deleting assets', async (f) => {
-  await f.nodes();
-  await f.edge();
-  await f.write('delete_edges', { ids: ['edge'] });
-  assert.strictEqual(f.root().edges.edge, undefined);
-  assert(f.node('a') && f.node('b') && f.asset('a') && f.asset('b'));
-});
+test(
+  'update_node_data',
+  'declared references add replace and clear edges with undo redo',
+  async (f) => {
+    await f.biz('image', 'source-a');
+    await f.biz('image', 'source-b');
+    await f.biz('video', 'target');
+    const sources = () =>
+      Object.values(f.root().edges)
+        .filter((e) => e.target === 'target')
+        .map((e) => e.source)
+        .sort();
+    const update = (ids) =>
+      f.write('update_node_data', {
+        id: 'target',
+        patch: {
+          generation: {
+            ...f.asset('target').content.generation,
+            references: ids.map((sourceNodeId) => ({ sourceNodeId })),
+          },
+        },
+      });
+    await update(['source-a', 'source-b']);
+    assert.deepStrictEqual(sources(), ['source-a', 'source-b']);
+    await update(['source-b']);
+    assert.deepStrictEqual(sources(), ['source-b']);
+    f.store.clearHistory();
+    const before = clone(f.store.getState());
+    await update([]);
+    assert.deepStrictEqual(sources(), []);
+    assert(f.node('source-a') && f.node('source-b') && f.asset('source-a'));
+    const after = clone(f.store.getState());
+    f.store.undo();
+    assert.deepStrictEqual(f.store.getState(), before);
+    f.store.redo();
+    assert.deepStrictEqual(f.store.getState(), after);
+  },
+);
+test(
+  'update_node_data',
+  'generation replacement must carry references and dry runs do not write',
+  async (f) => {
+    await f.biz('image', 'source');
+    await f.biz('video', 'target');
+    const before = clone(f.store.getState());
+    failure(
+      await f.call('update_node_data', {
+        id: 'target',
+        patch: { generation: { prompt: 'Missing references' } },
+      }),
+      /GENERATION_REFERENCES_REQUIRED/,
+    );
+    failure(
+      await f.call('update_node_data', {
+        id: 'target',
+        patch: { generation: { references: [{ sourceNodeId: 'missing' }] } },
+      }),
+      /REFERENCE_SOURCE_NOT_FOUND/,
+    );
+    await f.write('apply_mutations', {
+      dryRun: true,
+      mutations: [
+        {
+          kind: 'update_node_data',
+          id: 'target',
+          patch: { generation: { references: [{ sourceNodeId: 'source' }] } },
+        },
+      ],
+    });
+    assert.deepStrictEqual(f.store.getState(), before);
+  },
+);
+for (const [kind, ratio, w, h] of [
+  ['image', '16:9', 564, 317],
+  ['image', '9:16', 317, 564],
+  ['image', '1:1', 423, 423],
+  ['video', '16:9', 480, 270],
+  ['video', '9:16', 270, 480],
+  ['video', '1:1', 360, 360],
+]) {
+  test('create_biz_node', `${kind} reserves ${ratio} before layout`, async (f) => {
+    await f.biz(kind, 'first', { generation: { ratio } });
+    await f.biz(kind, 'second', { generation: { ratio } });
+    assert.deepStrictEqual({ w: f.node('first').w, h: f.node('first').h }, { w, h });
+    assert.strictEqual(f.node('second').x - f.node('first').x - w, 24);
+    const second = clone(f.node('second'));
+    const content =
+      kind === 'image'
+        ? { naturalWidth: 1600, naturalHeight: 900 }
+        : { metadata: { width: 1600, height: 900 } };
+    await f.write('update_node_data', { id: 'first', patch: content });
+    assert.deepStrictEqual(
+      f.node('second'),
+      second,
+      'Media completion must not move adjacent nodes',
+    );
+  });
+}
 test('delete_nodes', 'cleans incident edges, group membership and undo', async (f) => {
   await f.nodes();
   await f.edge();
@@ -410,18 +517,23 @@ test('delete_nodes', 'cleans incident edges, group membership and undo', async (
   f.store.redo();
   assert.deepStrictEqual(f.store.getState(), after);
 });
-test('delete', 'combined node and edge deletion', async (f) => {
+test('delete', 'node deletion cleans every incident edge', async (f) => {
   await f.nodes();
   await f.edge();
   await f.edge('second', 'b', 'c');
-  await f.write('delete', { nodeIds: ['a'], edgeIds: ['second'] });
+  await f.write('delete', { nodeIds: ['a', 'b'] });
   assert.strictEqual(f.node('a'), undefined);
   assert.deepStrictEqual(f.root().edges, {});
-  assert(f.node('b') && f.node('c'));
+  assert.strictEqual(f.node('b'), undefined);
+  assert(f.node('c'));
 });
 test('update_snap_settings', 'partial settings merge', async (f) => {
   await f.write('update_snap_settings', { patch: { threshold: 14, targets: ['guide'] } });
-  assert.deepStrictEqual(f.root().settings.snap, { enabled: true, threshold: 14, targets: ['guide'] });
+  assert.deepStrictEqual(f.root().settings.snap, {
+    enabled: true,
+    threshold: 14,
+    targets: ['guide'],
+  });
 });
 test('set_snap_enabled', 'boolean setting', async (f) => {
   await f.write('set_snap_enabled', { enabled: false });
@@ -512,7 +624,11 @@ for (const kind of businessKinds) {
 test('create_biz_node', 'invalid ratio leaves no assets', async (f) => {
   const before = clone(f.store.getState());
   failure(
-    await f.call('create_biz_node', { nodeKind: 'image', id: 'invalid', defaultVideoRatio: 'invalid' }),
+    await f.call('create_biz_node', {
+      nodeKind: 'image',
+      id: 'invalid',
+      defaultVideoRatio: 'invalid',
+    }),
     /defaultVideoRatio/,
   );
   assert.deepStrictEqual(f.store.getState(), before);
@@ -522,14 +638,21 @@ test('get_snapshot', 'full and filtered documents', async (f) => {
   await f.nodes();
   const full = success(await f.call('get_snapshot'));
   assert.deepStrictEqual(full.data.document, JSON.parse(JSON.stringify(f.store.getState())));
-  const filtered = success(await f.call('get_snapshot', { assetIds: ['a'], includeRootCanvas: false }));
+  const filtered = success(
+    await f.call('get_snapshot', { assetIds: ['a'], includeRootCanvas: false }),
+  );
   assert.deepStrictEqual(Object.keys(filtered.data.document.assets), ['a']);
-  const withRoot = success(await f.call('get_snapshot', { assetIds: ['a'], includeRootCanvas: true }));
+  const withRoot = success(
+    await f.call('get_snapshot', { assetIds: ['a'], includeRootCanvas: true }),
+  );
   assert(withRoot.data.document.assets[f.store.getState().rootCanvasId]);
 });
 test('get_asset', 'selected asset and missing id', async (f) => {
   await f.nodes();
-  assert.deepStrictEqual(success(await f.call('get_asset', { assetId: 'a' })).data.asset, f.asset('a'));
+  assert.deepStrictEqual(
+    success(await f.call('get_asset', { assetId: 'a' })).data.asset,
+    f.asset('a'),
+  );
   const before = clone(f.store.getState());
   failure(await f.call('get_asset', { assetId: 'missing' }));
   assert.deepStrictEqual(f.store.getState(), before);
@@ -550,7 +673,12 @@ test('get_permissions', 'readOnly and permission denial', async (f) => {
   failure(await f.call('get_permissions', {}, denied));
   assert.deepStrictEqual(f.store.getState(), before);
 });
-for (const command of ['create_checkpoint', 'list_checkpoints', 'compare_checkpoint', 'restore_checkpoint']) {
+for (const command of [
+  'create_checkpoint',
+  'list_checkpoints',
+  'compare_checkpoint',
+  'restore_checkpoint',
+]) {
   test(command, 'checkpoint captures and restores actual assets', async (f) => {
     await f.nodes();
     const before = clone(f.store.getState());
@@ -563,7 +691,10 @@ for (const command of ['create_checkpoint', 'list_checkpoints', 'compare_checkpo
     await f.write('delete_nodes', { ids: ['b'] });
     const diff = success(await f.call('compare_checkpoint', { checkpointId }));
     assert(diff.data.changedAssetIds.includes('a'));
-    assert(!diff.data.changedAssetIds.includes('b'), 'deleting a node retains its reusable companion asset');
+    assert(
+      !diff.data.changedAssetIds.includes('b'),
+      'deleting a node retains its reusable companion asset',
+    );
     assert.strictEqual(f.node('b'), undefined);
     assert.deepStrictEqual(f.asset('b'), before.assets.b);
     assert(diff.data.changedAssetIds.includes(f.store.getState().rootCanvasId));
@@ -606,7 +737,8 @@ for (const [field, value, inspect] of [
   test(roleDescription, field, async (f) => {
     await f.biz('role');
     await f.write(roleDescription, { nodeId: 'role', assetId: 'role', field, value });
-    const expected = field === 'episodes' ? ['1', '2', '3'] : field === 'voiceAudio' ? 'voice-media' : value;
+    const expected =
+      field === 'episodes' ? ['1', '2', '3'] : field === 'voiceAudio' ? 'voice-media' : value;
     assert.deepStrictEqual(inspect(f.asset('role').content), expected);
     if (field === 'characterName') assert.strictEqual(f.node('role').data.name, value);
     if (field === 'voiceAudio')
@@ -676,7 +808,12 @@ for (const type of ['upsert', 'reorder', 'setDefault', 'setMain', 'setName', 'de
     const operations = {
       upsert: {
         type,
-        sourceInfo: { type: 'video', pippitAssetId: 'source-video', assetId: 'video-cloud', isMain: true },
+        sourceInfo: {
+          type: 'video',
+          pippitAssetId: 'source-video',
+          assetId: 'video-cloud',
+          isMain: true,
+        },
       },
       reorder: { type, activePippitAssetId: 'source-b', overPippitAssetId: 'source-a' },
       setDefault: { type, pippitAssetId: 'source-b', isDefault: true },
@@ -691,7 +828,8 @@ for (const type of ['upsert', 'reorder', 'setDefault', 'setMain', 'setName', 'de
       assert.strictEqual(c.sourceInfos['source-video'].type, 'video');
       assert.strictEqual(c.sourceInfos['source-video'].isMain, false);
     }
-    if (type === 'reorder') assert(c.sourceInfos['source-b'].order < c.sourceInfos['source-a'].order);
+    if (type === 'reorder')
+      assert(c.sourceInfos['source-b'].order < c.sourceInfos['source-a'].order);
     if (type === 'setDefault') assert.deepStrictEqual(f.store.getState(), before);
     if (type === 'setMain' || type === 'delete')
       assert.strictEqual(c.appearanceInfo.pippitAssetId, 'source-b');
@@ -720,7 +858,10 @@ test(promptCommand, 'node reference, standalone upload, noop and clear', async (
     caption: 'Keep caption',
     generation: { prompt: 'Before', model: 'existing-model' },
   });
-  await f.biz('image', 'reference', { pippitAssetId: 'reference-media', assetId: 'reference-cloud' });
+  await f.biz('image', 'reference', {
+    pippitAssetId: 'reference-media',
+    assetId: 'reference-cloud',
+  });
   const tagged = 'Use <node-asset>reference</node-asset>';
   await f.write(promptCommand, { nodeId: 'target', prompt: tagged });
   assert.strictEqual(f.asset('target').content.generation.prompt, tagged);
@@ -737,7 +878,12 @@ test(promptCommand, 'node reference, standalone upload, noop and clear', async (
   // Existing Web draft protocol; this uploaded asset deliberately has no node.
   f.store.commands.updateNodeData('target', (draft) => {
     draft.generation.references = [
-      { type: 'image', pippitAssetId: 'uploaded-media', assetId: 'uploaded-cloud', label: 'Uploaded image' },
+      {
+        type: 'image',
+        pippitAssetId: 'uploaded-media',
+        assetId: 'uploaded-cloud',
+        label: 'Uploaded image',
+      },
     ];
   });
   const standalone = 'Use <pippit-asset-id>uploaded-media</pippit-asset-id>';
@@ -752,7 +898,10 @@ test(promptCommand, 'node reference, standalone upload, noop and clear', async (
 for (const scenario of ['dryRun', 'unresolved reference', 'missing generation initialization']) {
   test(promptCommand, scenario, async (f) => {
     await f.biz('video', 'target');
-    await f.biz('image', 'reference', { pippitAssetId: 'reference-media', assetId: 'reference-cloud' });
+    await f.biz('image', 'reference', {
+      pippitAssetId: 'reference-media',
+      assetId: 'reference-cloud',
+    });
     const before = clone(f.store.getState());
     const revision = f.store.getRevision();
     const text =
@@ -777,6 +926,12 @@ for (const scenario of ['dryRun', 'unresolved reference', 'missing generation in
 
 async function main() {
   for (const [index, entry] of cases.entries()) {
+    const previousIdPool = globalThis.__canvas_cli_id_pool;
+    // Match the CLI's allocated ID pool; document tests must not depend on the
+    // legacy timestamp/random fallback when V2 history creates several assets.
+    globalThis.__canvas_cli_id_pool = Array.from(
+      { length: 256 }, (_, offset) => String(8000000000000 + index * 256 + offset),
+    );
     const f = fixture(index);
     try {
       await entry.execute(f);
@@ -793,6 +948,8 @@ async function main() {
       console.error(`FAIL ${entry.command} / ${entry.scenario}: ${error.stack}`);
     } finally {
       f.standalone.canvas.dispose();
+      if (previousIdPool === undefined) delete globalThis.__canvas_cli_id_pool;
+      else globalThis.__canvas_cli_id_pool = previousIdPool;
     }
   }
   const expected = [
@@ -829,7 +986,11 @@ async function main() {
     networkCalls,
   };
   console.log(JSON.stringify(summary, null, 2));
-  assert.strictEqual(expected.length, 43, 'Coverage must track every public base/subject/prompt command');
+  assert.strictEqual(
+    expected.length,
+    39,
+    'Coverage must track every public base/subject/prompt command',
+  );
   if (commandResults.some(({ status }) => status !== 'PASS')) process.exitCode = 1;
 }
 

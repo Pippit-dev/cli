@@ -265,16 +265,11 @@ pippit-tool-cli canvas command run create_biz_node \
 
 `guide [topic]` 提供无需登录的离线帮助。无主题时仅返回索引，可选 `storyboard`、`prompt-references`、`time`、`timeline`、`scene3d`；正文包含单位、ID 来源、前置条件和最小示例。指南不启用新能力，先用 `list` 确认本机运行时支持哪些命令。故事板指南说明原生 `<duration-ms>` 标签累加与引用格式；目前没有公开的故事板脚本编辑、镜头排序或指定镜头生成领域命令，通用视频生成与资产补丁不能替代其业务流程。
 
-3D 导演台和多轨道都通过外层画布节点定位，其编辑内容保存在节点引用的独立文档或草稿资产中。先查询取得内部对象、轨道、片段 ID 和版本，再执行编辑：
+当前 SDK 主干的 3D 导演文档已迁移到 V2，旧 CLI 的 `xyq.scene3d.apply/query` 入口已移除。本版本沿用主干能力；3D 节点仍可通过业务工厂创建，内部对象编辑使用 Web 3D 导演台，不通过通用资产补丁改写文档。
+
+多轨道通过外层画布节点定位，先查询轨道、片段 ID 和版本，再执行编辑：
 
 ```bash
-pippit-tool-cli canvas command describe xyq.scene3d.apply
-pippit-tool-cli canvas command run xyq.scene3d.query \
-  --canvas-id CANVAS_ID --input '{"nodeId":"DIRECTOR_NODE_ID"}'
-pippit-tool-cli canvas command run xyq.scene3d.apply \
-  --canvas-id CANVAS_ID \
-  --input '{"nodeId":"DIRECTOR_NODE_ID","operations":[{"command":"create_node","args":{"kind":"camera","id":"camera-2","name":"Close-up"}}]}'
-
 pippit-tool-cli canvas command describe xyq.timeline.apply
 pippit-tool-cli canvas command run xyq.timeline.query \
   --canvas-id CANVAS_ID --input '{"nodeId":"TIMELINE_NODE_ID"}'

@@ -674,6 +674,17 @@ function createDefinitions(sdk, runtime, allocateNodeId, queryMediaAsset) {
 }
 
 function ensureNodeRuntimeGlobals() {
+  if (typeof globalThis.DOMException !== "function") {
+    // Node 16 exposes its native DOMException through AbortSignal.reason,
+    // while newer Node versions also expose the constructor as a global.
+    const controller = new AbortController();
+    controller.abort();
+    Object.defineProperty(globalThis, "DOMException", {
+      configurable: true,
+      value: controller.signal.reason.constructor,
+      writable: true,
+    });
+  }
   if (typeof globalThis.structuredClone !== "function") {
     const { deserialize, serialize } = require("v8");
     Object.defineProperty(globalThis, "structuredClone", {

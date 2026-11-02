@@ -2,11 +2,17 @@
 
 const assert = require("assert");
 const path = require("path");
-const { createSchemaFactory, ensureNodeRuntimeGlobals, runCanvasCommand } = require("./canvas-command");
+const {
+  createSchemaFactory,
+  ensureNodeRuntimeGlobals,
+  runCanvasCommand,
+} = require("./canvas-command");
 
 async function main() {
   ensureNodeRuntimeGlobals();
-  const sdk = require(path.resolve(process.argv[2] || path.join(__dirname, "../dist/xyq-canvas-command-runtime.cjs")));
+  const sdk = require(
+    path.resolve(process.argv[2] || path.join(__dirname, "../dist/xyq-canvas-command-runtime.cjs")),
+  );
   let discoveryCount = 0;
   let largestDescribe = 0;
   async function discover(args) {
@@ -38,20 +44,37 @@ async function main() {
     return result;
   }
   const listed = await discover(["list"]);
-  assert.strictEqual(listed.commands.length, 47);
+  assert.strictEqual(listed.commands.length, 41);
   for (const command of listed.commands) {
-    assert.strictEqual(command.input_schema, undefined, `${command.name} leaked its full schema into list`);
+    assert.strictEqual(
+      command.input_schema,
+      undefined,
+      `${command.name} leaked its full schema into list`,
+    );
     assert.strictEqual(typeof command.summary, "string");
     assert(command.summary.length > 0);
     assert.strictEqual(typeof command.category, "string");
     assert(command.category.length > 0);
   }
   const { commands } = await discover(["schema"]);
-  assert.strictEqual(commands.length, 47);
+  assert.strictEqual(commands.length, 41);
   assert.deepStrictEqual(
     commands.map(({ name }) => name),
     listed.commands.map(({ name }) => name),
   );
+  for (const removed of [
+    "create_edge",
+    "delete_edges",
+    "reconnect_edge",
+    "update_edge_data",
+    "xyq.scene3d.apply",
+    "xyq.scene3d.query",
+  ]) {
+    assert(
+      !commands.some(({ name }) => name === removed),
+      `${removed} must not be advertised by this runtime`,
+    );
+  }
   const create = commands.find(({ name }) => name === "create_biz_node");
   for (const kind of ["scene3d", "timeline-composition"]) {
     assert(create.input_schema.properties.nodeKind.enum.includes(kind));
@@ -67,34 +90,14 @@ async function main() {
     const described = await discover(["describe", command.name]);
     assert.strictEqual(described.name, command.name);
     assert.strictEqual(described.schema_view, "summary");
-    assert.strictEqual(described.category, listed.commands.find(({ name }) => name === command.name).category);
+    assert.strictEqual(
+      described.category,
+      listed.commands.find(({ name }) => name === command.name).category,
+    );
     assert(described.schema_export, `Missing explicit export route on ${command.name}`);
     assert(described.input_schema, `Missing current-layer schema preview on ${command.name}`);
   }
 
-  const sceneOperationNames = [
-    "create_node",
-    "remove_node",
-    "rename_node",
-    "update_transform",
-    "update_camera",
-    "set_active_camera",
-    "toggle_visible",
-    "toggle_lock",
-    "group_nodes",
-    "ungroup_node",
-    "update_group_layout",
-    "upsert_keyframe",
-    "remove_keyframes",
-    "move_keyframes",
-    "set_keyframe_interpolation",
-    "set_frame_range",
-    "apply_path_motion",
-    "update_motion_clip",
-    "remove_motion_clip",
-    "split_motion_clip",
-    "reorder_motion_clip",
-  ];
   const timelineOperationNames = [
     "insert_clip",
     "remove_clip",
@@ -134,16 +137,13 @@ async function main() {
     "apply_text_style_to_all",
     "replace_text_clips",
     "reflow_text_clips",
+    "apply_text_layout_to_all",
+    "bind_dialogue_clips",
+    "replace_dialogue_clips",
+    "unbind_dialogue_clips",
   ];
   const compareNames = (a, b) => a.localeCompare(b, "en");
   for (const { name, container, discriminator, argumentKey, expectedNames } of [
-    {
-      name: "xyq.scene3d.apply",
-      container: "operations",
-      discriminator: "command",
-      argumentKey: "args",
-      expectedNames: sceneOperationNames,
-    },
     {
       name: "xyq.timeline.apply",
       container: "commands",
@@ -155,13 +155,20 @@ async function main() {
     const schema = commands.find((entry) => entry.name === name).input_schema;
     const variants = schema.properties[container].items.oneOf;
     const actualNames = variants.map((variant) => variant.properties[discriminator].const);
-    assert.deepStrictEqual([...actualNames].sort(compareNames), [...expectedNames].sort(compareNames));
+    assert.deepStrictEqual(
+      [...actualNames].sort(compareNames),
+      [...expectedNames].sort(compareNames),
+    );
     const described = await discover(["describe", name]);
     assert.deepStrictEqual(
       described.operations.map((entry) => entry.name).sort(compareNames),
       [...expectedNames].sort(compareNames),
     );
-    assert(described.operations.every((entry) => typeof entry.summary === "string" && entry.summary.length));
+    assert(
+      described.operations.every(
+        (entry) => typeof entry.summary === "string" && entry.summary.length,
+      ),
+    );
     for (const operation of actualNames) {
       const selected = await discover(["describe", name, "--operation", operation]);
       const item = selected.input_schema.properties[container].items;
@@ -176,7 +183,9 @@ async function main() {
         `properties.${container}.items.properties.${argumentKey}`,
       ]);
       assert(expanded.input_schema, `${name}/${operation} cannot expand ${argumentKey}`);
-      const original = variants.find((variant) => variant.properties[discriminator].const === operation);
+      const original = variants.find(
+        (variant) => variant.properties[discriminator].const === operation,
+      );
       assert.deepStrictEqual(
         expanded.input_schema.required,
         original.properties[argumentKey].required,
@@ -187,7 +196,10 @@ async function main() {
   const describedCreate = await discover(["describe", "create_biz_node"]);
   const nodeKinds = create.input_schema.properties.nodeKind.enum;
   assert.strictEqual(nodeKinds.length, 10);
-  assert.deepStrictEqual([...describedCreate.node_kinds].sort(compareNames), [...nodeKinds].sort(compareNames));
+  assert.deepStrictEqual(
+    [...describedCreate.node_kinds].sort(compareNames),
+    [...nodeKinds].sort(compareNames),
+  );
   for (const kind of nodeKinds) {
     const selected = await discover(["describe", "create_biz_node", "--node-kind", kind]);
     const narrowed = selected.input_schema.properties.nodeKind;
@@ -203,22 +215,6 @@ async function main() {
     ]);
     assert(expanded.input_schema, `Cannot discover ${kind}.initialData`);
   }
-  const exportedDirector = await discover(["schema", "xyq.scene3d.apply"]);
-  assert.deepStrictEqual(
-    exportedDirector.input_schema,
-    commands.find(({ name }) => name === "xyq.scene3d.apply").input_schema,
-    "Focused discovery must not mutate the full exported schema",
-  );
-  const director = commands.find(({ name }) => name === "xyq.scene3d.apply");
-  const createObject = director.input_schema.properties.operations.items.oneOf.find(
-    (schema) => schema.properties.command.const === "create_node",
-  ).properties.args;
-  const primitive = createObject.oneOf.find((schema) => schema.properties.kind.const === "primitive");
-  const sphere = primitive.allOf.find((schema) => schema.if.properties.primitiveKind.const === "SphereGeometry").then
-    .properties.parameters;
-  assert.strictEqual(sphere.properties.radius.default, 0.55);
-  assert.match(sphere.properties.phiStart.description, /radians/);
-  assert.strictEqual(sphere.additionalProperties, false);
   const updatePrompt = commands.find(({ name }) => name === "xyq.generation.update_prompt");
   assert.deepStrictEqual(updatePrompt.input_schema.required, ["nodeId", "prompt"]);
   assert.strictEqual(updatePrompt.input_schema.properties.prompt.type, "string");
@@ -240,7 +236,11 @@ async function main() {
   });
   async function apply(mutation) {
     const result = JSON.parse(
-      await tools.apply_mutations.execute({ atomic: true, intent: "Artifact smoke", mutations: [mutation] }),
+      await tools.apply_mutations.execute({
+        atomic: true,
+        intent: "Artifact smoke",
+        mutations: [mutation],
+      }),
     );
     assert.strictEqual(result.ok, true, JSON.stringify(result));
   }
@@ -259,11 +259,17 @@ async function main() {
       args: [{ nodeId: "prompt-target", prompt: "Use <node-asset>prompt-reference</node-asset>" }],
     });
     const promptContent = runtime.store.getState().assets["prompt-target"].content;
-    assert.strictEqual(promptContent.generation.prompt, "Use <node-asset>prompt-reference</node-asset>");
+    assert.strictEqual(
+      promptContent.generation.prompt,
+      "Use <node-asset>prompt-reference</node-asset>",
+    );
     assert.strictEqual(promptContent.caption, originalCaption);
     assert(
       Object.values(runtime.store.getRootCanvasContent().edges).some(
-        (edge) => edge.type === "reference" && edge.source === "prompt-reference" && edge.target === "prompt-target",
+        (edge) =>
+          edge.type === "reference" &&
+          edge.source === "prompt-reference" &&
+          edge.target === "prompt-target",
       ),
     );
     runtime.store.commands.updateNodeData("prompt-target", (draft) => {
@@ -300,8 +306,14 @@ async function main() {
           !reference.nodeAssetId,
       ),
     );
-    assert.deepStrictEqual(Object.keys(runtime.store.getRootCanvasContent().nodes), nodesBeforeAssetReference);
-    assert.deepStrictEqual(Object.keys(runtime.store.getRootCanvasContent().edges), edgesBeforeAssetReference);
+    assert.deepStrictEqual(
+      Object.keys(runtime.store.getRootCanvasContent().nodes),
+      nodesBeforeAssetReference,
+    );
+    assert.deepStrictEqual(
+      Object.keys(runtime.store.getRootCanvasContent().edges),
+      edgesBeforeAssetReference,
+    );
     assert.strictEqual(runtime.store.getState().assets["standalone-media"], undefined);
     await apply({ kind: "create_biz_node", nodeKind: "timeline-composition", id: "timeline" });
     const timeline = JSON.parse(await tools["xyq.timeline.query"].execute({ nodeId: "timeline" }));
@@ -319,28 +331,13 @@ async function main() {
     });
     const updated = JSON.parse(await tools["xyq.timeline.query"].execute({ nodeId: "timeline" }));
     assert.strictEqual(updated.data.draft.output.width, 1280);
-
-    await apply({ kind: "create_biz_node", nodeKind: "scene3d", id: "director" });
-    const input = {
-      nodeId: "director",
-      operations: [
-        { command: "create_node", args: { kind: "camera", id: "artifact-camera", name: "Artifact camera" } },
-      ],
-    };
-    await runtime.prepareCommand("xyq.scene3d.apply", input);
-    await apply({ kind: "invoke_command", name: "xyq.scene3d.apply", args: [input] });
-    const camera = JSON.parse(
-      await tools["xyq.scene3d.query"].execute({ nodeId: "director", objectId: "artifact-camera" }),
-    );
-    assert.strictEqual(camera.ok, true);
-    assert.strictEqual(camera.data.node.name, "Artifact camera");
   } finally {
     runtime.canvas.dispose();
   }
   console.log(
-    `Compiled Canvas runtime smoke passed: ${commands.length} commands, 21 director/38 timeline operations; ` +
+    `Compiled Canvas runtime smoke passed: ${commands.length} commands, 42 timeline operations; ` +
       `${discoveryCount} discovery checks, largest describe ${largestDescribe} bytes; ` +
-      "prompt/reference, director and timeline edits succeeded",
+      "prompt/reference and timeline edits succeeded",
   );
 }
 

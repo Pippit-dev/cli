@@ -19,9 +19,11 @@
 
 ## 当前产物来源
 
-- SDK source base: `d1a1915fee83c8f54bcfc43ed0abfb15e85771d1`。
-- 保留现有 CLI runtime 的事务与时间轴修复：`0fadc755ad4e5dd75dcadb090c89fe892519223d`、`2dfe29a254b2f559188dfdbe2cf2479c26024cc9`。
-- 在 `add55d3a40cb52b2a4ce0dbc24533f7ba7000bb1` 的媒体身份修复上，仅向 CLI command runtime 回灌视频 `content.ratio` 类型校验；完整源码固定为 `120c5e3d386d15d9a48673aaeb4a691cda5fbf39`（`codex/cli-video-ratio-runtime`）。合法的 `generation.ratio` 字符串、节点默认比例、历史坏数据的无关编辑和显式修复保持原有合同。原生 `canvas apply --file` 不在本次 ratio 校验范围。
-- 源文件指纹、构建依赖来源、产物大小及摘要记录在 [build-provenance.json](build-provenance.json)。主线 SDK 修复单独合入；此兼容构建保留当前 CLI 的命令和历史行为。
-- runtime SHA-256: `8e14b9a2c496491c2ee44da3ed950ac8301b67981dfaba3ab1e042cf8b937298`
-- LEGAL SHA-256: `3b97217c41dfb3c298185c80b1e70c2b469f552450e53d00fc1dcf7098740ffb`
+- SDK source: `7f0ec8ad57ea62f7b29694fb53df1c9f51b355be`（`feat/novel_canvas_cli`），CLI 包版本 `1.0.50`。
+- 图片和视频空节点按生成比例预留尺寸；Web 默认创建逻辑保持原样。媒体尺寸读取及面积保持计算复用 SDK 实现。
+- 引用关系通过节点的 `generation.references` 声明并同步连线；命令列表移除 `create_edge`、`reconnect_edge`、`update_edge_data`、`delete_edges`。创建时可用 `references` 指定源节点，替换 generation 时须携带完整引用列表。
+- 以 master `d5575fa76406678cfa75be8bbaa33a4c108864b5` 为基线修复。主干迁移 3D V2 后移除了旧 CLI `xyq.scene3d.apply/query` 适配；本产物不注册旧入口，仍支持通过业务工厂创建 V2 节点，3D 内部编辑使用 Web。公开命令为 41 项。
+- 保留现有媒体身份、事务、时间轴及 CLI 专用视频 `content.ratio` 类型校验。引用内容和派生连线在同一事务更新；时间轴命令补齐对白替换的 `dialogueId` 字段，并覆盖新增的 4 项时间轴操作。原生 `canvas apply --file` 不在本次 ratio 校验范围。
+- 两次独立构建的 runtime、LEGAL 和校验文件逐字节一致；源文件指纹、锁文件摘要、构建环境及产物摘要记录在 [build-provenance.json](build-provenance.json)。此更新只替换固定 CLI 产物，不发布 registry SDK 包。
+- runtime SHA-256: `1c53a5f869ee7c148e9f993e318d4ea5b34c5e93e2ac0749dd3f47ecff946e4f`
+- LEGAL SHA-256: `c547c923eaf2e8c155f84aed934f42ad02855d669e8c0a890e38d049bc1ef8e7`

@@ -69,8 +69,8 @@ globalThis.fetch = deny("fetch");
   delete env.PIPPIT_CLI_DISABLE_UPDATE_CHECK;
   delete env.PIPPIT_CLI_DISABLE_TELEMETRY;
 
-  function launch(script, args, status = 0, extraEnv = {}) {
-    const result = spawnSync(process.execPath, [path.join(scripts, script), ...args], {
+  function launch(script, args, status = 0, extraEnv = {}, scriptDirectory = scripts) {
+    const result = spawnSync(process.execPath, [path.join(scriptDirectory, script), ...args], {
       encoding: 'utf8',
       env: { ...env, ...extraEnv },
       timeout: 15000,
@@ -141,18 +141,28 @@ globalThis.fetch = deny("fetch");
   }
   assert.deepStrictEqual(fs.readFileSync(oldNative), backup);
 
-  const heldNative = `${windowsNative}.fixture`;
-  fs.renameSync(windowsNative, heldNative);
-  try {
-    for (const args of helpArgs) {
-      const result = launch('run.js', args, 1, windowsEnv);
-      assert(result.stderr.includes('Native CLI binary is missing'));
-    }
-    assert.strictEqual(fs.existsSync(windowsNative), false);
-    assert.deepStrictEqual(fs.readFileSync(oldNative), backup);
-  } finally {
-    fs.renameSync(heldNative, windowsNative);
+  // Use an independent missing-binary fixture. Windows can retain a lock on
+  // the executable just launched above, so renaming it is not a reliable way
+  // to establish the missing-binary precondition.
+  const missingRoot = path.join(fixture, 'missing-native');
+  const missingScripts = path.join(missingRoot, 'scripts');
+  const missingNative = path.join(missingRoot, 'bin', 'pippit-tool-cli.exe');
+  const missingOld = `${missingNative}.old`;
+  fs.mkdirSync(missingScripts, { recursive: true });
+  fs.mkdirSync(path.dirname(missingNative));
+  for (const name of fs.readdirSync(scripts)) {
+    fs.copyFileSync(path.join(scripts, name), path.join(missingScripts, name));
   }
+  fs.copyFileSync(path.join(fixture, 'package.json'), path.join(missingRoot, 'package.json'));
+  fs.writeFileSync(missingOld, backup);
+  for (const args of helpArgs) {
+    const result = launch('run.js', args, 1, windowsEnv, missingScripts);
+    assert(result.stderr.includes('Native CLI binary is missing'));
+  }
+  assert.strictEqual(fs.existsSync(missingNative), false);
+  assert.deepStrictEqual(fs.readFileSync(missingOld), backup);
+  assert.deepStrictEqual(fs.readFileSync(windowsNative), fs.readFileSync(native));
+  assert.deepStrictEqual(fs.readFileSync(oldNative), backup);
   console.log(`Launcher help: ${checks} real child-process checks passed.`);
 } finally {
   fs.rmSync(fixture, { recursive: true, force: true });

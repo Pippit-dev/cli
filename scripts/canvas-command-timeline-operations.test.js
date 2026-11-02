@@ -42,7 +42,9 @@ const track = (kind, trackId, order) => ({
   enabled: true,
   locked: false,
   ...(kind === 'audio' ? { role: 'bgm' } : {}),
-  ...(kind === 'text' ? { role: 'subtitle', defaultStyle: textStyle(), defaultLayout: textLayout() } : {}),
+  ...(kind === 'text'
+    ? { role: 'subtitle', defaultStyle: textStyle(), defaultLayout: textLayout() }
+    : {}),
 });
 const textClip = (clipId, trackId, start, duration, text) => ({
   clipId,
@@ -129,7 +131,11 @@ async function createFixture(sdk, options = {}) {
       ['image-source', 'image'],
       ['audio-source', 'audio'],
     ]) {
-      assert.strictEqual(sources[id]?.source.mediaType, kind, `Missing completed Canvas source ${id}`);
+      assert.strictEqual(
+        sources[id]?.source.mediaType,
+        kind,
+        `Missing completed Canvas source ${id}`,
+      );
       assert.strictEqual(sources[id].source.resourceType, 'pippit-asset');
     }
     const mediaClip = (clipId, trackId, nodeId, start, duration) => {
@@ -170,7 +176,10 @@ async function createFixture(sdk, options = {}) {
         command('insert_text_track', { track: track('text', 'subtitles', 0) }),
         command('insert_clip', {
           trackId: 'subtitles',
-          clip: { ...textClip('text-a', 'subtitles', 0, 1500000, 'First subtitle'), style: { italic: true } },
+          clip: {
+            ...textClip('text-a', 'subtitles', 0, 1500000, 'First subtitle'),
+            style: { italic: true },
+          },
         }),
         command('insert_clip', {
           trackId: 'subtitles',
@@ -181,6 +190,13 @@ async function createFixture(sdk, options = {}) {
         }),
       );
     }
+    if (options.withDialogue)
+      setup.push(
+        command('bind_dialogue_clips', {
+          dialogueId: 'dialogue',
+          clipIds: ['audio-clip', 'text-a', 'text-b'],
+        }),
+      );
     const ready = await apply(setup);
     assert.strictEqual(ready.durationUs, 6000000);
     assert.strictEqual(ready.draft.clipsById['video-clip'].sourceRange.duration, 4000000);
@@ -231,10 +247,17 @@ const CASES = [
   {
     name: 'split_clip',
     commands: () => [
-      command('split_clip', { clipId: 'video-clip', atTimelineUs: 2000000, rightClipId: 'video-right' }),
+      command('split_clip', {
+        clipId: 'video-clip',
+        atTimelineUs: 2000000,
+        rightClipId: 'video-right',
+      }),
     ],
     verify: (f, before, { draft }) => {
-      assert.deepStrictEqual(draft.clipsById['video-clip'].sourceRange, { start: 0, duration: 2000000 });
+      assert.deepStrictEqual(draft.clipsById['video-clip'].sourceRange, {
+        start: 0,
+        duration: 2000000,
+      });
       assert.deepStrictEqual(draft.clipsById['video-right'].sourceRange, {
         start: 2000000,
         duration: 2000000,
@@ -290,7 +313,10 @@ const CASES = [
       }),
     ],
     verify: (f, before, { draft }) => {
-      assert.deepStrictEqual(draft.clipsById['video-clip'].sourceRange, { start: 500000, duration: 3000000 });
+      assert.deepStrictEqual(draft.clipsById['video-clip'].sourceRange, {
+        start: 500000,
+        duration: 3000000,
+      });
       assert.strictEqual(draft.clipsById['video-clip'].timelineRange.duration, 3000000);
       assert.strictEqual(draft.clipsById['image-clip'].timelineRange.start, 3000000);
     },
@@ -301,7 +327,10 @@ const CASES = [
       command('set_clip_speed', { clipId: 'video-clip', rate: { numerator: 2, denominator: 1 } }),
     ],
     verify: (f, before, { draft }) => {
-      assert.deepStrictEqual(draft.clipsById['video-clip'].playback.rate, { numerator: 2, denominator: 1 });
+      assert.deepStrictEqual(draft.clipsById['video-clip'].playback.rate, {
+        numerator: 2,
+        denominator: 1,
+      });
       assert.strictEqual(draft.clipsById['video-clip'].timelineRange.duration, 2000000);
       assert.strictEqual(draft.clipsById['video-clip'].sourceRange.duration, 4000000);
       assert.strictEqual(draft.clipsById['image-clip'].timelineRange.start, 2000000);
@@ -349,7 +378,8 @@ const CASES = [
   {
     name: 'set_clip_fit',
     commands: () => [command('set_clip_fit', { clipId: 'image-clip', fit: 'cover' })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.clipsById['image-clip'].frame.fit, 'cover'),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.clipsById['image-clip'].frame.fit, 'cover'),
   },
   {
     name: 'set_clip_extensions',
@@ -360,7 +390,9 @@ const CASES = [
       }),
     ],
     verify: (f, before, { draft }) =>
-      assert.deepStrictEqual(draft.clipsById['image-clip'].extensions, { annotation: { label: 'Reviewed' } }),
+      assert.deepStrictEqual(draft.clipsById['image-clip'].extensions, {
+        annotation: { label: 'Reviewed' },
+      }),
   },
   {
     name: 'set_draft_extensions',
@@ -378,20 +410,32 @@ const CASES = [
   {
     name: 'set_clip_enabled',
     commands: () => [command('set_clip_enabled', { clipId: 'video-clip', enabled: false })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.clipsById['video-clip'].enabled, false),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.clipsById['video-clip'].enabled, false),
   },
   {
     name: 'set_original_audio',
     commands: () => [
-      command('set_original_audio', { clipId: 'video-clip', audio: { ...audio(), gain: 0.35, muted: true } }),
+      command('set_original_audio', {
+        clipId: 'video-clip',
+        audio: { ...audio(), gain: 0.35, muted: true },
+      }),
     ],
     verify: (f, before, { draft }) =>
-      assert.deepStrictEqual(draft.clipsById['video-clip'].audio, { ...audio(), gain: 0.35, muted: true }),
+      assert.deepStrictEqual(draft.clipsById['video-clip'].audio, {
+        ...audio(),
+        gain: 0.35,
+        muted: true,
+      }),
   },
   {
     name: 'move_clip_to_track',
     commands: () => [
-      command('move_clip_to_track', { clipId: 'image-clip', targetTrackId: 'video-overlay', start: 3000000 }),
+      command('move_clip_to_track', {
+        clipId: 'image-clip',
+        targetTrackId: 'video-overlay',
+        start: 3000000,
+      }),
     ],
     verify: (f, before, { draft }) => {
       assert.strictEqual(draft.clipsById['image-clip'].trackId, 'video-overlay');
@@ -405,17 +449,23 @@ const CASES = [
   {
     name: 'set_audio_volume',
     commands: () => [command('set_audio_volume', { clipId: 'audio-clip', gain: 0.4 })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.clipsById['audio-clip'].audio.gain, 0.4),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.clipsById['audio-clip'].audio.gain, 0.4),
   },
   {
     name: 'set_audio_mute',
     commands: () => [command('set_audio_mute', { clipId: 'audio-clip', muted: true })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.clipsById['audio-clip'].audio.muted, true),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.clipsById['audio-clip'].audio.muted, true),
   },
   {
     name: 'set_audio_fade',
     commands: () => [
-      command('set_audio_fade', { clipId: 'audio-clip', fadeInDuration: 250000, fadeOutDuration: 500000 }),
+      command('set_audio_fade', {
+        clipId: 'audio-clip',
+        fadeInDuration: 250000,
+        fadeOutDuration: 500000,
+      }),
     ],
     verify: (f, before, { draft }) =>
       assert.deepStrictEqual(draft.clipsById['audio-clip'].audio, {
@@ -427,12 +477,14 @@ const CASES = [
   {
     name: 'set_track_enabled',
     commands: () => [command('set_track_enabled', { trackId: 'audio-main', enabled: false })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.tracksById['audio-main'].enabled, false),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.tracksById['audio-main'].enabled, false),
   },
   {
     name: 'set_track_locked',
     commands: () => [command('set_track_locked', { trackId: 'video-overlay', locked: true })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.tracksById['video-overlay'].locked, true),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.tracksById['video-overlay'].locked, true),
   },
   {
     name: 'set_output_size',
@@ -473,7 +525,9 @@ const CASES = [
   {
     name: 'reorder_video_tracks',
     commands: (f) => [
-      command('reorder_video_tracks', { orderedTrackIds: [f.primary, 'video-empty', 'video-overlay'] }),
+      command('reorder_video_tracks', {
+        orderedTrackIds: [f.primary, 'video-empty', 'video-overlay'],
+      }),
     ],
     verify: (f, before, { draft }) => {
       assert.strictEqual(draft.tracksById[f.primary].order, 0);
@@ -497,7 +551,10 @@ const CASES = [
     commands: () => [command('insert_text_track', { track: track('text', 'subtitles', 0) })],
     verify: (f, before, { draft }) => {
       assert.strictEqual(before.draft.tracksById.subtitles, undefined);
-      assert.deepStrictEqual(draft.tracksById.subtitles, track('text', 'subtitles', 0));
+      assert.deepStrictEqual(draft.tracksById.subtitles, {
+        ...track('text', 'subtitles', 0),
+        defaultLayout: { ...textLayout(), centerY: 0.9 },
+      });
     },
   },
   {
@@ -524,7 +581,10 @@ const CASES = [
         fontSizePx: 56,
         bold: true,
       });
-      assert.deepStrictEqual(draft.clipsById['text-a'].style, before.draft.clipsById['text-a'].style);
+      assert.deepStrictEqual(
+        draft.clipsById['text-a'].style,
+        before.draft.clipsById['text-a'].style,
+      );
     },
   },
   {
@@ -545,7 +605,8 @@ const CASES = [
   {
     name: 'set_text_clip_text',
     commands: () => [command('set_text_clip_text', { clipId: 'text-a', text: 'Updated subtitle' })],
-    verify: (f, before, { draft }) => assert.strictEqual(draft.clipsById['text-a'].text, 'Updated subtitle'),
+    verify: (f, before, { draft }) =>
+      assert.strictEqual(draft.clipsById['text-a'].text, 'Updated subtitle'),
   },
   {
     name: 'set_text_clip_enabled',
@@ -562,16 +623,87 @@ const CASES = [
   },
   {
     name: 'set_text_clip_layout',
-    commands: () => [command('set_text_clip_layout', { clipId: 'text-a', layout: { centerY: 0.7 } })],
+    commands: () => [
+      command('set_text_clip_layout', { clipId: 'text-a', layout: { centerY: 0.7 } }),
+    ],
     verify: (f, before, { draft }) =>
       assert.deepStrictEqual(draft.clipsById['text-a'].layout, { centerY: 0.7 }),
   },
   {
     name: 'apply_text_style_to_all',
-    commands: () => [command('apply_text_style_to_all', { trackId: 'subtitles', style: { bold: true } })],
+    commands: () => [
+      command('apply_text_style_to_all', { trackId: 'subtitles', style: { bold: true } }),
+    ],
     verify: (f, before, { draft }) => {
       assert.deepStrictEqual(draft.clipsById['text-a'].style, { italic: true, bold: true });
       assert.deepStrictEqual(draft.clipsById['text-b'].style, { fontSizePx: 40, bold: true });
+    },
+  },
+  {
+    name: 'apply_text_layout_to_all',
+    commands: () => [
+      command('apply_text_layout_to_all', { trackId: 'subtitles', layout: { centerY: 0.6 } }),
+    ],
+    verify: (f, before, { draft }) => {
+      for (const id of ['text-a', 'text-b'])
+        assert.strictEqual(draft.clipsById[id].layout.centerY, 0.6);
+    },
+  },
+  {
+    name: 'bind_dialogue_clips',
+    commands: () => [
+      command('bind_dialogue_clips', {
+        dialogueId: 'dialogue',
+        clipIds: ['audio-clip', 'text-a', 'text-b'],
+      }),
+    ],
+    verify: (f, before, { draft }) => {
+      for (const id of ['audio-clip', 'text-a', 'text-b'])
+        assert.strictEqual(draft.clipsById[id].dialogueId, 'dialogue');
+      assert.strictEqual(draft.clipsById['video-clip'].dialogueId, undefined);
+    },
+  },
+  {
+    name: 'unbind_dialogue_clips',
+    fixture: { withDialogue: true },
+    commands: () => [
+      command('unbind_dialogue_clips', {
+        dialogueId: 'dialogue',
+        clipIds: ['audio-clip', 'text-a', 'text-b'],
+      }),
+    ],
+    verify: (f, before, { draft }) => {
+      for (const id of ['audio-clip', 'text-a', 'text-b']) {
+        assert.strictEqual(before.draft.clipsById[id].dialogueId, 'dialogue');
+        assert.strictEqual(draft.clipsById[id].dialogueId, undefined);
+      }
+    },
+  },
+  {
+    name: 'replace_dialogue_clips',
+    fixture: { withDialogue: true },
+    commands: (f) => [
+      command('replace_dialogue_clips', {
+        dialogueId: 'dialogue',
+        clipId: 'audio-clip',
+        clips: [
+          {
+            ...f.mediaClip('audio-clip', 'audio-main', 'audio-source', 0, 4000000),
+            dialogueId: 'dialogue',
+          },
+          {
+            ...textClip('text-new', 'subtitles', 0, 4000000, 'Replacement dialogue'),
+            dialogueId: 'dialogue',
+          },
+        ],
+      }),
+    ],
+    verify: (f, before, { draft }) => {
+      assert.strictEqual(draft.clipsById['text-a'], undefined);
+      assert.strictEqual(draft.clipsById['text-b'], undefined);
+      assert.strictEqual(draft.clipsById['text-new'].text, 'Replacement dialogue');
+      assert.strictEqual(draft.clipsById['text-new'].dialogueId, 'dialogue');
+      assert.strictEqual(draft.clipsById['audio-clip'].dialogueId, 'dialogue');
     },
   },
   {
@@ -579,7 +711,9 @@ const CASES = [
     commands: () => [
       command('replace_text_clips', {
         trackId: 'subtitles',
-        clipsById: { 'text-new': textClip('text-new', 'subtitles', 1000000, 2000000, 'Replacement cue') },
+        clipsById: {
+          'text-new': textClip('text-new', 'subtitles', 1000000, 2000000, 'Replacement cue'),
+        },
       }),
     ],
     verify: (f, before, { draft }) => {
@@ -603,8 +737,14 @@ const CASES = [
       }),
     ],
     verify: (f, before, { draft }) => {
-      assert.deepStrictEqual(draft.clipsById['text-a'].timelineRange, { start: 500000, duration: 1000000 });
-      assert.deepStrictEqual(draft.clipsById['text-b'].timelineRange, { start: 3000000, duration: 1000000 });
+      assert.deepStrictEqual(draft.clipsById['text-a'].timelineRange, {
+        start: 500000,
+        duration: 1000000,
+      });
+      assert.deepStrictEqual(draft.clipsById['text-b'].timelineRange, {
+        start: 3000000,
+        duration: 1000000,
+      });
       assert.strictEqual(draft.clipsById['text-a'].text, before.draft.clipsById['text-a'].text);
     },
   },
@@ -629,7 +769,9 @@ async function verifyBoundaries(sdk) {
     );
     assert.strictEqual(f.runtime.store.getRevision(), canvasRevision);
     assert.deepStrictEqual(await f.query(), snapshot);
-    console.log('PASS boundary/dryRun: real multi-command preview leaves document and revisions unchanged');
+    console.log(
+      'PASS boundary/dryRun: real multi-command preview leaves document and revisions unchanged',
+    );
 
     for (const { name, operationCommands, extra, reason } of [
       {
@@ -715,7 +857,9 @@ async function verifyBoundaries(sdk) {
     assert.deepStrictEqual(f.runtime.store.getState(), beforeReinsert);
     assert.strictEqual(f.runtime.store.redo().status, 'committed');
     assert.deepStrictEqual(f.runtime.store.getState(), afterReinsert);
-    console.log('PASS boundary/reinsert-track: a later track insertion survives earlier clip deletions');
+    console.log(
+      'PASS boundary/reinsert-track: a later track insertion survives earlier clip deletions',
+    );
   } finally {
     f.dispose();
   }
@@ -734,7 +878,7 @@ async function main() {
   const operationNames = definition.inputSchema.properties.commands.items.oneOf.map(
     (variant) => variant.properties.type.const,
   );
-  assert.strictEqual(CASES.length, 38);
+  assert.strictEqual(CASES.length, 42);
   const compareNames = (left, right) => (left < right ? -1 : left > right ? 1 : 0);
   assert.deepStrictEqual(
     [...operationNames].sort(compareNames),
@@ -767,7 +911,11 @@ async function main() {
           before.draft.revision + 1,
           `${test.name} must commit one Timeline transaction`,
         );
-        assert.notDeepStrictEqual(after.draft, before.draft, `${test.name} did not change the draft`);
+        assert.notDeepStrictEqual(
+          after.draft,
+          before.draft,
+          `${test.name} did not change the draft`,
+        );
         test.verify(f, before, after);
         for (const [id, asset] of Object.entries(sourceAssets))
           assert.deepStrictEqual(
@@ -791,7 +939,11 @@ async function main() {
     try {
       await verifyBoundaries(sdk);
     } catch (error) {
-      results.push({ operation: 'boundaries', status: 'FAIL', error: error.stack || String(error) });
+      results.push({
+        operation: 'boundaries',
+        status: 'FAIL',
+        error: error.stack || String(error),
+      });
       console.error(`FAIL boundaries: ${error.stack || error}`);
     }
   } finally {
@@ -811,7 +963,7 @@ async function main() {
     'Compiled timeline execution suite has failures; inspect per-operation results',
   );
   console.log(
-    'Compiled timeline execution passed: 38/38 operations and 7 state/history boundaries; no network or generation',
+    'Compiled timeline execution passed: 42/42 operations and 7 state/history boundaries; no network or generation',
   );
 }
 

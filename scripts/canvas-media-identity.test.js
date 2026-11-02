@@ -15,7 +15,7 @@ async function main() {
   );
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-media-identity-'));
   const native = path.join(temp, 'native.cjs');
-  const rootId = 'canvas-test';
+  const rootId = '9000000000001';
   const pippitAssetId = '10155947700492';
   const assetId = '7693046454219440665';
   const nodeId = '10901596019212';
