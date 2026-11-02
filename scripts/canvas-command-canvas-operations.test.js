@@ -115,18 +115,7 @@ function fixture(index) {
     return ['a', 'b', 'c'];
   }
   async function edge(id = 'edge', source = 'a', target = 'b') {
-    // Layout/deletion fixtures use raw persisted edges. User reference edits are
-    // exercised below through generation.references, without edge commands.
-    await write('apply_patches', {
-      patches: [
-        {
-          assetId: store.getState().rootCanvasId,
-          op: 'add',
-          path: `/content/edges/${id}`,
-          value: { id, type: 'reference', source, target, data: {} },
-        },
-      ],
-    });
+    await write('create_edge', { edge: { id, type: 'reference', source, target, data: {} } });
     return id;
   }
   async function group(ids = ['a', 'b']) {
@@ -389,89 +378,42 @@ test('set_group_collapsed', 'collapse expand preserves membership', async (f) =>
   assert.strictEqual(f.node(id).w, before.w);
   assert.strictEqual(f.node(id).h, before.h);
 });
-test('create_biz_node', 'declared references create edges in the same atomic batch', async (f) => {
-  await f.write('apply_mutations', {
-    atomic: true,
-    intent: 'Create referenced media',
-    mutations: [
-      { kind: 'create_biz_node', nodeKind: 'image', id: 'source' },
-      { kind: 'create_biz_node', nodeKind: 'video', id: 'target', references: ['source'] },
-    ],
-  });
-  assert(Object.values(f.root().edges).some((e) => e.source === 'source' && e.target === 'target'));
+test('create_edge', 'reference endpoints', async (f) => {
+  await f.nodes();
+  await f.edge();
+  assert.strictEqual(f.root().edges.edge.source, 'a');
+  assert.strictEqual(f.root().edges.edge.target, 'b');
 });
-test(
-  'update_node_data',
-  'declared references add replace and clear edges with undo redo',
-  async (f) => {
-    await f.biz('image', 'source-a');
-    await f.biz('image', 'source-b');
-    await f.biz('video', 'target');
-    const sources = () =>
-      Object.values(f.root().edges)
-        .filter((e) => e.target === 'target')
-        .map((e) => e.source)
-        .sort();
-    const update = (ids) =>
-      f.write('update_node_data', {
-        id: 'target',
-        patch: {
-          generation: {
-            ...f.asset('target').content.generation,
-            references: ids.map((sourceNodeId) => ({ sourceNodeId })),
-          },
-        },
-      });
-    await update(['source-a', 'source-b']);
-    assert.deepStrictEqual(sources(), ['source-a', 'source-b']);
-    await update(['source-b']);
-    assert.deepStrictEqual(sources(), ['source-b']);
-    f.store.clearHistory();
-    const before = clone(f.store.getState());
-    await update([]);
-    assert.deepStrictEqual(sources(), []);
-    assert(f.node('source-a') && f.node('source-b') && f.asset('source-a'));
-    const after = clone(f.store.getState());
-    f.store.undo();
-    assert.deepStrictEqual(f.store.getState(), before);
-    f.store.redo();
-    assert.deepStrictEqual(f.store.getState(), after);
-  },
-);
-test(
-  'update_node_data',
-  'generation replacement must carry references and dry runs do not write',
-  async (f) => {
-    await f.biz('image', 'source');
-    await f.biz('video', 'target');
-    const before = clone(f.store.getState());
-    failure(
-      await f.call('update_node_data', {
-        id: 'target',
-        patch: { generation: { prompt: 'Missing references' } },
-      }),
-      /GENERATION_REFERENCES_REQUIRED/,
-    );
-    failure(
-      await f.call('update_node_data', {
-        id: 'target',
-        patch: { generation: { references: [{ sourceNodeId: 'missing' }] } },
-      }),
-      /REFERENCE_SOURCE_NOT_FOUND/,
-    );
-    await f.write('apply_mutations', {
-      dryRun: true,
-      mutations: [
-        {
-          kind: 'update_node_data',
-          id: 'target',
-          patch: { generation: { references: [{ sourceNodeId: 'source' }] } },
-        },
-      ],
-    });
-    assert.deepStrictEqual(f.store.getState(), before);
-  },
-);
+test('reconnect_edge', 'replaces endpoints', async (f) => {
+  await f.nodes();
+  await f.edge();
+  await f.write('reconnect_edge', { id: 'edge', patch: { source: 'b', target: 'c' } });
+  assert.strictEqual(f.root().edges.edge.source, 'b');
+  assert.strictEqual(f.root().edges.edge.target, 'c');
+});
+test('update_edge_data', 'label edit retains endpoints', async (f) => {
+  await f.nodes();
+  await f.edge();
+  await f.write('update_edge_data', { id: 'edge', patch: { label: 'Uses reference' } });
+  assert.strictEqual(f.root().edges.edge.data.label, 'Uses reference');
+  assert.strictEqual(f.root().edges.edge.source, 'a');
+});
+test('delete_edges', 'deletes edge without deleting assets', async (f) => {
+  await f.nodes();
+  await f.edge();
+  await f.write('delete_edges', { ids: ['edge'] });
+  assert.strictEqual(f.root().edges.edge, undefined);
+  assert(f.node('a') && f.node('b') && f.asset('a') && f.asset('b'));
+});
+test('update_node_data', 'generation writes neither require references nor change edges', async (f) => {
+  await f.nodes();
+  await f.edge();
+  const edges = clone(f.root().edges);
+  await f.write('update_node_data', { id: 'b', patch: { generation: { prompt: 'No reference requirement' } } });
+  assert.deepStrictEqual(f.root().edges, edges);
+  await f.write('update_node_data', { id: 'b', patch: { generation: { references: [{ sourceNodeId: 'c' }] } } });
+  assert.deepStrictEqual(f.root().edges, edges);
+});
 for (const [kind, ratio, w, h] of [
   ['image', '16:9', 564, 317],
   ['image', '9:16', 317, 564],
@@ -988,7 +930,7 @@ async function main() {
   console.log(JSON.stringify(summary, null, 2));
   assert.strictEqual(
     expected.length,
-    39,
+    43,
     'Coverage must track every public base/subject/prompt command',
   );
   if (commandResults.some(({ status }) => status !== 'PASS')) process.exitCode = 1;

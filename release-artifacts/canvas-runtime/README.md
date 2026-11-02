@@ -19,11 +19,11 @@
 
 ## 当前产物来源
 
-- SDK source: `7f0ec8ad57ea62f7b29694fb53df1c9f51b355be`（`feat/novel_canvas_cli`），CLI 包版本 `1.0.50`。
-- 图片和视频空节点按生成比例预留尺寸；Web 默认创建逻辑保持原样。媒体尺寸读取及面积保持计算复用 SDK 实现。
-- 引用关系通过节点的 `generation.references` 声明并同步连线；命令列表移除 `create_edge`、`reconnect_edge`、`update_edge_data`、`delete_edges`。创建时可用 `references` 指定源节点，替换 generation 时须携带完整引用列表。
-- 以 master `d5575fa76406678cfa75be8bbaa33a4c108864b5` 为基线修复。主干迁移 3D V2 后移除了旧 CLI `xyq.scene3d.apply/query` 适配；本产物不注册旧入口，仍支持通过业务工厂创建 V2 节点，3D 内部编辑使用 Web。公开命令为 41 项。
-- 保留现有媒体身份、事务、时间轴及 CLI 专用视频 `content.ratio` 类型校验。引用内容和派生连线在同一事务更新；时间轴命令补齐对白替换的 `dialogueId` 字段，并覆盖新增的 4 项时间轴操作。原生 `canvas apply --file` 不在本次 ratio 校验范围。
-- 两次独立构建的 runtime、LEGAL 和校验文件逐字节一致；源文件指纹、锁文件摘要、构建环境及产物摘要记录在 [build-provenance.json](build-provenance.json)。此更新只替换固定 CLI 产物，不发布 registry SDK 包。
-- runtime SHA-256: `1c53a5f869ee7c148e9f993e318d4ea5b34c5e93e2ac0749dd3f47ecff946e4f`
-- LEGAL SHA-256: `c547c923eaf2e8c155f84aed934f42ad02855d669e8c0a890e38d049bc1ef8e7`
+- SDK source: `1e5f56e1fe3561477855a8da7a26db082840454c`（`codex/revert-cli-reference-autosync`），CLI 包版本 `1.0.51`。
+- 回退 `1ba2d214e51` 与 `26efe81de64` 的自动引用协议，恢复 `create_edge`、`reconnect_edge`、`update_edge_data`、`delete_edges`；公开命令共 45 项。
+- `create_biz_node` 不再提供顶层 `references`。`update_node_data` 写入 `generation.references` 只修改草稿数据，不自动同步边；其他生成参数编辑无需携带引用列表。未恢复中间版本的 `xyq.generation.update_references`。
+- 保留图片/视频空节点按生成比例预留尺寸、媒体身份和视频 ratio 校验、现有时间轴协议及 Node 16 兼容。Web 的节点创建和尺寸逻辑保持 master 行为。
+- 沿用 master 的 3D V2 文档与能力边界：工厂可创建 V2 节点，旧 `xyq.scene3d.apply/query` 不注册。回退没有恢复旧 3D V1 适配。
+- 两次独立构建的 runtime、LEGAL 与校验文件逐字节一致；源文件指纹与构建环境见 [build-provenance.json](build-provenance.json)。此补丁只准备 MR，不发布 registry SDK 包或 CLI。
+- runtime SHA-256: `7e45eb4e7bb2323fd1a0f5bc56b731247076f9ae8171f46d01ba4d6774de1b0f`
+- LEGAL SHA-256: `c29b5a61e7c48ec377826ec7ff6a6f2b16f0824e5a4b7f278f622524c694e047`
