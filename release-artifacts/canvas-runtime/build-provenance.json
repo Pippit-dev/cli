@@ -1,6 +1,6 @@
 {
   "source_base_commit": "3dd42022c2318126caa9a6264d425ce1ffb4301d",
-  "source_commit": "68546ebeed38e57510f7de0f7869144922416983",
+  "source_commit": "9c64a8d81a244eeeda7370e4b2c65cd5575f9716",
   "source_branch": "feat/novel_canvas_cli",
   "previous_runtime_source_commit": "120c5e3d386d15d9a48673aaeb4a691cda5fbf39",
   "fix_status": "committed CLI sizing and reference protocol update; registry package not published",
@@ -17,20 +17,20 @@
     "packages/xyq-canvas-sdk/src/generation/output-size.ts": "8423857819ad0933a5882c250f2aa757c397cbd578d888d7b2d4b060232d9d13",
     "packages/xyq-canvas-sdk/src/generation/aspect-ratio-size.ts": "bf2a51981ad4b657801116b6e3c8cf021eef4e3b82f072ad196413e96bad9d97",
     "packages/xyq-canvas-sdk/src/headless/media-asset-size-sync.ts": "3dc56204cd70b73d70f5b09af76164f9a3440694c918ddad8dbd1877d53ad753",
-    "packages/xyq-canvas-sdk/src/canvas-page/node-factory.ts": "ac5ccf8fd2d544e5ea42cb4273edbc7854bbbb2f9820501d6dcfe3041179e387",
+    "packages/xyq-canvas-sdk/src/canvas-page/node-factory.ts": "5c83aaf4b49dcecf64571d2ef29cadb6af3a9f0517d3a275262d8cad857375b3",
     "packages/xyq-canvas-sdk/src/command-runtime-opencode.ts": "f7edfcadaced6bed56159c08edfa69e3e4c0d8bcc59e70ee38a3cd59ed0e8c37",
     "packages/xyq-canvas-sdk/src/generation/reference-sync.ts": "27913a344cbc553958bea99faf9729b941a8dc58bef1d067e19783217c3a78cc",
     "packages/xyq-canvas-sdk/src/opencode/apply-reference-mutations.ts": "b18e8abbaac174e4e976404ed89135692a7313c82a6c0598ab6ab53da647dbd7",
     "packages/xyq-canvas-sdk/src/command-domains/timeline-protocol-schema.ts": "54604eb6535b464b3f29a45c36697a2c855221b07f718a6db3dd5ac2e4a754a4"
   },
-  "fix_source_fingerprint_sha256": "d4b00e1e1c5d8f3fdb331316a22a120284249676a72dbc464dc927bbecd33e7d",
+  "fix_source_fingerprint_sha256": "86ead049695547b3a436b9cbcae60806466eff109f9f3fd2c0b5fe6511eb9f62",
   "dependency_source": "emo-installed source worktree dependencies",
   "dependency_lock_sha256": "fb3d266e8160d610e0219981036f353956ef33c0754fda92efe729183eedbc21",
   "build_command": "node packages/xyq-canvas-sdk/scripts/build-canvas-command-runtime.mjs --out-dir <output>",
   "build_node_version": "v24.16.0",
   "runtime_target": "node16",
   "reproducible_builds": 2,
-  "runtime_sha256": "16de3965b598b718c553a09683ee70be5316d392cd6bfa2c17e8942e20668769",
+  "runtime_sha256": "eb625c2f93f56b5ce3737c43c7f88c4ff67d3815cbf72c9d97c54e646038e256",
   "runtime_bytes": 1187212,
   "legal_sha256": "cfd0e832f58fe01a0797303a0be2d9e49e708b095547ac4f9fb9add0cdae9311"
 }
