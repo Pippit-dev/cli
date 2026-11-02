@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/Pippit-dev/pippit-cli/internal/common"
@@ -91,9 +92,16 @@ func cloudMediaID(raw json.RawMessage, kind string) (string, error) {
 }
 
 func touchesMediaIdentity(path string) bool {
-	switch strings.ToLower(path) {
+	normalized := strings.ToLower(path)
+	switch normalized {
 	case "", "/type", "/content", "/content/assetid", "/content/pippitassetid":
 		return true
+	}
+	for _, field := range imageSubjectFields {
+		prefix := "/content/" + field
+		if normalized == prefix || strings.HasPrefix(normalized, prefix+"/") {
+			return true
+		}
 	}
 	return false
 }
@@ -143,6 +151,9 @@ func projectIdentityPatch(node map[string]json.RawMessage, patch PatchEntry) (ma
 		return nil, fmt.Errorf("cannot validate a patch without its node base")
 	}
 	parts := strings.Split(strings.TrimPrefix(patch.Path, "/"), "/")
+	for index, part := range parts {
+		parts[index] = strings.NewReplacer("~1", "/", "~0", "~").Replace(part)
+	}
 	key := parts[0]
 	if len(parts) == 1 {
 		if patch.Op == "remove" {
@@ -152,16 +163,7 @@ func projectIdentityPatch(node map[string]json.RawMessage, patch PatchEntry) (ma
 		}
 		return node, nil
 	}
-	var content map[string]json.RawMessage
-	if err := json.Unmarshal(node[key], &content); err != nil || content == nil {
-		return nil, fmt.Errorf("cannot validate a media identity without its content base")
-	}
-	if patch.Op == "remove" {
-		delete(content, parts[1])
-	} else {
-		content[parts[1]] = patch.Value
-	}
-	value, err := json.Marshal(content)
+	value, err := projectMediaIdentityValue(node[key], parts[1:], patch)
 	if err != nil {
 		return nil, err
 	}
@@ -210,12 +212,13 @@ func validateApplyMediaIdentities(ctx context.Context, request ApplyRequest, run
 		if touchesMediaIdentity(patch.Path) && !affected[patch.AssetID] {
 			affected[patch.AssetID] = true
 			ordered = append(ordered, patch.AssetID)
-			if patch.Path != "" {
+			if patch.Path != "" || replacesImageSubjectBinding(patch) {
 				toQuery = append(toQuery, patch.AssetID)
 			}
 		}
 	}
 	nodes := make(map[string]map[string]json.RawMessage)
+	previousNodes := make(map[string]map[string]json.RawMessage)
 	type identity struct{ nodeID, kind, pippitID, mediaID string }
 	previous := make(map[string]identity)
 	if len(toQuery) > 0 {
@@ -230,6 +233,7 @@ func validateApplyMediaIdentities(ctx context.Context, request ApplyRequest, run
 				return mediaIdentityError(id, "/content", err.Error())
 			}
 			nodes[id] = node
+			previousNodes[id] = maps.Clone(node)
 			kind, pippitID, mediaID, readErr := readNodeIdentity(node)
 			if readErr == nil {
 				previous[id] = identity{id, kind, pippitID, mediaID}
@@ -253,6 +257,11 @@ func validateApplyMediaIdentities(ctx context.Context, request ApplyRequest, run
 		kind, pippitID, mediaID, err := readNodeIdentity(nodes[nodeID])
 		if err != nil {
 			return mediaIdentityError(nodeID, "/content", err.Error())
+		}
+		if kind == "image" {
+			if err := validateImageSubjectBinding(nodeID, nodes[nodeID], previousNodes[nodeID]); err != nil {
+				return err
+			}
 		}
 		if kind == "" || (pippitID == "" && mediaID == "") {
 			continue
