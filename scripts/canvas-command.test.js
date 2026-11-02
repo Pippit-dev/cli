@@ -342,6 +342,18 @@ result.then(value => process.stdout.write(JSON.stringify(value) + "\\n")).catch(
 
 async function main() {
   testNativeUpgradeNotices();
+  const domExceptionDescriptor = Object.getOwnPropertyDescriptor(globalThis, "DOMException");
+  Object.defineProperty(globalThis, "DOMException", { configurable: true, value: undefined, writable: true });
+  ensureNodeRuntimeGlobals();
+  const abortError = new DOMException("Canvas disposed", "AbortError");
+  assert(abortError instanceof Error);
+  assert.strictEqual(abortError.name, "AbortError");
+  assert.strictEqual(abortError.message, "Canvas disposed");
+  assert.strictEqual(abortError.code, 20);
+  const nativeController = new AbortController();
+  nativeController.abort();
+  assert(nativeController.signal.reason instanceof DOMException);
+  if (domExceptionDescriptor) Object.defineProperty(globalThis, "DOMException", domExceptionDescriptor);
   const structuredCloneDescriptor = Object.getOwnPropertyDescriptor(globalThis, "structuredClone");
   Object.defineProperty(globalThis, "structuredClone", { configurable: true, value: undefined, writable: true });
   ensureNodeRuntimeGlobals();
