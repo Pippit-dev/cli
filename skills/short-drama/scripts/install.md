@@ -14,7 +14,6 @@ pippit-tool-cli short-drama +upload-file --help
 pippit-tool-cli get-thread --help
 pippit-tool-cli list-thread-file --help
 pippit-tool-cli download-result --help
-pippit-tool-cli watermark --help
 ```
 
 插件平台管理安装时：缺少 CLI 或必需命令，就使用平台实际提供的安装/升级流程，完成后重新检查并保留原任务上下文。没有相应能力则报告安装阻塞，不悄悄改用另一份缓存 CLI 或其它 API。

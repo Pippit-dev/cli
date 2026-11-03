@@ -1,13 +1,15 @@
 # 账号 AIGC 水印设置
 
+先用 `pippit-tool-cli watermark --help` 检查命令。缺失时按[安装说明](../scripts/install.md)通过宿主升级，独立 CLI 可执行 `update`；改用升级后的绝对路径重查。
+
 ```bash
-pippit-tool-cli watermark       # 查询当前账号
-pippit-tool-cli watermark off   # 关闭 AIGC 水印
-pippit-tool-cli watermark on    # 恢复保留 AIGC 水印
+pippit-tool-cli watermark       # 查询
+pippit-tool-cli watermark off   # 关闭
+pippit-tool-cli watermark on    # 保留
 ```
 
-输出 `{"enabled":true}` 或 `{"enabled":false}`，`true` 表示保留 AIGC 水印。修改接口完成写入并回读后返回当前状态；不提交短剧 Run，不要求先解析剧本，不轮询生成进度。
+返回 `{"enabled":true}` 或 `{"enabled":false}`，`true` 表示保留。设置后返回服务端回读状态。
 
-设置作用于当前认证账号并与 Web 同步，不因个人/团队空间选择变成团队开关。仅在用户明确要求修改账号持久设置时执行；已有授权不重复确认。用户只要求本次成片无水印时，应先确认是否接受修改账号默认设置。
+设置与 Web 同步，按当前账号持续生效，与团队选择无关。用户明确要求修改账号设置时才执行 `on/off`；只要求本次视频无水印时，先确认是否接受修改账号默认值。
 
-品牌水印及最终下载策略继续由服务端决定，不能推断所有视频都无任何水印，也不替换下载地址来绕过策略。修改报错或结果未知时先用无参数查询确认，不自动重写；无法查询则如实反馈。
+此开关控制 AIGC 水印，品牌水印与最终下载权益由服务端决定。修改报错或结果未知时先查询确认。
