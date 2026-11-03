@@ -10,7 +10,7 @@ const REQUIRED_COMMANDS = [
   "status", "login", "logout", "query-result", "upload-file",
   "space list", "space use",
   "generate-image", "generate-video", "video-super-resolution",
-  "erase-video-subtitle", "get-credit-balance", "model list", "model describe",
+  "erase-video-subtitle", "get-credit-balance", "model list", "model describe", "watermark",
 ];
 
 function npmCommand() {

@@ -10,5 +10,6 @@ const (
 	Completion     = "completion"
 	Help           = "help"
 	Model          = "model"
+	Watermark      = "watermark"
 	DownloadResult = "download-result"
 )

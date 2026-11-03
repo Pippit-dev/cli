@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 使用小云雀 pippit-tool-cli 上传本地素材或通过 URL 导入素材，生成或编辑图片、生成视频、超分和擦字幕，查询结果并交付媒体；操作小云雀个人或团队 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分及管理授权。用户提到小云雀、xyq 并需要这些操作时使用。
+description: 使用小云雀 pippit-tool-cli 上传本地素材或通过 URL 导入素材，生成或编辑图片、生成视频、超分和擦字幕，查询结果并交付媒体；操作小云雀个人或团队 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分、管理授权，以及查询或修改账号 AIGC 水印设置。用户提到小云雀、xyq 并需要这些操作时使用。
 user-invocable: true
 metadata:
   {"openclaw": {"emoji": "💬", "requires": {"bins": ["node"]}}}
@@ -14,7 +14,7 @@ metadata:
 
 1. 画布任务运行 `node "{baseDir}/scripts/ensure-cli.js" --canvas`，其他任务运行 `node "{baseDir}/scripts/ensure-cli.js"`。保存返回的 `cli_path`；Canvas 还需保存 `canvas_entry`。文档中的 `pippit-tool-cli` 替换为带引号的 `cli_path`；画布语义命令按模块说明通过 Node 入口执行。同一任务复用，安装细节见 [安装说明](scripts/install.md)。
 2. 按下表选择操作，只读取命中的命令文档。执行需要鉴权的操作前，按 [授权说明](commands/auth.md) 检查登录；有效登录可复用。
-3. 生成、视频处理和查询已有媒体结果时，还必须读取 [异步结果与媒体交付](workflows/async-delivery.md)。画布任务使用 [画布查询、编辑与验证](workflows/canvas-edit.md)，不把画布编辑当作媒体生成。素材上传或导入保存返回的资产 ID 与空间；积分与授权操作直接返回结果，不套用生成任务轮询。
+3. 生成、视频处理和查询已有媒体结果时，还必须读取 [异步结果与媒体交付](workflows/async-delivery.md)。画布任务使用 [画布查询、编辑与验证](workflows/canvas-edit.md)，不把画布编辑当作媒体生成。素材上传或导入保存返回的资产 ID 与空间；积分、授权和账号水印设置操作直接返回结果，不套用生成任务轮询。
 
 参数是否存在、命令语法以当前 `cli_path` 对应的 `--help` 为准；返回字段和成功判断按命令文档及真实响应核对。文档与实际不一致时说明差异，不猜参数、不绕过 CLI 自行调用 HTTP。
 
@@ -45,6 +45,7 @@ metadata:
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
 | 查询当前空间积分余额、剩余 credits | `get-credit-balance` | [积分](commands/get-credit-balance.md) |
+| 查询或修改当前账号的 AIGC 水印开关 | `watermark [on\|off]` | [账号水印设置](commands/watermark.md) |
 
 - 普通生图、生视频也走对应生成命令，无需用户额外声明“模型直出”。
 - 明确要求修改现有画布或其中节点时优先走 Canvas；普通生图、生视频不自动创建画布。“修改节点提示词”只修改配置，不隐含生成；指定节点生成或导出须先确认当前命令目录有对应能力。

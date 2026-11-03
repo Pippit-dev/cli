@@ -121,6 +121,7 @@ const commandModules = {
   "erase-video-subtitle": ["erase-video-subtitle"],
   "query-result": ["query-result"],
   "get-credit-balance": ["get-credit-balance"],
+  watermark: ["watermark"],
 };
 for (const [moduleName, commands] of Object.entries(commandModules)) {
   const file = path.join(skillRoot, "commands", `${moduleName}.md`);

@@ -32,6 +32,7 @@ metadata:
 | 用户意图 | CLI | 必读文档 |
 | --- | --- | --- |
 | 查看登录、登录、退出或切换账号 | `status` / `login` / `logout` | [授权](commands/auth.md) |
+| 查询或修改当前账号的 AIGC 水印开关 | `watermark [on\|off]` | [账号水印设置](commands/watermark.md) |
 | 新建短剧、续写、改写、回复后端问题 | `short-drama +submit-run` | [提交任务](commands/submit-run.md) |
 | 上传本地参考剧本 | `short-drama +upload-file` | [上传文件](commands/upload-file.md) |
 | 查询角色、场景、外观、画布、分镜等业务内容 | 同一会话 `short-drama +submit-run`，再用 `get-thread` 获取回答 | [业务内容查询](workflows/creation.md#业务内容查询) |
