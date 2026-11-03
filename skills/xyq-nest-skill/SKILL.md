@@ -45,6 +45,7 @@ metadata:
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
 | 查询当前空间积分余额、剩余 credits | `get-credit-balance` | [积分](commands/get-credit-balance.md) |
+| 查询或修改当前账号的 AIGC 水印开关 | `watermark [on\|off]` | [账号水印设置](commands/watermark.md) |
 
 - 普通生图、生视频也走对应生成命令，无需用户额外声明“模型直出”。
 - 明确要求修改现有画布或其中节点时优先走 Canvas；普通生图、生视频不自动创建画布。“修改节点提示词”只修改配置，不隐含生成；指定节点生成或导出须先确认当前命令目录有对应能力。

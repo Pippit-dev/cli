@@ -77,6 +77,20 @@ pippit-tool-cli get-credit-balance --team-id 0      # 仅本次使用个人
 
 `space list/use TEAM_ID` 依赖 API 部署 `/api/biz/v1/skill/get_lite_team_list` 的 AK 适配入口，业务团队使用还依赖对应 API 团队权限实现；不直连 commerce Web 接口。宿主 Agent 的选择、任务恢复与不回退规则已写入三个 Skill 的 `Space Selection` 章节。
 
+## 账号 AIGC 水印设置
+
+```bash
+pippit-tool-cli watermark       # 查询当前账号的 AIGC 水印开关
+pippit-tool-cli watermark off   # 保存内容时去除 AIGC 水印
+pippit-tool-cli watermark on    # 恢复保留 AIGC 水印
+```
+
+查询和修改均输出 `{"enabled":true}` 或 `{"enabled":false}`，`true` 表示保留 AIGC 水印。无参数只查询，只有显式 `on` / `off` 才修改；修改接口在服务端回读后返回当前状态。
+
+这是当前认证账号的持久设置，与 Web「保存内容去除 AIGC 水印」同步；不依赖默认个人/团队空间，也不会变成团队开关。品牌水印与最终下载权益仍由服务端决定，关闭 AIGC 开关不代表所有视频均无任何水印。修改失败或结果不明时先用无参数命令查询，不自动重复写入。
+
+依赖 API 部署 `/api/biz/v1/skill/mget_user_setting` 和 `/api/biz/v1/skill/update_user_setting` 的 AK 接口。前者接收 `{}`，后者接收 `{"enabled":true}` 或 `{"enabled":false}`；接口仅读写 AK 所属账号的 AIGC 设置。
+
 ## 小云雀营销成片技能
 
 入口：[skills/xyq-marketing-skill/SKILL.md](skills/xyq-marketing-skill/SKILL.md)。使用 [官网](https://xyq.jianying.com/cli?tab=api) 已开放的营销 API，支持素材上传、营销视频提交、结果查询与下载、积分查询。安装器会从 `skills/` 自动安装该 Skill，也可以单独安装：

@@ -21,6 +21,8 @@ const (
 	SubmitMarketingRunPath       = "/api/biz/v1/agent/submit_marketing_run"
 	QueryGenerateVideoResultPath = "/api/biz/v1/agent/query_generate_video_result"
 	GetCreditBalancePath         = "/api/biz/v1/skill/get_credit_balance"
+	GetWatermarkSettingPath      = "/api/biz/v1/skill/mget_user_setting"
+	UpdateWatermarkSettingPath   = "/api/biz/v1/skill/update_user_setting"
 	GetLiteTeamListPath          = "/api/biz/v1/skill/get_lite_team_list"
 	GetAvailableModelListPath    = "/api/biz/v1/skill/get_available_model_list"
 	GetThreadPath                = "/api/biz/v1/skill/get_thread"
