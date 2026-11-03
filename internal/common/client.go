@@ -64,7 +64,7 @@ func NewNonRedirectingHTTPClient(baseURL string, timeout time.Duration, authoriz
 func NewNonRedirectingHTTPClientWithAdapter(baseURL string, timeout time.Duration, authorizer RequestAuthorizer, policy adapter.HTTPAdapter) Client {
 	client := newHTTPClientWithAdapter(baseURL, timeout, authorizer, policy)
 	client.httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return fmt.Errorf("拒绝营销 API 重定向；请求未重试")
+		return fmt.Errorf("拒绝 API 重定向；请求未重试")
 	}
 	return client
 }

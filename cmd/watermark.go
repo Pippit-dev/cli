@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/Pippit-dev/pippit-cli/internal/adapter"
 	"github.com/Pippit-dev/pippit-cli/internal/commandnames"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/spf13/cobra"
 )
 
-func newWatermarkCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+func newWatermarkCommand(stdout, stderr io.Writer, runner *common.Runner, policy adapter.HTTPAdapter) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:       commandnames.Watermark + " [on|off]",
 		Short:     "Query or set the current account's AIGC watermark",
@@ -25,7 +26,14 @@ func newWatermarkCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra
 				value := args[0] == "on"
 				enabled = &value
 			}
-			result, err := common.Watermark(cmd.Context(), runner, enabled)
+			watermarkRunner := runner
+			if enabled != nil {
+				// Reject redirects for this write without changing the shared runner's client.
+				writeRunner := *runner
+				writeRunner.Client = common.NewNonRedirectingHTTPClientWithAdapter(runner.Config.BaseURL, runner.Config.HTTPTimeout, newRunnerAuthorizer(runner), adapter.WithPPE(policy, runner.Config.PPEEnv))
+				watermarkRunner = &writeRunner
+			}
+			result, err := common.Watermark(cmd.Context(), watermarkRunner, enabled)
 			if err != nil {
 				return err
 			}
