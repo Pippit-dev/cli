@@ -18,6 +18,8 @@ type GetThreadOptions struct {
 }
 
 // GetThreadResult is the parsed get_thread response used by `pippit-tool-cli get-thread`.
+// A business error may return both a result and an error so structured callers
+// can still inspect the returned Run. Callers must continue to handle the error.
 type GetThreadResult struct {
 	ReadableText string `json:"readable_text"`
 	RawData      []byte `json:"-"`
@@ -53,7 +55,7 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return nil, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		return &GetThreadResult{RawData: resp.Data}, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("get_thread 响应缺少 data")

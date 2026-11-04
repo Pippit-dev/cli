@@ -26,7 +26,11 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 					"run_id":       strings.TrimSpace(opts.RunID),
 					"download_dir": strings.TrimSpace(opts.DownloadDir),
 				})
-				result = internalgen.NewQueryResultError(err, opts)
+				if result == nil {
+					result = internalgen.NewQueryResultError(err, opts)
+				} else {
+					result.ErrorMessage = err.Error()
+				}
 			}
 			encoder := json.NewEncoder(stdout)
 			encoder.SetIndent("", "  ")

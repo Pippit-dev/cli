@@ -152,34 +152,40 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		return nil, err
 	}
 
-	threadResult, err := common.GetThread(ctx, &common.GetThreadOptions{
+	threadResult, queryErr := common.GetThread(ctx, &common.GetThreadOptions{
 		ThreadID: opts.ThreadID,
 		RunID:    opts.RunID,
 	}, runner)
-	if err != nil {
-		return nil, queryResultQueryError(err)
-	}
-
 	thread, err := parseQueryThread(threadResult)
 	if err != nil {
+		if queryErr != nil {
+			return nil, queryResultQueryError(queryErr)
+		}
 		return nil, fmt.Errorf("查询失败：%w", err)
 	}
 
 	run, ok := findQueryRun(thread, opts.RunID)
 	if !ok {
+		if queryErr != nil {
+			return nil, queryResultQueryError(queryErr)
+		}
 		return nil, fmt.Errorf("查询失败：未找到 run_id=%s 对应的 Run", opts.RunID)
 	}
+	result := &QueryResultResult{
+		Status:    statusForRunState(run.State),
+		Completed: isTerminalRunState(run.State),
+		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
+		RunID:     opts.RunID,
+		Videos:    []QueryResultVideo{},
+		Images:    []QueryResultImage{},
+	}
 	if run.State != successRunState {
-		result := &QueryResultResult{
-			Status:    statusForRunState(run.State),
-			Completed: isTerminalRunState(run.State),
-			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
-			RunID:     opts.RunID,
-			Videos:    []QueryResultVideo{},
-			Images:    []QueryResultImage{},
-		}
 		if run.State == failedRunState {
-			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 失败")
+			message := extractQueryErrorMessage(run)
+			if message == "" && queryErr != nil {
+				message = queryResultQueryError(queryErr).Error()
+			}
+			result.ErrorMessage = firstNonEmpty(message, "Run 失败")
 		}
 		return result, nil
 	}
@@ -187,12 +193,12 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	videos := extractQueryVideos(run)
 	images := extractQueryImages(run)
 	if len(videos) == 0 && len(images) == 0 {
-		return nil, fmt.Errorf("下载失败：未找到可下载的产物")
+		return result, fmt.Errorf("下载失败：未找到可下载的产物")
 	}
 
 	downloadDir, err := common.ExpandPath(opts.DownloadDir)
 	if err != nil {
-		return nil, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
+		return result, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
 	}
 
 	usedNames := make(map[string]int, len(videos)+len(images))
@@ -200,7 +206,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	resultVideos := make([]QueryResultVideo, 0, len(videos))
 	for i, video := range videos {
 		if strings.TrimSpace(video.DownloadURL) == "" {
-			return nil, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
+			return result, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
 		}
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(videoFileName(video, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
@@ -209,7 +215,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 			Workers:    5,
 		}, runner)
 		if err != nil {
-			return nil, fmt.Errorf("下载失败：%w", err)
+			return result, fmt.Errorf("下载失败：%w", err)
 		}
 		actualOutputPath := outputPath
 		if len(download.Downloaded) > 0 {
@@ -228,7 +234,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	resultImages := make([]QueryResultImage, 0, len(images))
 	for i, image := range images {
 		if strings.TrimSpace(image.DownloadURL) == "" {
-			return nil, fmt.Errorf("下载失败：第 %d 个图片产物 download_url 为空", i+1)
+			return result, fmt.Errorf("下载失败：第 %d 个图片产物 download_url 为空", i+1)
 		}
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(imageFileName(image, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
@@ -237,7 +243,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 			Workers:    5,
 		}, runner)
 		if err != nil {
-			return nil, fmt.Errorf("下载失败：%w", err)
+			return result, fmt.Errorf("下载失败：%w", err)
 		}
 		actualOutputPath := outputPath
 		if len(download.Downloaded) > 0 {
@@ -251,19 +257,13 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		})
 	}
 
-	return &QueryResultResult{
-		Status:    statusSucceeded,
-		Completed: true,
-		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
-		RunID:     opts.RunID,
-		Videos:    resultVideos,
-		Images:    resultImages,
-	}, nil
+	result.Videos = resultVideos
+	result.Images = resultImages
+	return result, nil
 }
 
-// queryResultQueryError converts a get_thread failure into a Go error while
-// keeping a clean, customer-facing message. The command layer maps it to
-// status=unknown; the technical envelope stays in the local error log.
+// queryResultQueryError extracts a customer-facing get_thread error. It is used
+// when no target Run can be resolved, or as the failed Run's fallback reason.
 func queryResultQueryError(err error) error {
 	var logErr *common.LogIDError
 	if errors.As(err, &logErr) {
@@ -279,9 +279,8 @@ func queryResultQueryError(err error) error {
 	return fmt.Errorf("查询失败：%w", err)
 }
 
-// NewQueryResultError builds the user-facing result for a failed query. A
-// failed call never produces a run status, so it reports unknown rather than
-// guessing; the concrete cause stays in error_message.
+// NewQueryResultError builds the user-facing result when no Run could be
+// resolved. The concrete cause stays in error_message.
 func NewQueryResultError(err error, opts *QueryResultOptions) *QueryResultResult {
 	result := &QueryResultResult{
 		Status:       statusUnknown,

@@ -57,6 +57,21 @@ func TestGetThreadRequiresRetZero(t *testing.T) {
 	}
 }
 
+func TestGetThreadPreservesDataOnBusinessError(t *testing.T) {
+	result, err := GetThread(context.Background(), &GetThreadOptions{
+		ThreadID: "thread_123",
+		RunID:    "run_456",
+	}, &Runner{
+		Client: getThreadFakeClient{response: `{"ret":"2","errmsg":"安审失败","log_id":"audit-log","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]}}}`},
+	})
+	if err == nil || !strings.Contains(err.Error(), "ret=2") || !strings.Contains(err.Error(), "audit-log") {
+		t.Fatalf("error = %v, want business error with log ID", err)
+	}
+	if result == nil || !strings.Contains(string(result.RawData), `"run_456"`) {
+		t.Fatalf("result = %#v, want response data alongside business error", result)
+	}
+}
+
 func TestGetThreadV2RequiresReadableText(t *testing.T) {
 	_, err := GetThread(context.Background(), &GetThreadOptions{
 		ThreadID: "thread_123",
