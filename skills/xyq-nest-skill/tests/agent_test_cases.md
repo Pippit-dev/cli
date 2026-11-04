@@ -41,9 +41,13 @@
 | 条件 | 期望行为 |
 | --- | --- |
 | 查询退出码 0，error_message 非空 | 按错误处理，不能判成功，也不能因 completed=false 继续空轮询 |
-| completed=true 且有错误 | 失败，保留原任务 ID，不重新生成 |
-| completed=false、空错误 | 仅说明暂未取得最终结果，按共用流程有界等待，不编造进度或具体状态 |
-| completed=true、空错误、空产物 | 报告结果异常，不宣称交付完成 |
+| completed=true 且有错误 | 区分任务失败与下载失败；保留原任务 ID 和已下载文件，不重新生成 |
+| status=running、completed=false、空错误 | 按共用流程有界等待，不编造进度 |
+| status=input_required、completed=false | 停止轮询，提示补充输入，不代答 |
+| status=interrupted、completed=true | 报告人工交互中断结束，不当作成功或下载异常 |
+| status=canceled、completed=true | 报告已取消，停止轮询 |
+| status=unknown | 无法确定 Run 状态，不能按运行中无限轮询 |
+| status=succeeded、completed=true、空错误、空产物 | 报告结果异常，不宣称交付完成 |
 | 成功返回多张图/多个视频 | 检查所有 output_path，通过宿主逐项展示真实媒体 |
 | 本地缺文件、空文件或已知是同名旧文件 | 不视为成功交付，报告对应项目；不得凭目录中的任意文件补结果 |
 | 部分媒体不能展示 | 交付其余可用媒体，明确未交付项，不宣称全部完成 |
