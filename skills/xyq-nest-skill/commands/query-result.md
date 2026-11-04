@@ -42,7 +42,7 @@ stdout 是 JSON；命令可能将错误编码进 JSON 并以退出码 0 返回�
 }
 ```
 
-`status` 和 `completed` 优先按返回的目标 Run 判定；即使 `get_thread` 的 `ret` 非零，只要能解析目标 Run，仍使用它的状态。例如 `ret=2` 且 Run 失败时返回 `failed`、`completed=true`，失败原因优先取 Run，缺失时取接口错误。无法解析或找不到目标 Run 时返回 `unknown`；服务端未指定或无法映射的 Run 状态也保持 `unknown`。
+`status` 和 `completed` 优先按返回的目标 Run 判定；即使查询接口的 `ret` 非零，只要能解析目标 Run，仍使用它的状态。例如 `ret=2` 且 Run 失败时返回 `failed`、`completed=true`，失败原因优先取 Run，缺失时取接口错误。无法解析或找不到目标 Run 时返回 `unknown`；服务端未指定或无法映射的 Run 状态也保持 `unknown`。
 
 Run 已成功但产物缺失或下载失败时，保留 `succeeded`、`completed=true`，错误写入 `error_message`。这时不能宣称媒体已下载或交付，仍须先检查错误和产物文件。
 
