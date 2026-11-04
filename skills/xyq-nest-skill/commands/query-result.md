@@ -20,6 +20,7 @@ stdout 是 JSON；命令可能将错误编码进 JSON 并以退出码 0 返回�
 
 | 字段 | 含义 |
 | --- | --- |
+| `status` | 目标 Run 状态：`running`、`succeeded`、`failed`、`canceled`、`input_required`、`interrupted`、`unknown`；不直接由查询接口 `ret` 决定 |
 | `completed` | 是否结束；失败时也可能为 `true`，不等于成功 |
 | `error_message` | 非空即错误，不能因为 `completed=false` 而忽略 |
 | `thread_id` / `run_id` | 对应的查询任务 |
@@ -31,6 +32,7 @@ stdout 是 JSON；命令可能将错误编码进 JSON 并以退出码 0 返回�
 
 ```json
 {
+  "status": "succeeded",
   "completed": true,
   "thread_id": "THREAD_ID",
   "run_id": "RUN_ID",
@@ -40,7 +42,15 @@ stdout 是 JSON；命令可能将错误编码进 JSON 并以退出码 0 返回�
 }
 ```
 
-任务尚未完成时通常返回 `completed=false`、空错误、空媒体数组。命令不提供完整会话消息、用户反问或可区分的所有状态；不能仅凭这个响应断言具体进度、取消状态或等待用户输入。轮询停止条件见 [共用流程](../workflows/async-delivery.md)。
+`status` 和 `completed` 优先按返回的目标 Run 判定，适用于任意 `ret`。失败原因优先读取 Run 的 `fail_reason.message/code`，再读取兼容错误字段和接口错误；非零接口返回仍保留本地诊断日志。
+
+没有目标 Run 时，只有已核实的接口返回可确定终态：`ret=5` 且 `errmsg` 为 `创作失败` 或以 `创作失败：` 开头时返回 `failed`、`completed=true`；`ret=5` 且 `errmsg` 为 `创作已取消` 时返回 `canceled`、`completed=true`。不要泛匹配“失败”或“不合规”。其余查询错误保持 `unknown`、`completed=false`，通过 `error_message` 报告原因及可用的 LogID。`ret=2` 是参数错误，不代表安审失败；`ret=5` 也可能只是查询会话失败。未指定或未知 Run 状态保持 `unknown`。
+
+`input_required` 表示等待补充输入，`completed=false`；`interrupted` 表示人工交互中断结束，`completed=true`。两者均停止自动轮询并报告交互需求或中断状态。`canceled` 也直接停止，不因空产物误报下载失败。程序中断／等待工具回调仍为 `running`。
+
+Run 已成功但产物缺失或下载失败时，保留 `succeeded`、`completed=true`，错误写入 `error_message`。此前已成功下载的文件仍保留在媒体数组中。核对这些文件后可交付已完成部分，但不能宣称全部下载或交付成功。
+
+只有 `running` 且无错误时继续轮询；未知状态不能自动当作运行中。命令不提供完整会话消息或用户反问，不编造具体进度。轮询停止条件见 [共用流程](../workflows/async-delivery.md)。
 
 ## 样片结果
 
@@ -54,4 +64,4 @@ stdout 是 JSON；命令可能将错误编码进 JSON 并以退出码 0 返回�
 
 文件名由 CLI 根据产物信息生成，以 `output_path` 为准，不自行拼接编号或推测扩展名。同目录已有同名文件可能被复用；复用不证明内容相同，也不代表本次新下载。发现同名文件属于其他产物时，选择用户认可范围内的未冲突目录再查询，不删除已有文件。
 
-找不到产物、链接缺失或下载失败时会返回错误。当前任一文件下载失败可能使整次查询只返回错误，无法据此认定其他文件都没下载或已完整交付。复查本次结果，不把输出目录里的任意旧文件当作本次产物。
+找不到产物、链接缺失或下载失败时会返回错误。下载中途失败时，媒体数组保留此前已成功下载或复用的文件；逐项核对 `output_path` 后可交付可用部分，并说明未完成项。不把输出目录里的任意旧文件当作本次产物，也不宣称已完整交付。

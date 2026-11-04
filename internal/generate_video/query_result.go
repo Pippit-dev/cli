@@ -14,19 +14,22 @@ import (
 )
 
 const (
-	successRunState  = 3
-	failedRunState   = 4
-	canceledRunState = 5
+	successRunState     = 3
+	failedRunState      = 4
+	canceledRunState    = 5
+	interruptedRunState = 9
 )
 
 // Query-result status values. "completed" stays a terminal flag; "status"
 // carries the machine-readable result so integrators need not parse text.
 const (
-	statusRunning   = "running"
-	statusSucceeded = "succeeded"
-	statusFailed    = "failed"
-	statusCanceled  = "canceled"
-	statusUnknown   = "unknown"
+	statusRunning       = "running"
+	statusSucceeded     = "succeeded"
+	statusFailed        = "failed"
+	statusCanceled      = "canceled"
+	statusUnknown       = "unknown"
+	statusInputRequired = "input_required"
+	statusInterrupted   = "interrupted"
 )
 
 // runStateStatus maps the server-side run state (0-9) to the user-facing
@@ -38,16 +41,17 @@ var runStateStatus = map[int]string{
 	3: statusSucceeded,
 	4: statusFailed,
 	5: statusCanceled,
-	6: statusUnknown, // InputRequired
-	7: statusRunning, // Generating
-	8: statusRunning, // Interrupt
-	9: statusUnknown, // HITL_Interrupt
+	6: statusInputRequired,
+	7: statusRunning,     // Generating
+	8: statusRunning,     // Interrupt
+	9: statusInterrupted, // HITL_Interrupt is terminal, unlike Interrupt (8).
 }
 
 var terminalRunStates = map[int]struct{}{
-	successRunState:  {},
-	failedRunState:   {},
-	canceledRunState: {},
+	successRunState:     {},
+	failedRunState:      {},
+	canceledRunState:    {},
+	interruptedRunState: {},
 }
 
 func statusForRunState(state int) string {
@@ -100,12 +104,18 @@ type queryThread struct {
 }
 
 type queryRun struct {
-	RunID        string       `json:"run_id"`
-	State        int          `json:"state"`
-	ErrorMessage string       `json:"error_message"`
-	ErrorMsg     string       `json:"error_msg"`
-	Errmsg       string       `json:"errmsg"`
-	EntryList    []queryEntry `json:"entry_list"`
+	RunID        string           `json:"run_id"`
+	State        int              `json:"state"`
+	ErrorMessage string           `json:"error_message"`
+	ErrorMsg     string           `json:"error_msg"`
+	Errmsg       string           `json:"errmsg"`
+	FailReason   *queryFailReason `json:"fail_reason"`
+	EntryList    []queryEntry     `json:"entry_list"`
+}
+
+type queryFailReason struct {
+	Message string          `json:"message"`
+	Code    json.RawMessage `json:"code"`
 }
 
 type queryEntry struct {
@@ -152,34 +162,41 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		return nil, err
 	}
 
-	threadResult, err := common.GetThread(ctx, &common.GetThreadOptions{
+	threadResult, queryErr := common.GetThread(ctx, &common.GetThreadOptions{
 		ThreadID: opts.ThreadID,
 		RunID:    opts.RunID,
 	}, runner)
-	if err != nil {
-		return nil, queryResultQueryError(err)
-	}
-
 	thread, err := parseQueryThread(threadResult)
 	if err != nil {
+		if queryErr != nil {
+			return queryResultWithoutRun(threadResult, queryErr, opts)
+		}
 		return nil, fmt.Errorf("查询失败：%w", err)
 	}
 
 	run, ok := findQueryRun(thread, opts.RunID)
 	if !ok {
+		if queryErr != nil {
+			return queryResultWithoutRun(threadResult, queryErr, opts)
+		}
 		return nil, fmt.Errorf("查询失败：未找到 run_id=%s 对应的 Run", opts.RunID)
 	}
+	logResolvedQueryError(queryErr, opts)
+	result := &QueryResultResult{
+		Status:    statusForRunState(run.State),
+		Completed: isTerminalRunState(run.State),
+		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
+		RunID:     opts.RunID,
+		Videos:    []QueryResultVideo{},
+		Images:    []QueryResultImage{},
+	}
 	if run.State != successRunState {
-		result := &QueryResultResult{
-			Status:    statusForRunState(run.State),
-			Completed: isTerminalRunState(run.State),
-			ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
-			RunID:     opts.RunID,
-			Videos:    []QueryResultVideo{},
-			Images:    []QueryResultImage{},
-		}
 		if run.State == failedRunState {
-			result.ErrorMessage = firstNonEmpty(extractQueryErrorMessage(run), "Run 失败")
+			message := extractQueryErrorMessage(run)
+			if message == "" && queryErr != nil {
+				message = queryResultQueryError(queryErr).Error()
+			}
+			result.ErrorMessage = firstNonEmpty(message, "Run 失败")
 		}
 		return result, nil
 	}
@@ -187,20 +204,19 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	videos := extractQueryVideos(run)
 	images := extractQueryImages(run)
 	if len(videos) == 0 && len(images) == 0 {
-		return nil, fmt.Errorf("下载失败：未找到可下载的产物")
+		return result, fmt.Errorf("下载失败：未找到可下载的产物")
 	}
 
 	downloadDir, err := common.ExpandPath(opts.DownloadDir)
 	if err != nil {
-		return nil, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
+		return result, fmt.Errorf("下载失败：解析下载目录失败：%w", err)
 	}
 
 	usedNames := make(map[string]int, len(videos)+len(images))
 
-	resultVideos := make([]QueryResultVideo, 0, len(videos))
 	for i, video := range videos {
 		if strings.TrimSpace(video.DownloadURL) == "" {
-			return nil, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
+			return result, fmt.Errorf("下载失败：第 %d 个视频产物 download_url 为空", i+1)
 		}
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(videoFileName(video, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
@@ -209,7 +225,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 			Workers:    5,
 		}, runner)
 		if err != nil {
-			return nil, fmt.Errorf("下载失败：%w", err)
+			return result, fmt.Errorf("下载失败：%w", err)
 		}
 		actualOutputPath := outputPath
 		if len(download.Downloaded) > 0 {
@@ -217,7 +233,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		} else if len(download.AlreadyExist) > 0 {
 			actualOutputPath = download.AlreadyExist[0]
 		}
-		resultVideos = append(resultVideos, QueryResultVideo{
+		result.Videos = append(result.Videos, QueryResultVideo{
 			DownloadURL: video.DownloadURL,
 			OutputPath:  actualOutputPath,
 			Draft:       video.Draft,
@@ -225,10 +241,9 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		})
 	}
 
-	resultImages := make([]QueryResultImage, 0, len(images))
 	for i, image := range images {
 		if strings.TrimSpace(image.DownloadURL) == "" {
-			return nil, fmt.Errorf("下载失败：第 %d 个图片产物 download_url 为空", i+1)
+			return result, fmt.Errorf("下载失败：第 %d 个图片产物 download_url 为空", i+1)
 		}
 		outputPath := filepath.Join(downloadDir, uniqueQueryResultFileName(imageFileName(image, i+1), usedNames))
 		download, err := common.DownloadResult(ctx, common.DownloadResultOptions{
@@ -237,7 +252,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 			Workers:    5,
 		}, runner)
 		if err != nil {
-			return nil, fmt.Errorf("下载失败：%w", err)
+			return result, fmt.Errorf("下载失败：%w", err)
 		}
 		actualOutputPath := outputPath
 		if len(download.Downloaded) > 0 {
@@ -245,25 +260,52 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 		} else if len(download.AlreadyExist) > 0 {
 			actualOutputPath = download.AlreadyExist[0]
 		}
-		resultImages = append(resultImages, QueryResultImage{
+		result.Images = append(result.Images, QueryResultImage{
 			DownloadURL: image.DownloadURL,
 			OutputPath:  actualOutputPath,
 		})
 	}
 
-	return &QueryResultResult{
-		Status:    statusSucceeded,
-		Completed: true,
-		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
-		RunID:     opts.RunID,
-		Videos:    resultVideos,
-		Images:    resultImages,
-	}, nil
+	return result, nil
 }
 
-// queryResultQueryError converts a get_thread failure into a Go error while
-// keeping a clean, customer-facing message. The command layer maps it to
-// status=unknown; the technical envelope stays in the local error log.
+// The legacy endpoint omits data for Failed/Canceled. Only these exact
+// endpoint-specific responses prove a terminal Run; other errors (including
+// ret=5 "获取会话信息失败") describe a failed query, not a failed Run.
+func queryResultWithoutRun(threadResult *common.GetThreadResult, queryErr error, opts *QueryResultOptions) (*QueryResultResult, error) {
+	status := statusUnknown
+	if threadResult != nil && threadResult.Ret == "5" {
+		message := strings.TrimSpace(threadResult.Errmsg)
+		switch {
+		case message == "创作失败" || strings.HasPrefix(message, "创作失败："):
+			status = statusFailed
+		case message == "创作已取消":
+			status = statusCanceled
+		}
+	}
+	if status == statusUnknown {
+		return nil, queryResultQueryError(queryErr)
+	}
+	logResolvedQueryError(queryErr, opts)
+	result := NewQueryResultError(queryResultQueryError(queryErr), opts)
+	result.Status = status
+	result.Completed = true
+	return result, nil
+}
+
+// The command logs returned errors. Errors consumed by a resolved Run must
+// also retain their original ret/errmsg/log_id for diagnosis.
+func logResolvedQueryError(err error, opts *QueryResultOptions) {
+	if err != nil {
+		_ = common.AppendDailyErrorLog("query-result", err, map[string]string{
+			"thread_id": opts.ThreadID,
+			"run_id":    opts.RunID,
+		})
+	}
+}
+
+// queryResultQueryError extracts a customer-facing get_thread error. It is used
+// when no target Run can be resolved, or as the failed Run's fallback reason.
 func queryResultQueryError(err error) error {
 	var logErr *common.LogIDError
 	if errors.As(err, &logErr) {
@@ -279,9 +321,8 @@ func queryResultQueryError(err error) error {
 	return fmt.Errorf("查询失败：%w", err)
 }
 
-// NewQueryResultError builds the user-facing result for a failed query. A
-// failed call never produces a run status, so it reports unknown rather than
-// guessing; the concrete cause stays in error_message.
+// NewQueryResultError builds the user-facing result when no Run could be
+// resolved. The concrete cause stays in error_message.
 func NewQueryResultError(err error, opts *QueryResultOptions) *QueryResultResult {
 	result := &QueryResultResult{
 		Status:       statusUnknown,
@@ -418,6 +459,16 @@ func extractQueryImages(run queryRun) []queryImage {
 }
 
 func extractQueryErrorMessage(run queryRun) string {
+	if run.FailReason != nil {
+		message := strings.TrimSpace(run.FailReason.Message)
+		code := rawMessageString(run.FailReason.Code)
+		if message != "" {
+			if code != "" && code != "0" {
+				return fmt.Sprintf("%s (error_code=%s)", message, code)
+			}
+			return message
+		}
+	}
 	if message := firstNonEmpty(run.ErrorMessage, run.ErrorMsg, run.Errmsg); message != "" {
 		return message
 	}
@@ -433,6 +484,11 @@ func extractQueryErrorMessage(run queryRun) string {
 			if code := rawMessageString(data.ErrorCode); code != "" {
 				return "error_code=" + code
 			}
+		}
+	}
+	if run.FailReason != nil {
+		if code := rawMessageString(run.FailReason.Code); code != "" && code != "0" {
+			return "error_code=" + code
 		}
 	}
 	return ""

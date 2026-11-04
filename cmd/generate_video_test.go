@@ -434,98 +434,103 @@ func TestGenerateVideoErrorLogIncludesLogID(t *testing.T) {
 }
 
 func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
-	var requestedDownload bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer test-token" {
-			t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
-		}
-		switch r.URL.Path {
-		case "/api/biz/v1/skill/get_thread":
-			if r.Method != http.MethodPost {
-				t.Fatalf("get_thread method = %s, want POST", r.Method)
-			}
-			data, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatalf("read body: %v", err)
-			}
-			var body map[string]any
-			if err := sonic.Unmarshal(data, &body); err != nil {
-				t.Fatalf("decode body: %v", err)
-			}
-			if body["thread_id"] != "thread_123" {
-				t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
-			}
-			if body["run_id"] != "run_456" {
-				t.Fatalf("run_id = %v, want run_456", body["run_id"])
-			}
-			if _, ok := body["version"]; ok {
-				t.Fatalf("version = %v, want omitted", body["version"])
-			}
-			_, _ = w.Write([]byte(`{"ret":"0","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_prompt_text","data":"做个小猫视频"},{"sub_type":"biz/x_data_video","data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\",\"vid\":\"cat_vid\"}}"}]}}]}]}}}`))
-		case "/video.mp4":
-			requestedDownload = true
-			if r.Method != http.MethodGet {
-				t.Fatalf("download method = %s, want GET", r.Method)
-			}
-			_, _ = w.Write([]byte("video-data"))
-		default:
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-	}))
-	defer server.Close()
+	for _, ret := range []string{"0", "1", "2", "5", "1015", "16019", "987654"} {
+		t.Run("ret="+ret, func(t *testing.T) {
+			var requestedDownload bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") != "Bearer test-token" {
+					t.Fatalf("Authorization = %q, want test bearer token", r.Header.Get("Authorization"))
+				}
+				switch r.URL.Path {
+				case "/api/biz/v1/skill/get_thread":
+					if r.Method != http.MethodPost {
+						t.Fatalf("get_thread method = %s, want POST", r.Method)
+					}
+					data, err := io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatalf("read body: %v", err)
+					}
+					var body map[string]any
+					if err := sonic.Unmarshal(data, &body); err != nil {
+						t.Fatalf("decode body: %v", err)
+					}
+					if body["thread_id"] != "thread_123" {
+						t.Fatalf("thread_id = %v, want thread_123", body["thread_id"])
+					}
+					if body["run_id"] != "run_456" {
+						t.Fatalf("run_id = %v, want run_456", body["run_id"])
+					}
+					if _, ok := body["version"]; ok {
+						t.Fatalf("version = %v, want omitted", body["version"])
+					}
+					_, _ = w.Write([]byte(`{"ret":"` + ret + `","errmsg":"","data":{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3,"entry_list":[{"artifact":{"content":[{"sub_type":"biz/x_data_prompt_text","data":"做个小猫视频"},{"sub_type":"biz/x_data_video","data":"{\"video\":{\"download_url\":\"` + serverURL(r) + `/video.mp4\",\"title\":\"cat_video\",\"vid\":\"cat_vid\"}}"}]}}]}]}}}`))
+				case "/video.mp4":
+					requestedDownload = true
+					if r.Method != http.MethodGet {
+						t.Fatalf("download method = %s, want GET", r.Method)
+					}
+					_, _ = w.Write([]byte("video-data"))
+				default:
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+			}))
+			defer server.Close()
 
-	downloadDir := filepath.Join(t.TempDir(), "downloads")
-	var stdout, stderr bytes.Buffer
-	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
-	root.SetArgs([]string{
-		"query-result",
-		"--thread-id", "thread_123",
-		"--run-id", "run_456",
-		"--download-dir", downloadDir,
-	})
+			downloadDir := filepath.Join(t.TempDir(), "downloads")
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs([]string{
+				"query-result",
+				"--thread-id", "thread_123",
+				"--run-id", "run_456",
+				"--download-dir", downloadDir,
+			})
 
-	if err := root.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
-	}
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+			}
 
-	outputPath := filepath.Join(downloadDir, "cat_vid.mp4")
-	downloadURL := server.URL + "/video.mp4"
-	if !requestedDownload {
-		t.Fatal("download endpoint was not requested")
+			outputPath := filepath.Join(downloadDir, "cat_vid.mp4")
+			downloadURL := server.URL + "/video.mp4"
+			if !requestedDownload {
+				t.Fatal("download endpoint was not requested")
+			}
+			got := decodeJSON(t, stdout.Bytes())
+			if got["completed"] != true {
+				t.Fatalf("completed = %v, want true", got["completed"])
+			}
+			if got["status"] != "succeeded" {
+				t.Fatalf("status = %v, want succeeded", got["status"])
+			}
+			if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+				t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
+			}
+			if _, ok := got["state"]; ok {
+				t.Fatalf("state should not be returned: %#v", got)
+			}
+			if got["error_message"] != "" {
+				t.Fatalf("error_message = %v, want empty", got["error_message"])
+			}
+			videos, ok := got["videos"].([]any)
+			if !ok || len(videos) != 1 {
+				t.Fatalf("videos = %#v, want one video", got["videos"])
+			}
+			video, ok := videos[0].(map[string]any)
+			if !ok {
+				t.Fatalf("video = %#v, want object", videos[0])
+			}
+			if video["download_url"] != downloadURL || video["output_path"] != outputPath {
+				t.Fatalf("video = %#v, want download_url/output_path", video)
+			}
+			for _, unwanted := range []string{"vid", "asset_id", "title", "draft", "draft_task_id"} {
+				if _, ok := video[unwanted]; ok {
+					t.Fatalf("video = %#v, should not contain %s", video, unwanted)
+				}
+			}
+			assertFileContent(t, outputPath, "video-data")
+
+		})
 	}
-	got := decodeJSON(t, stdout.Bytes())
-	if got["completed"] != true {
-		t.Fatalf("completed = %v, want true", got["completed"])
-	}
-	if got["status"] != "succeeded" {
-		t.Fatalf("status = %v, want succeeded", got["status"])
-	}
-	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
-		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
-	}
-	if _, ok := got["state"]; ok {
-		t.Fatalf("state should not be returned: %#v", got)
-	}
-	if got["error_message"] != "" {
-		t.Fatalf("error_message = %v, want empty", got["error_message"])
-	}
-	videos, ok := got["videos"].([]any)
-	if !ok || len(videos) != 1 {
-		t.Fatalf("videos = %#v, want one video", got["videos"])
-	}
-	video, ok := videos[0].(map[string]any)
-	if !ok {
-		t.Fatalf("video = %#v, want object", videos[0])
-	}
-	if video["download_url"] != downloadURL || video["output_path"] != outputPath {
-		t.Fatalf("video = %#v, want download_url/output_path", video)
-	}
-	for _, unwanted := range []string{"vid", "asset_id", "title", "draft", "draft_task_id"} {
-		if _, ok := video[unwanted]; ok {
-			t.Fatalf("video = %#v, should not contain %s", video, unwanted)
-		}
-	}
-	assertFileContent(t, outputPath, "video-data")
 }
 
 func TestQueryResultPreservesDraftMetadata(t *testing.T) {
@@ -601,11 +606,11 @@ func TestQueryResultIgnoresVideoDataWithoutVideoSubType(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 	got := decodeJSON(t, stdout.Bytes())
-	if got["completed"] != false {
-		t.Fatalf("completed = %v, want false", got["completed"])
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true for a succeeded Run", got["completed"])
 	}
-	if got["status"] != "unknown" {
-		t.Fatalf("status = %v, want unknown", got["status"])
+	if got["status"] != "succeeded" {
+		t.Fatalf("status = %v, want succeeded despite missing downloadable artifacts", got["status"])
 	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
@@ -674,14 +679,14 @@ func TestQueryResultGetThreadBusinessErrorReturnsErrorMessage(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 	got := decodeJSON(t, stdout.Bytes())
-	if got["completed"] != false {
-		t.Fatalf("completed = %v, want false", got["completed"])
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true", got["completed"])
 	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
-	if got["status"] != "unknown" {
-		t.Fatalf("status = %v, want unknown", got["status"])
+	if got["status"] != "failed" {
+		t.Fatalf("status = %v, want failed", got["status"])
 	}
 	if got["error_message"] != "创作失败：暂时无法生成 log_id=log_456" {
 		t.Fatalf("error_message = %v, want get_thread business error", got["error_message"])
@@ -689,6 +694,46 @@ func TestQueryResultGetThreadBusinessErrorReturnsErrorMessage(t *testing.T) {
 	videos, ok := got["videos"].([]any)
 	if !ok || len(videos) != 0 {
 		t.Fatalf("videos = %#v, want empty", got["videos"])
+	}
+}
+
+func TestQueryResultUsesRunDespiteBusinessError(t *testing.T) {
+	for _, tt := range []struct {
+		name, data, status, message string
+		completed                   bool
+	}{
+		{"structured failure", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4,"error_message":"Run 失败"}]}}`, "failed", "Run 失败", true},
+		{"envelope fallback", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]}}`, "failed", "模拟接口错误 log_id=fixture-log", true},
+		{"succeeded without artifacts", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3}]}}`, "succeeded", "下载失败：未找到可下载的产物", true},
+		{"canceled", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":5}]}}`, "canceled", "", true},
+		{"running", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":2}]}}`, "running", "", false},
+		{"different run", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"other","state":4}]}}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"missing thread", `{}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"null data", `null`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"malformed run", `{"thread":{"run_list":"invalid"}}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/biz/v1/skill/get_thread" {
+					t.Fatalf("unexpected path %s", r.URL.Path)
+				}
+				fmt.Fprintf(w, `{"ret":"2","errmsg":"模拟接口错误","log_id":"fixture-log","data":%s}`, tt.data)
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			root.SetArgs([]string{"query-result", "--thread-id", "thread_123", "--run-id", "run_456", "--download-dir", t.TempDir()})
+			if err := root.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
+			}
+			got := decodeJSON(t, stdout.Bytes())
+			if got["status"] != tt.status || got["completed"] != tt.completed || got["error_message"] != tt.message {
+				t.Fatalf("output = %#v, want status=%s completed=%v error_message=%q", got, tt.status, tt.completed, tt.message)
+			}
+			if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
+				t.Fatalf("output = %#v, want requested thread/run IDs", got)
+			}
+		})
 	}
 }
 
@@ -789,10 +834,10 @@ func TestQueryResultRunStateMapping(t *testing.T) {
 		{2, "running", false},
 		{4, "failed", true},
 		{5, "canceled", true},
-		{6, "unknown", false},
+		{6, "input_required", false},
 		{7, "running", false},
 		{8, "running", false},
-		{9, "unknown", false},
+		{9, "interrupted", true},
 		{99, "unknown", false},
 	}
 	for _, tt := range tests {
