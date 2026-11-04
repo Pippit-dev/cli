@@ -22,6 +22,9 @@ type GetThreadOptions struct {
 // can still inspect the returned Run. Callers must continue to handle the error.
 type GetThreadResult struct {
 	ReadableText string `json:"readable_text"`
+	Ret          string `json:"-"`
+	Errmsg       string `json:"-"`
+	LogID        string `json:"-"`
 	RawData      []byte `json:"-"`
 }
 
@@ -51,11 +54,12 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 	if err := runner.Client.SendRequest(ctx, getThreadPath(runner), body, &resp); err != nil {
 		return nil, fmt.Errorf("获取线程请求失败: %w", err)
 	}
+	result := &GetThreadResult{Ret: resp.Ret, Errmsg: resp.Errmsg, LogID: resp.LogID, RawData: resp.Data}
 	if resp.Ret != "0" {
 		if resp.Errmsg == "" {
 			resp.Errmsg = "未知错误"
 		}
-		return &GetThreadResult{RawData: resp.Data}, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
+		return result, NewLogIDError(fmt.Sprintf("获取线程请求返回失败: ret=%s errmsg=%s", resp.Ret, resp.Errmsg), resp.LogID)
 	}
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("get_thread 响应缺少 data")
@@ -70,10 +74,8 @@ func GetThread(ctx context.Context, opts *GetThreadOptions, runner *Runner) (*Ge
 		}
 	}
 
-	return &GetThreadResult{
-		ReadableText: readable.ReadableText,
-		RawData:      resp.Data,
-	}, nil
+	result.ReadableText = readable.ReadableText
+	return result, nil
 }
 
 func getThreadPath(runner *Runner) string {

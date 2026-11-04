@@ -434,7 +434,7 @@ func TestGenerateVideoErrorLogIncludesLogID(t *testing.T) {
 }
 
 func TestQueryResultDownloadsCompletedVideo(t *testing.T) {
-	for _, ret := range []string{"0", "2"} {
+	for _, ret := range []string{"0", "1", "2", "5", "1015", "16019", "987654"} {
 		t.Run("ret="+ret, func(t *testing.T) {
 			var requestedDownload bool
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -679,14 +679,14 @@ func TestQueryResultGetThreadBusinessErrorReturnsErrorMessage(t *testing.T) {
 		t.Fatalf("Execute() error = %v, stderr = %s", err, stderr.String())
 	}
 	got := decodeJSON(t, stdout.Bytes())
-	if got["completed"] != false {
-		t.Fatalf("completed = %v, want false", got["completed"])
+	if got["completed"] != true {
+		t.Fatalf("completed = %v, want true", got["completed"])
 	}
 	if got["thread_id"] != "thread_123" || got["run_id"] != "run_456" {
 		t.Fatalf("ids = (%v, %v), want thread/run ids", got["thread_id"], got["run_id"])
 	}
-	if got["status"] != "unknown" {
-		t.Fatalf("status = %v, want unknown", got["status"])
+	if got["status"] != "failed" {
+		t.Fatalf("status = %v, want failed", got["status"])
 	}
 	if got["error_message"] != "创作失败：暂时无法生成 log_id=log_456" {
 		t.Fatalf("error_message = %v, want get_thread business error", got["error_message"])
@@ -702,22 +702,22 @@ func TestQueryResultUsesRunDespiteBusinessError(t *testing.T) {
 		name, data, status, message string
 		completed                   bool
 	}{
-		{"audit failure", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4,"error_message":"Run 安审失败"}]}}`, "failed", "Run 安审失败", true},
-		{"envelope fallback", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]}}`, "failed", "安审失败 log_id=audit-log", true},
+		{"structured failure", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4,"error_message":"Run 失败"}]}}`, "failed", "Run 失败", true},
+		{"envelope fallback", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":4}]}}`, "failed", "模拟接口错误 log_id=fixture-log", true},
 		{"succeeded without artifacts", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":3}]}}`, "succeeded", "下载失败：未找到可下载的产物", true},
 		{"canceled", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":5}]}}`, "canceled", "", true},
 		{"running", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"run_456","state":2}]}}`, "running", "", false},
-		{"different run", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"other","state":4}]}}`, "unknown", "安审失败 log_id=audit-log", false},
-		{"missing thread", `{}`, "unknown", "安审失败 log_id=audit-log", false},
-		{"null data", `null`, "unknown", "安审失败 log_id=audit-log", false},
-		{"malformed run", `{"thread":{"run_list":"invalid"}}`, "unknown", "安审失败 log_id=audit-log", false},
+		{"different run", `{"thread":{"thread_id":"thread_123","run_list":[{"run_id":"other","state":4}]}}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"missing thread", `{}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"null data", `null`, "unknown", "模拟接口错误 log_id=fixture-log", false},
+		{"malformed run", `{"thread":{"run_list":"invalid"}}`, "unknown", "模拟接口错误 log_id=fixture-log", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/api/biz/v1/skill/get_thread" {
 					t.Fatalf("unexpected path %s", r.URL.Path)
 				}
-				fmt.Fprintf(w, `{"ret":"2","errmsg":"安审失败","log_id":"audit-log","data":%s}`, tt.data)
+				fmt.Fprintf(w, `{"ret":"2","errmsg":"模拟接口错误","log_id":"fixture-log","data":%s}`, tt.data)
 			}))
 			defer server.Close()
 			var stdout, stderr bytes.Buffer
@@ -834,10 +834,10 @@ func TestQueryResultRunStateMapping(t *testing.T) {
 		{2, "running", false},
 		{4, "failed", true},
 		{5, "canceled", true},
-		{6, "unknown", false},
+		{6, "input_required", false},
 		{7, "running", false},
 		{8, "running", false},
-		{9, "unknown", false},
+		{9, "interrupted", true},
 		{99, "unknown", false},
 	}
 	for _, tt := range tests {

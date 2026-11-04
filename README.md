@@ -466,7 +466,11 @@ pippit-tool-cli query-result \
   --download-dir "./output"
 ```
 
-`query-result` 会查询指定 Run 并输出 JSON。Run 成功完成后下载视频和图片产物，`completed=true`、`status="succeeded"`，`videos` 和 `images` 中各包含 `download_url` 和 `output_path`；图片扩展名取自产物 `metadata.format`，缺省时兜底 `.png`。`status` 是机读状态，共 5 种取值：`running`（运行中，对应服务端已提交、处理中、生成中、程序中断等继续轮询的状态）、`succeeded`（成功）、`failed`（失败并填充 `error_message`）、`canceled`（已取消）、`unknown`（未指定、等待补充输入、人工交互中断等无法自动判定的状态）。`completed` 只表示是否到终态（成功、失败、已取消时为 true），判断成功失败请使用 `status`；`status` 和 `completed` 以目标 Run 的 `state` 为准，不因 `get_thread` 的非零 `ret` 覆盖为 `unknown`（例如安审失败 `ret=2` 且 Run 失败时输出 `failed`、`completed=true`）。无法解析或找不到目标 Run 时返回 `unknown`、`completed=false`；已知 Run 成功但产物缺失或下载失败时保留 `succeeded`、`completed=true`，并在 `error_message` 中报告下载错误。交付成功还须检查 `error_message` 为空和产物文件可用。
+`query-result` 查询指定 Run 并输出 JSON，成功后下载视频和图片。`status` 支持 `running`、`succeeded`、`failed`、`canceled`、`input_required`、`interrupted`、`unknown`。`completed` 仅表示终态：成功、失败、取消和人工交互中断结束（state=9）为 true；等待补充输入（state=6）为 `input_required`、false，需要停止自动轮询并等待交互。程序中断／等待工具回调（state=8）仍为 `running`。
+
+判断优先级：无论查询接口 `ret` 为多少，只要能解析指定 Run，就使用其 `state`；失败原因优先读取 `fail_reason.message/code`。没有目标 Run 时，仅按此接口已核实的返回识别终态：`ret=5` 且 `errmsg` 为 `创作失败` 或以 `创作失败：` 开头，返回 `failed`、true；`ret=5` 且 `errmsg` 为 `创作已取消`，返回 `canceled`、true。其他查询错误（包括 `ret=5` 的 `获取会话信息失败`、`ret=1/2`、鉴权／团队权限、网络及解析错误）返回 `unknown`、false 并保留错误与可用的 LogID，不推断任务失败。当前接口的 `ret=2` 是参数错误，不代表安审失败。未指定或未知 Run 状态保持 `unknown`。已解析 Run 的非零接口返回也记录到本地错误日志。
+
+Run 已成功但产物缺失或下载失败时，保留 `succeeded`、true，在 `error_message` 中报告错误，并保留此前已成功下载的 `videos` / `images`。媒体项包含 `download_url` 和 `output_path`；图片扩展名取自 `metadata.format`，缺省为 `.png`。完整交付仍须检查错误及所有目标文件，不能只看 `completed=true`。
 
 ## Adapter 接入边界
 

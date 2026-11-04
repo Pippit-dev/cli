@@ -98,3 +98,16 @@ jobs:
       - run: go test ./...
 
       - run: go vet ./...
+
+      - name: Build macOS CLI for response replay
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: go build -o verification/pippit-tool-cli .
+
+      - name: Upload response replay CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: query-result-cli-darwin-arm64
+          path: verification/pippit-tool-cli
+          retention-days: 3

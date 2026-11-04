@@ -28,7 +28,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 				})
 				if result == nil {
 					result = internalgen.NewQueryResultError(err, opts)
-				} else {
+				} else if result.ErrorMessage == "" {
 					result.ErrorMessage = err.Error()
 				}
 			}
