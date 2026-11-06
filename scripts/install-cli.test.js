@@ -377,10 +377,57 @@ function checkCanvasBootstrap() {
   assert(fs.existsSync(original.cli_path));
 }
 
+function checkCanvasBindingVersion() {
+  for (const platform of ["darwin", "linux", "win32"]) {
+    for (const version of ["1.0.49", "1.0.50-rc.1", "development"]) {
+      const fixture = bootstrapFixture({ platform, canvas: true });
+      const installed = load(bootstrap, fixture.options);
+      const cached = JSON.parse(installed.output[0]);
+      fs.writeFileSync(cached.cli_path, "old canvas binding fixture");
+      const execute = fixture.options.modules.child_process.execFileSync;
+      fixture.options.modules.child_process.execFileSync = (command, args, options) => {
+        if (args[0] === "--version" && fs.readFileSync(command, "utf8") === "old canvas binding fixture") {
+          return Buffer.from(`${version}\n`);
+        }
+        return execute(command, args, options);
+      };
+
+      // Ordinary media commands do not require the Canvas binding fix.
+      const mediaOptions = { ...fixture.options, process: { ...fixture.options.process, argv: ["node", bootstrap] } };
+      const media = load(bootstrap, mediaOptions);
+      assert.strictEqual(media.proc.exitCode, 0, media.errors.join("\n"));
+      assert.strictEqual(JSON.parse(media.output[0]).version, version);
+      assert.strictEqual(fixture.dirs.length, 1);
+
+      const upgraded = load(bootstrap, fixture.options);
+      assert.strictEqual(upgraded.proc.exitCode, 0, upgraded.errors.join("\n"));
+      assert.strictEqual(JSON.parse(upgraded.output[0]).version, "9.9.9", `Canvas must not reuse ${version}`);
+      assert.strictEqual(fixture.dirs.length, 2, "An old Canvas cache must upgrade once");
+      assert.strictEqual(load(bootstrap, fixture.options).proc.exitCode, 0);
+      assert.strictEqual(fixture.dirs.length, 2, "Reuse the upgraded Canvas cache");
+    }
+
+    for (const version of ["1.0.50", "1.0.53", "1.0.100", "1.1.0", "2.0.0"]) {
+      const fixture = bootstrapFixture({ platform, canvas: true, version });
+      const first = load(bootstrap, fixture.options);
+      assert.strictEqual(first.proc.exitCode, 0, first.errors.join("\n"));
+      assert.strictEqual(load(bootstrap, fixture.options).proc.exitCode, 0);
+      assert.strictEqual(fixture.dirs.length, 1, `Reuse compatible Canvas ${version}`);
+    }
+  }
+
+  const incompatible = bootstrapFixture({ canvas: true, version: "1.0.49" });
+  const failed = load(bootstrap, incompatible.options);
+  assert.strictEqual(failed.proc.exitCode, 1, "An incompatible latest package must fail");
+  assert.strictEqual(failed.output.length, 0);
+  assert.strictEqual(incompatible.dirs.length, 1, "Do not repeatedly install an incompatible latest package");
+}
+
 try {
   checkInstaller();
   checkBootstrap();
   checkCanvasBootstrap();
+  checkCanvasBindingVersion();
   const pkg = require("../package.json");
   assert(pkg.files.includes("scripts/install-cli.js"), "npm package must ship the CLI-only entry");
   console.log("CLI-only installer and Skill bootstrap checks passed");
