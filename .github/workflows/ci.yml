@@ -98,3 +98,17 @@ jobs:
       - run: go test ./...
 
       - run: go vet ./...
+
+      - name: Build macOS ARM64 CLI for integration checks
+        env:
+          CGO_ENABLED: "0"
+          GOOS: darwin
+          GOARCH: arm64
+        run: go build -trimpath -o dist/pippit-tool-cli .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pippit-tool-cli-darwin-arm64
+          path: dist/pippit-tool-cli
+          if-no-files-found: error
+          retention-days: 3
