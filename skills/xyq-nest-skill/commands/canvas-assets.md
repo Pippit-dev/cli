@@ -33,6 +33,22 @@ URL 导入前检查实际入口的 `--help` 含 `--url`；旧版缺少时按 [�
 
 媒体节点优先通过语义 `create_biz_node` 创建，`initialData` 只传 `pippitAssetId`：CLI 查询素材并填写真实云媒体 `assetId`。用 `update_asset.contentPatch` 或 `update_node_data.patch` 替换素材时也可只传新的 `pippitAssetId`。显式填写的 `assetId` 必须与素材查询结果匹配，否则返回 `INVALID_MEDIA_IDENTITY` 并拒绝写入。
 
+普通 `biz/image` 的素材绑定在同层 `content.pippitAssetId` 与 `content.assetId`。`content.appearanceInfo`、`content.sourceInfos` 属于角色/场景结构，不能套用于普通图片；角色/场景继续按各自领域命令及 schema 操作。
+
+以下仅用于核对保存后的节点结构，ID 占位符须替换为同空间真实查询结果，不作为完整写入请求直接执行：
+
+```json
+{"type":"biz/image","content":{"pippitAssetId":"PIPPIT_MATERIAL_ID","assetId":"CLOUD_IMAGE_ASSET_ID"}}
+```
+
+错误反例：同层绑定缺失，即使保存 ACK，也不是可用参考图：
+
+```json
+{"type":"biz/image","content":{"appearanceInfo":{"pippitAssetId":"PIPPIT_MATERIAL_ID","assetId":"CLOUD_IMAGE_ASSET_ID"}}}
+```
+
+可先创建不含绑定的图片空草稿；不能用 `generation`、`sourceInfos` 或手改“已上传”状态把空草稿视为素材已就绪。已有错绑数据先回读、核对真实素材，再在用户授权的编辑范围内修正，不自动迁移用户画布。
+
 `canvas upload` 顶层旧字段 `asset_id` 是保留兼容的 workspace/source ID，不能当节点媒体 ID；它与 `upload-file.asset_id` 的含义不同。`media_asset_id` 来自查询结果对应的 `Image/Video/Audio.asset_id`；缺失时不能用 `source_id`、`pippit_asset_id` 或画布节点 ID 补位。`node_asset_refs[].pippit_asset_id` 使用画布节点资产 ID。
 
 批量 `apply_mutations` 默认非原子执行：必须检查 `data.results` 中每一项的 `committed` / `aborted` 状态，保留已成功项，不重跑整批。需要任一失败时整批回滚，可显式传 `atomic: true`。

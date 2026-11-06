@@ -16,7 +16,7 @@ node "{baseDir}/scripts/ensure-cli.js"
 
 可选参数按实际任务检查帮助：URL 导入前核对所选入口 `upload-file --help` 或 `canvas upload --help` 含 `--url`，缺少时先更新到支持版本。安装脚本只检查必需命令，不因未使用的 URL 参数自动升级，也不证明服务端已部署 URL 导入能力。
 
-命令齐全则直接复用，不检查最新版本；不存在或缺少必需命令时，获取 `@pippit-dev/cli@latest`。PATH 旧版本缺少命令但缓存完整时复用缓存，避免每次升级。版本命令不能运行或检查超时则报告运行错误。
+命令齐全则直接复用，不检查最新版本；Canvas 另有下述最低版本要求。不存在、缺少必需命令或不满足 Canvas 最低版本时，获取 `@pippit-dev/cli@latest`。PATH 旧版本不兼容但缓存完整时复用缓存，避免每次升级。版本命令不能运行或检查超时则报告运行错误。
 
 需要安装时，脚本跳过 npm 生命周期脚本获取包，调用包内 `scripts/install-cli.js` 只安装 CLI。成功后缓存到 `~/.cache/pippit-tool-cli/xyq-skill/<平台>-<架构>/current`。不要求全局 npm 写入权限，也不安装或清理全局 Skill。
 
@@ -36,7 +36,9 @@ node "{baseDir}/scripts/ensure-cli.js"
 
 ## Canvas 运行时检查
 
-画布任务改用 `node "{baseDir}/scripts/ensure-cli.js" --canvas`。除原有检查外，再验证五个原生资产子命令的帮助，并通过同一个 npm 包的 Node 入口真实执行离线 `canvas command list`，确认运行时可加载且含基本查询与节点创建能力。该检查不登录、不访问画布、不写入远端。
+画布任务改用 `node "{baseDir}/scripts/ensure-cli.js" --canvas`。要求 CLI 至少为 `1.0.50` 正式版，该版本起原生 `canvas apply` 和 npm 语义运行时均包含普通图片绑定校验；仅有同名命令不能证明旧版包含该修复。旧版、预发布版或无法识别的版本按不兼容处理，先查缓存，再至多安装一次；最新包仍不兼容则报错。普通媒体任务不受此最低版本限制。
+
+除原有检查外，再验证五个原生资产子命令的帮助，并通过同一个 npm 包的 Node 入口真实执行离线 `canvas command list`，确认运行时可加载且含基本查询与节点创建能力。该检查不登录、不访问画布、不写入远端。保留当前 Skill 的实际路径及返回的 `version`、`cli_path`、`canvas_entry`，便于故障定位；`Pippit-CLI/1.0` 是 User-Agent，不能作为 CLI 发行版本。
 
 成功额外返回 `canvas_entry`，供 `node "CANVAS_ENTRY" canvas command ...` 使用；`cli_path` 仍用于原生命令。语义操作的实际支持范围以当前目录为准，检查通过不代表所有业务操作或服务端权限都可用。
 
