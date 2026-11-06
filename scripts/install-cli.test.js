@@ -414,6 +414,29 @@ function checkCanvasBindingVersion() {
       assert.strictEqual(load(bootstrap, fixture.options).proc.exitCode, 0);
       assert.strictEqual(fixture.dirs.length, 1, `Reuse compatible Canvas ${version}`);
     }
+
+    // Prefer a compatible cache over an old, otherwise complete npm package on PATH.
+    const fixture = bootstrapFixture({ platform, canvas: true });
+    const cached = JSON.parse(load(bootstrap, fixture.options).output[0]);
+    const oldPackage = path.join(fixture.npmDir, "old-package");
+    const oldBinary = path.join(oldPackage, "bin", platform === "win32" ? "pippit-tool-cli.exe" : "pippit-tool-cli");
+    fs.mkdirSync(path.dirname(oldBinary), { recursive: true });
+    fs.mkdirSync(path.join(oldPackage, "scripts"));
+    fs.writeFileSync(oldBinary, "old Canvas PATH binary");
+    fs.writeFileSync(path.join(oldPackage, "scripts/run.js"), "old npm entry");
+    fixture.options.process.env.PATH = path.dirname(oldBinary);
+    const execute = fixture.options.modules.child_process.execFileSync;
+    fixture.options.modules.child_process.execFileSync = (command, args, options) => {
+      if (command === oldBinary && args[0] === "--version") return Buffer.from("1.0.49\n");
+      return execute(command, args, options);
+    };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reused = load(bootstrap, fixture.options);
+      assert.strictEqual(reused.proc.exitCode, 0, reused.errors.join("\n"));
+      assert.strictEqual(JSON.parse(reused.output[0]).cli_path, cached.cli_path);
+      assert.strictEqual(fixture.dirs.length, 1, "Old PATH versions must not trigger repeated installs");
+    }
+    assert.strictEqual(fs.readFileSync(oldBinary, "utf8"), "old Canvas PATH binary");
   }
 
   const incompatible = bootstrapFixture({ canvas: true, version: "1.0.49" });

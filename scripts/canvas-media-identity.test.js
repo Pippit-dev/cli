@@ -148,8 +148,23 @@ async function main() {
         'invalid command reached apply',
       );
     }
+    for (const initialData of [
+      { appearanceInfo: { pippitAssetId, assetId } },
+      { pippitAssetId, appearanceInfo: { pippitAssetId } },
+      { sourceInfos: { [pippitAssetId]: { source: 'uploaded' } } },
+    ]) {
+      const rejected = await create(initialData);
+      assert.strictEqual(rejected.status, 1, rejected.output);
+      assert.strictEqual(JSON.parse(rejected.output).ok, false);
+      assert.match(rejected.output, /INVALID_MEDIA_IDENTITY/);
+      assert.strictEqual(
+        fs.readFileSync(log, 'utf8').trim().split('\n').length,
+        1,
+        'role/scene binding on an ordinary image reached apply',
+      );
+    }
     console.log(
-      'Canvas media identity runtime: Pippit-only input resolved; 4 wrong identities rejected before apply',
+      'Canvas media identity runtime: Pippit-only input resolved; wrong identities and image role/scene bindings rejected before apply',
     );
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

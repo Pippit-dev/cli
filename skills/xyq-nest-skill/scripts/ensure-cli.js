@@ -12,6 +12,18 @@ const REQUIRED_COMMANDS = [
   "generate-image", "generate-video", "video-super-resolution",
   "erase-video-subtitle", "get-credit-balance", "model list", "model describe",
 ];
+// v1.0.50 first ships ordinary-image binding guards in both Canvas entries.
+const MIN_CANVAS_VERSION = [1, 0, 50];
+
+function supportsCanvasBindings(version) {
+  const match = /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
+  if (!match) return false;
+  const parts = match.slice(1, 4).map(Number);
+  for (let i = 0; i < MIN_CANVAS_VERSION.length; i++) {
+    if (parts[i] !== MIN_CANVAS_VERSION[i]) return parts[i] > MIN_CANVAS_VERSION[i];
+  }
+  return true;
+}
 
 function npmCommand() {
   if (process.platform !== "win32") return ["npm", []];
@@ -79,6 +91,11 @@ function ensureCLI({ canvas = false } = {}) {
     const version = run(cliPath, ["--version"], "检查 CLI 版本", true).toString().trim();
     if (expectedVersion && version !== expectedVersion) {
       throw new Error(`CLI 版本 ${version} 与 npm 包版本 ${expectedVersion} 不一致。`);
+    }
+    if (canvas && !supportsCanvasBindings(version)) {
+      const failure = new Error(`Canvas 需要 CLI >=${MIN_CANVAS_VERSION.join(".")} 正式版以校验图片绑定，当前版本：${version}。`);
+      failure.missingCommand = "Canvas 图片绑定校验（CLI >=1.0.50 正式版）";
+      throw failure;
     }
     const commands = REQUIRED_COMMANDS.map((command) => command.split(" "));
     if (canvas) {
@@ -165,7 +182,7 @@ function ensureCLI({ canvas = false } = {}) {
 
 if (require.main === module) {
   if (process.argv.length === 3 && process.argv[2] === "--help") {
-    console.log("Usage: node ensure-cli.js [--canvas]\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。--canvas 额外验证画布原生命令和 npm 运行时，并返回 canvas_entry。");
+    console.log("Usage: node ensure-cli.js [--canvas]\n优先复用 PATH 或缓存中命令齐全的 CLI，不存在或缺少必需命令时安装 npm latest，成功输出 {cli_path, version} JSON。--canvas 要求 CLI >=1.0.50 正式版，额外验证画布原生命令和 npm 运行时，并返回 canvas_entry。");
   } else if (process.argv.length !== 2 && !(process.argv.length === 3 && process.argv[2] === "--canvas")) {
     console.error("不支持的参数。用法：node ensure-cli.js [--canvas]");
     process.exitCode = 1;
