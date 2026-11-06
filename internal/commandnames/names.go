@@ -11,5 +11,6 @@ const (
 	Help           = "help"
 	Model          = "model"
 	Watermark      = "watermark"
+	IP             = "ip"
 	DownloadResult = "download-result"
 )

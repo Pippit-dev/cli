@@ -120,6 +120,7 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	root.AddCommand(newDownloadResultCommand(stdout, stderr, runner))
 	root.AddCommand(newGetCreditBalanceCommand(stdout, stderr, runner))
 	root.AddCommand(newWatermarkCommand(stdout, stderr, runner))
+	root.AddCommand(newIPCommand(stdout, stderr, runner, policy))
 	root.AddCommand(newModelCommand(stdout, stderr, runner))
 	root.AddCommand(newMarketingCommand(stdout, stderr, runner, policy))
 	root.AddCommand(newGetThreadCommand(stdout, stderr, runner))
