@@ -30,7 +30,7 @@ func prepareCommandSpace(cmd *cobra.Command, runner *common.Runner, stderr io.Wr
 		top = top.Parent()
 	}
 	switch top.Name() {
-	case commandnames.Space, commandnames.Login, commandnames.Logout, commandnames.Status, commandnames.Update, commandnames.Completion, commandnames.Help, commandnames.DownloadResult, commandnames.Watermark:
+	case commandnames.Space, commandnames.Login, commandnames.Logout, commandnames.Status, commandnames.Update, commandnames.Completion, commandnames.Help, commandnames.DownloadResult, commandnames.Watermark, commandnames.IP:
 		return nil
 	}
 	raw, _ := cmd.Flags().GetString("space-context")

@@ -77,6 +77,14 @@ pippit-tool-cli get-credit-balance --team-id 0      # 仅本次使用个人
 
 `space list/use TEAM_ID` 依赖 API 部署 `/api/biz/v1/skill/get_lite_team_list` 的 AK 适配入口，业务团队使用还依赖对应 API 团队权限实现；不直连 commerce Web 接口。宿主 Agent 的选择、任务恢复与不回退规则已写入三个 Skill 的 `Space Selection` 章节。
 
+## 查询出口 IP
+
+```bash
+pippit-tool-cli ip
+```
+
+输出 `{"client_ip":"..."}`，返回服务端看到的出口 IP，无需登录或 AK；沿用 `config.toml` 的 API 地址与 PPE 配置。AK 的 IP 白名单仍在网页密钥管理页设置。
+
 ## 账号 AIGC 水印设置
 
 ```bash
