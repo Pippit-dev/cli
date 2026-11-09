@@ -50,7 +50,7 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	flags := cmd.Flags()
-	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
+	flags.StringVar(&opts.Source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao, workbuddy, codex)")
 	flags.StringVar(&opts.Prompt, "prompt", "", "video generation prompt; may be omitted when rendering a draft")
 	flags.StringArrayVar(&opts.ImagePaths, "image", nil, "local reference image path; repeat for multiple images")
 	flags.StringArrayVar(&opts.VideoPaths, "video", nil, "local reference video path; repeat for multiple videos")

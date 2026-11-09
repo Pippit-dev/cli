@@ -95,8 +95,12 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 			versioncheck.Check(cmd.Context(), stderr, version.BuildVersion(), cmd.Name())
 		}
 		flag := cmd.Flags().Lookup("source")
-		if flag != nil && (!flag.Changed || strings.TrimSpace(flag.Value.String()) == "") {
-			if source := common.DetectHostSource(); source != "" {
+		if flag != nil {
+			source := common.NormalizeHostSource(flag.Value.String())
+			if source == "" {
+				source = common.DetectHostSource()
+			}
+			if source != flag.Value.String() {
 				if err := cmd.Flags().Set("source", source); err != nil {
 					return err
 				}

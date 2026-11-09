@@ -9,6 +9,12 @@ func TestDetectHostSource(t *testing.T) {
 		want string
 	}{
 		{"unknown", nil, ""},
+		{"doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private", "DOUBAO_OFFICE_APP_ID": "app"}, "doubao"},
+		{"incomplete doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private"}, ""},
+		{"workbuddy desktop", map[string]string{"CODEBUDDY_HOST": "workbuddy-desktop"}, "workbuddy"},
+		{"other codebuddy", map[string]string{"CODEBUDDY_HOST": "other"}, ""},
+		{"desktop conflict", map[string]string{"CODEBUDDY_HOST": "workbuddy-desktop", "CODEX_THREAD_ID": "id"}, ""},
+		{"office alias", map[string]string{"PIPPIT_CLI_SOURCE": " doubao_office "}, "doubao"},
 		{"explicit host", map[string]string{"PIPPIT_CLI_SOURCE": " workbuddy ", "CODEX_THREAD_ID": "secret"}, "workbuddy"},
 		{"codex", map[string]string{"CODEX_THREAD_ID": "secret", "CODEX_SESSION_ID": "other-secret"}, "codex"},
 		{"claude", map[string]string{"CLAUDECODE": "1"}, "claude_code"},

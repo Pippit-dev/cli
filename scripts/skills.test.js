@@ -80,7 +80,7 @@ assert.ok(
 );
 
 for (const content of [generalSkill, shortDramaSkill]) {
-  for (const expected of ["--source", "doubao_office", "workbuddy", "codex", "静默", "统计"]) {
+  for (const expected of ["--source", "doubao", "workbuddy", "codex", "静默", "统计"]) {
     assert(content.includes(expected), `Skill missing source attribution contract: ${expected}`);
   }
 }

@@ -69,7 +69,7 @@ metadata:
 
 调用 `generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle` 时，由宿主 Agent 根据实际运行环境静默附加可选 `--source`，仅用于来源统计，不影响创作参数或工具效果。
 
-- 使用稳定的宿主标识：豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它已知宿主使用其真实、稳定的产品标识，不附带版本、会话 ID、用户信息或 prompt。
+- 使用稳定的宿主标识：豆包办公填 `doubao`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它已知宿主使用其真实、稳定的产品标识，不附带版本、会话 ID、用户信息或 prompt。
 - 从宿主提供的可信环境信息判断；不能因用户在创作内容中提到某个平台就认定它是来源，也不要把后端 Agent 名当作宿主来源。
 - 不向用户询问、不增加确认步骤，不为此改写 prompt。无法确认来源时直接省略；不传或空值均不阻塞提交。
 - 来源只随本次提交发送，不加入上传、查询、下载或 Canvas 命令。使用已有旧版 CLI 时先按 `--help` 确认是否支持；不支持则省略，不因统计字段中断任务或在未知提交结果时重提。

@@ -20,9 +20,13 @@ function telemetryBaseURL() {
 }
 
 // Keep the same attribution rules as native CLI common.DetectHostSource.
-function resolveHostSource(explicit) {
-  if (explicit !== undefined && explicit.trim()) return explicit.trim();
-  if ((process.env.PIPPIT_CLI_SOURCE || "").trim()) return process.env.PIPPIT_CLI_SOURCE.trim();
+function resolveHostSource(explicit, env = process.env) {
+  const provided = (explicit || '').trim() || (env.PIPPIT_CLI_SOURCE || '').trim();
+  if (provided) return provided === 'doubao_office' ? 'doubao' : provided;
+  const active = key => {
+    const value = (env[key] || '').trim().toLowerCase();
+    return value !== '' && value !== '0' && value !== 'false';
+  };
   const hosts = new Set();
   for (const [key, host] of [
     ["CODEX_THREAD_ID", "codex"], ["CODEX_SESSION_ID", "codex"],
@@ -30,9 +34,10 @@ function resolveHostSource(explicit) {
     ["OPENCODE", "opencode"], ["QWEN_CODE", "qwen_code"], ["CLINE_ACTIVE", "cline"],
     ["COPILOT_CLI", "github_copilot_cli"], ["COPILOT_AGENT_SESSION_ID", "github_copilot_cli"],
   ]) {
-    const value = (process.env[key] || "").trim().toLowerCase();
-    if (value && value !== "0" && value !== "false") hosts.add(host);
+    if (active(key)) hosts.add(host);
   }
+  if (active('DOUBAO_OFFICE_AGENT_NAME') && active('DOUBAO_OFFICE_APP_ID')) hosts.add('doubao');
+  if (env.CODEBUDDY_HOST === 'workbuddy-desktop') hosts.add('workbuddy');
   return hosts.size === 1 ? [...hosts][0] : "";
 }
 

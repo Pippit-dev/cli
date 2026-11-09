@@ -46,7 +46,7 @@ func newMarketingAction(action string, stdout, stderr io.Writer, runner *common.
 	command.Flags().DurationVar(&timeout, "timeout", 60*time.Second, "request deadline (e.g. 60s)")
 	switch action {
 	case "generate":
-		command.Flags().StringVar(&source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao_office, workbuddy, codex)")
+		command.Flags().StringVar(&source, "source", "", "optional host agent/platform identifier for statistics only; filled silently by the host agent (e.g. doubao, workbuddy, codex)")
 		command.Flags().StringVar(&requestFile, "request", "", "request JSON file, or - for stdin")
 		command.Flags().BoolVar(&execute, "execute", false, "submit generation; otherwise preview only")
 	case "query":

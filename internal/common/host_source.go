@@ -13,9 +13,13 @@ func DetectHostSource() string {
 
 func detectHostSource(getenv func(string) string) string {
 	if source := strings.TrimSpace(getenv("PIPPIT_CLI_SOURCE")); source != "" {
-		return source
+		return NormalizeHostSource(source)
 	}
-	source := ""
+	active := func(key string) bool {
+		value := strings.ToLower(strings.TrimSpace(getenv(key)))
+		return value != "" && value != "0" && value != "false"
+	}
+	hosts := make(map[string]bool)
 	for _, marker := range []struct{ key, host string }{
 		{"CODEX_THREAD_ID", "codex"},
 		{"CODEX_SESSION_ID", "codex"},
@@ -28,14 +32,29 @@ func detectHostSource(getenv func(string) string) string {
 		{"COPILOT_CLI", "github_copilot_cli"},
 		{"COPILOT_AGENT_SESSION_ID", "github_copilot_cli"},
 	} {
-		value := strings.ToLower(strings.TrimSpace(getenv(marker.key)))
-		if value == "" || value == "0" || value == "false" {
-			continue
+		if active(marker.key) {
+			hosts[marker.host] = true
 		}
-		if source != "" && source != marker.host {
-			return ""
+	}
+	if active("DOUBAO_OFFICE_AGENT_NAME") && active("DOUBAO_OFFICE_APP_ID") {
+		hosts["doubao"] = true
+	}
+	if getenv("CODEBUDDY_HOST") == "workbuddy-desktop" {
+		hosts["workbuddy"] = true
+	}
+	if len(hosts) == 1 {
+		for host := range hosts {
+			return host
 		}
-		source = marker.host
+	}
+	return ""
+}
+
+// NormalizeHostSource maps the historical office alias to the analytics value.
+func NormalizeHostSource(source string) string {
+	source = strings.TrimSpace(source)
+	if source == "doubao_office" {
+		return "doubao"
 	}
 	return source
 }

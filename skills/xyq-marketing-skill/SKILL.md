@@ -61,7 +61,7 @@ node scripts/marketing.js balance
 
 ## Source Attribution
 
-仅营销生成命令（`marketing generate` 或 `marketing.js generate`）静默附加可选 `--source`，由 CLI 映射为请求体 `platform`，不写入创作文本或请求文件。豆包办公填 `doubao_office`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它宿主使用可信环境中的真实稳定标识，未知则省略，不询问用户。不附带版本、会话 ID、用户信息或 prompt。首尾空白去除，未传或空值时先读取 `PIPPIT_CLI_SOURCE`、再尝试已核实的宿主运行标记，仍无法识别时省略；首次生成和同一会话继续提交均适用。上传、查询、下载、余额不附加。旧 CLI 不支持时省略，不为来源统计重提任务。
+仅营销生成命令（`marketing generate` 或 `marketing.js generate`）静默附加可选 `--source`，由 CLI 映射为请求体 `platform`，不写入创作文本或请求文件。豆包办公填 `doubao`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它宿主使用可信环境中的真实稳定标识，未知则省略，不询问用户。不附带版本、会话 ID、用户信息或 prompt。首尾空白去除，未传或空值时先读取 `PIPPIT_CLI_SOURCE`、再尝试已核实的宿主运行标记，仍无法识别时省略；首次生成和同一会话继续提交均适用。上传、查询、下载、余额不附加。旧 CLI 不支持时省略，不为来源统计重提任务。
 
 优先从宿主的系统身份、当前工具运行环境和明确的平台元数据确认真实宿主，并在每次提交主动填写 `--source`；不要仅因字段可选就跳过。未传 `--source`、显式空值或纯空白时，CLI 依次尝试 `PIPPIT_CLI_SOURCE` 和已核实的宿主运行标记。只上报稳定的平台名，不上报标记中的会话 ID；来源冲突或仍无法确认则省略，不询问用户、不扫描登录凭据或安装目录。
 

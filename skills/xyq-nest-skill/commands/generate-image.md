@@ -36,4 +36,4 @@ pippit-tool-cli generate-image --prompt "用户原始描述" --model "智能图�
 
 成功返回 JSON 中的 `thread_id`、`run_id`、`web_thread_link`；随后执行 [异步结果与媒体交付](../workflows/async-delivery.md)。参数错误、上传失败或服务端拒绝时停止并说明原因，不切换模型或重新提交。仅在已明确失败、问题已修正且原授权仍适用时重试；提交结果不确定时避免重复收费。
 
-`--source` 是可选来源统计参数，由宿主 Agent 根据真实环境静默填写（如 `doubao_office`、`workbuddy`、`codex`）；来源不明时省略，不询问用户，不改变 prompt 或创作参数。详见 [宿主来源统计](../SKILL.md#宿主来源统计)。
+`--source` 是可选来源统计参数，由宿主 Agent 根据真实环境静默填写（如 `doubao`、`workbuddy`、`codex`）；来源不明时省略，不询问用户，不改变 prompt 或创作参数。详见 [宿主来源统计](../SKILL.md#宿主来源统计)。
