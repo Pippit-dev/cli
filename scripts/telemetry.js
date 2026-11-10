@@ -20,7 +20,7 @@ function telemetryBaseURL() {
 }
 
 // Keep the same attribution rules as native CLI common.DetectHostSource.
-function resolveHostSource(explicit, env = process.env) {
+function resolveHostSource(explicit, env = process.env, binary = () => require('path').resolve(__dirname, '../bin', process.platform === 'win32' ? 'pippit-tool-cli.exe' : 'pippit-tool-cli')) {
   const provided = (explicit || '').trim() || (env.PIPPIT_CLI_SOURCE || '').trim();
   if (provided) return provided === 'doubao_office' ? 'doubao' : provided;
   const active = key => {
@@ -39,14 +39,15 @@ function resolveHostSource(explicit, env = process.env) {
   if (active('DOUBAO_OFFICE_AGENT_NAME') && active('DOUBAO_OFFICE_APP_ID')) hosts.add('doubao');
   if ((env.DREAMINA_CLI_CALLER_AGENT || '').trim().toLowerCase() === 'trae') hosts.add('trae');
   if (env.CODEBUDDY_HOST === 'workbuddy-desktop') hosts.add('workbuddy');
+  if (!hosts.size && !(env.DREAMINA_CLI_CALLER_AGENT || '').trim() && require('../skills/xyq-marketing-skill/scripts/trae-host').traeCaller(binary)) return 'trae';
   return hosts.size === 1 ? [...hosts][0] : "";
 }
 
-function reportBundledSkillTelemetry(event, source, hostPlatform) {
+function reportBundledSkillTelemetry(event, source, hostPlatform, binary) {
   if (process.env.PIPPIT_CLI_DISABLE_TELEMETRY === "1") {
     return;
   }
-  hostPlatform = resolveHostSource(hostPlatform);
+  hostPlatform = resolveHostSource(hostPlatform, process.env, binary);
   for (const skillName of SKILL_NAMES) {
     reportSkillTelemetry({
       event,

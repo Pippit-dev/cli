@@ -3,15 +3,17 @@ package common
 import (
 	"os"
 	"strings"
+
+	"github.com/Pippit-dev/pippit-cli/internal/trae"
 )
 
 // DetectHostSource uses explicit environment attribution before runtime markers.
 // It never reads credentials, session contents, process arguments or installed apps.
 func DetectHostSource() string {
-	return detectHostSource(os.Getenv)
+	return detectHostSource(os.Getenv, trae.Ancestor)
 }
 
-func detectHostSource(getenv func(string) string) string {
+func detectHostSource(getenv func(string) string, traeAncestor func() bool) string {
 	if source := strings.TrimSpace(getenv("PIPPIT_CLI_SOURCE")); source != "" {
 		return NormalizeHostSource(source)
 	}
@@ -44,6 +46,9 @@ func detectHostSource(getenv func(string) string) string {
 	}
 	if getenv("CODEBUDDY_HOST") == "workbuddy-desktop" {
 		hosts["workbuddy"] = true
+	}
+	if len(hosts) == 0 && strings.TrimSpace(getenv("DREAMINA_CLI_CALLER_AGENT")) == "" && traeAncestor != nil && traeAncestor() {
+		return "trae"
 	}
 	if len(hosts) == 1 {
 		for host := range hosts {

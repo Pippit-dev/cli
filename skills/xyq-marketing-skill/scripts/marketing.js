@@ -229,7 +229,7 @@ query 输出 API 原始响应；有 --output-dir 时成功结果附带 downloade
 `;
 
 // Keep runtime marker semantics aligned with internal/common/host_source.go.
-function resolveHostSource(explicit, env = process.env) {
+function resolveHostSource(explicit, env = process.env, binary = () => resolveCLI().command) {
   const provided = (explicit || '').trim() || (env.PIPPIT_CLI_SOURCE || '').trim();
   if (provided) return provided === 'doubao_office' ? 'doubao' : provided;
   const active = key => {
@@ -248,6 +248,7 @@ function resolveHostSource(explicit, env = process.env) {
   if (active('DOUBAO_OFFICE_AGENT_NAME') && active('DOUBAO_OFFICE_APP_ID')) hosts.add('doubao');
   if ((env.DREAMINA_CLI_CALLER_AGENT || '').trim().toLowerCase() === 'trae') hosts.add('trae');
   if (env.CODEBUDDY_HOST === 'workbuddy-desktop') hosts.add('workbuddy');
+  if (!hosts.size && !(env.DREAMINA_CLI_CALLER_AGENT || '').trim() && require('./trae-host').traeCaller(binary)) return 'trae';
   return hosts.size === 1 ? [...hosts][0] : '';
 }
 

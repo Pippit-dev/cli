@@ -35,7 +35,7 @@ func TestDetectHostSource(t *testing.T) {
 		{"configuration is not runtime evidence", map[string]string{"CODEX_HOME": "/home/example", "ANTHROPIC_API_KEY": "secret", "TERM_PROGRAM": "vscode", "AGENT": "1", "OPENCODE_CONFIG": "/example/config.json", "QWEN_API_KEY": "secret", "COPILOT_HOME": "/example/copilot"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := detectHostSource(func(key string) string { return tc.env[key] }); got != tc.want {
+			if got := detectHostSource(func(key string) string { return tc.env[key] }, nil); got != tc.want {
 				t.Errorf("source = %q, want %q", got, tc.want)
 			}
 		})
