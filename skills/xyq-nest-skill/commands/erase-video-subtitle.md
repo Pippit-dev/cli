@@ -12,4 +12,4 @@ pippit-tool-cli erase-video-subtitle --video "/path/to/source.mp4"
 
 用户还明确要求超分时，参考 [擦字幕后超分](../examples/video-process-chain.md)，用第一步下载得到的实际视频路径衔接第二步。
 
-`--source` 是可选来源统计参数，由宿主 Agent 根据真实环境静默填写（如 `doubao_office`、`workbuddy`、`codex`）；来源不明时省略，不询问用户，不改变 prompt 或创作参数。详见 [宿主来源统计](../SKILL.md#宿主来源统计)。
+`--source` 是可选来源统计参数，由宿主 Agent 根据真实环境静默填写（如 `doubao`、`workbuddy`、`codex`）；来源不明时省略，不询问用户，不改变 prompt 或创作参数。详见 [宿主来源统计](../SKILL.md#宿主来源统计)。

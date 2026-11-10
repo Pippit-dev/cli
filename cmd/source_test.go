@@ -16,7 +16,7 @@ import (
 )
 
 func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
-	for _, key := range []string{"PIPPIT_CLI_SOURCE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "OPENCODE", "QWEN_CODE", "CLINE_ACTIVE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID"} {
+	for _, key := range []string{"PIPPIT_CLI_SOURCE", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDECODE", "CURSOR_AGENT", "GEMINI_CLI", "OPENCODE", "QWEN_CODE", "CLINE_ACTIVE", "COPILOT_CLI", "COPILOT_AGENT_SESSION_ID", "DOUBAO_OFFICE_AGENT_NAME", "DOUBAO_OFFICE_APP_ID", "CODEBUDDY_HOST", "DREAMINA_CLI_CALLER_AGENT"} {
 		t.Setenv(key, "")
 	}
 
@@ -98,7 +98,7 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 				want  string
 			}{
 				{[]string{"--source", "workbuddy"}, "workbuddy"},
-				{[]string{"--source", " doubao_office "}, "doubao_office"},
+				{[]string{"--source", " doubao_office "}, "doubao"},
 				{[]string{"--source", "codex"}, "codex"},
 				{[]string{"--source", "新的宿主"}, "新的宿主"},
 				{[]string{"--source", ""}, ""},
@@ -124,6 +124,13 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 					}
 				})
 			}
+			t.Run("trae_environment", func(t *testing.T) {
+				t.Setenv("DREAMINA_CLI_CALLER_AGENT", "trae")
+				execute()
+				if received["platform"] != "trae" {
+					t.Fatalf("platform = %v", received["platform"])
+				}
+			})
 			t.Run("host_environment", func(t *testing.T) {
 				t.Setenv("CODEX_THREAD_ID", "session-must-not-be-reported")
 				execute()
@@ -140,7 +147,7 @@ func TestSkillSubmitSourcePreservesCreativeRequest(t *testing.T) {
 					t.Error("explicit environment must win")
 				}
 				execute("--source", "doubao_office")
-				if received["platform"] != "doubao_office" {
+				if received["platform"] != "doubao" {
 					t.Error("explicit flag must win")
 				}
 				for _, flags := range [][]string{{"--source", ""}, {"--source", " \t "}, {"--source="}, {"--source=codex", "--source="}} {

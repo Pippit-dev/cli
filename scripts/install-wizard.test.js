@@ -44,7 +44,7 @@ function installFixture(args, source, retry = false, environment = {}) {
 }
 for (const [args, env, want] of [
   [[], undefined, ''], [[], ' workbuddy ', 'workbuddy'],
-  [['--source', ' doubao_office '], 'workbuddy', 'doubao_office'],
+  [['--source', ' doubao_office '], 'workbuddy', 'doubao'],
   [['--source=custom-host'], undefined, 'custom-host'],
   [['--source', ''], 'workbuddy', 'workbuddy'], [['--source=  '], 'workbuddy', 'workbuddy'],
 ]) {
@@ -91,6 +91,12 @@ console.log('Install source forwarding, precedence, omission, retry and telemetr
 
 // Exercise the actual install entry through JSON serialization; no real installation/network.
 for (const [args, env, want] of [
+  [[], { DREAMINA_CLI_CALLER_AGENT: ' Trae ' }, 'trae'],
+  [[], { DREAMINA_CLI_CALLER_AGENT: 'trae', CURSOR_AGENT: '1' }, undefined],
+  [[], { DOUBAO_OFFICE_AGENT_NAME: 'private-id', DOUBAO_OFFICE_APP_ID: 'app' }, 'doubao'],
+  [[], { DOUBAO_OFFICE_AGENT_NAME: 'private-id' }, undefined],
+  [[], { CODEBUDDY_HOST: 'workbuddy-desktop' }, 'workbuddy'],
+  [[], { CODEBUDDY_HOST: 'workbuddy-desktop', CURSOR_AGENT: '1' }, undefined],
   [[], { CODEX_THREAD_ID: 'private-id' }, 'codex'],
   [[], { CODEX_SESSION_ID: 'private-id', CODEX_THREAD_ID: 'another-id' }, 'codex'],
   [[], { CLAUDECODE: '1' }, 'claude_code'],
@@ -103,7 +109,7 @@ for (const [args, env, want] of [
   [[], { COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
   [[], { COPILOT_CLI: '1', COPILOT_AGENT_SESSION_ID: 'private-id' }, 'github_copilot_cli'],
   [[], { PIPPIT_CLI_SOURCE: ' workbuddy ', CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
-  [['--source= doubao_office '], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
+  [['--source= doubao_office '], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'doubao'],
   [['--source', ''], { PIPPIT_CLI_SOURCE: 'workbuddy', CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
   [['--source=  '], { CODEX_THREAD_ID: 'private-id' }, 'codex'],
   [['--source=workbuddy', '--source='], { QWEN_CODE: '1' }, 'qwen_code'],

@@ -9,6 +9,14 @@ func TestDetectHostSource(t *testing.T) {
 		want string
 	}{
 		{"unknown", nil, ""},
+		{"trae", map[string]string{"DREAMINA_CLI_CALLER_AGENT": " Trae "}, "trae"},
+		{"trae conflict", map[string]string{"DREAMINA_CLI_CALLER_AGENT": "trae", "CURSOR_AGENT": "1"}, ""},
+		{"doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private", "DOUBAO_OFFICE_APP_ID": "app"}, "doubao"},
+		{"incomplete doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private"}, ""},
+		{"workbuddy desktop", map[string]string{"CODEBUDDY_HOST": "workbuddy-desktop"}, "workbuddy"},
+		{"other codebuddy", map[string]string{"CODEBUDDY_HOST": "other"}, ""},
+		{"desktop conflict", map[string]string{"CODEBUDDY_HOST": "workbuddy-desktop", "CODEX_THREAD_ID": "id"}, ""},
+		{"office alias", map[string]string{"PIPPIT_CLI_SOURCE": " doubao_office "}, "doubao"},
 		{"explicit host", map[string]string{"PIPPIT_CLI_SOURCE": " workbuddy ", "CODEX_THREAD_ID": "secret"}, "workbuddy"},
 		{"codex", map[string]string{"CODEX_THREAD_ID": "secret", "CODEX_SESSION_ID": "other-secret"}, "codex"},
 		{"claude", map[string]string{"CLAUDECODE": "1"}, "claude_code"},
@@ -27,7 +35,7 @@ func TestDetectHostSource(t *testing.T) {
 		{"configuration is not runtime evidence", map[string]string{"CODEX_HOME": "/home/example", "ANTHROPIC_API_KEY": "secret", "TERM_PROGRAM": "vscode", "AGENT": "1", "OPENCODE_CONFIG": "/example/config.json", "QWEN_API_KEY": "secret", "COPILOT_HOME": "/example/copilot"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := detectHostSource(func(key string) string { return tc.env[key] }); got != tc.want {
+			if got := detectHostSource(func(key string) string { return tc.env[key] }, nil); got != tc.want {
 				t.Errorf("source = %q, want %q", got, tc.want)
 			}
 		})

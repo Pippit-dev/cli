@@ -13,7 +13,11 @@ async function test() {
     [' workbuddy ', { CODEX_THREAD_ID: 'private-id' }, 'workbuddy'],
     ['', { PIPPIT_CLI_SOURCE: 'codex' }, 'codex'],
     ['  ', { OPENCODE: '1' }, 'opencode'],
-    [undefined, { PIPPIT_CLI_SOURCE: ' doubao_office ', CODEX_THREAD_ID: 'private-id' }, 'doubao_office'],
+    [undefined, { PIPPIT_CLI_SOURCE: ' doubao_office ', CODEX_THREAD_ID: 'private-id' }, 'doubao'],
+    [undefined, { DOUBAO_OFFICE_AGENT_NAME: 'private-id', DOUBAO_OFFICE_APP_ID: 'app' }, 'doubao'],
+    [undefined, { DOUBAO_OFFICE_AGENT_NAME: 'private-id' }, ''],
+    [undefined, { CODEBUDDY_HOST: 'workbuddy-desktop' }, 'workbuddy'],
+    [undefined, { CODEBUDDY_HOST: 'workbuddy-desktop', CURSOR_AGENT: '1' }, ''],
     [undefined, { CODEX_THREAD_ID: 'private-id', CODEX_SESSION_ID: 'private-session' }, 'codex'],
     [undefined, { CLAUDECODE: '1' }, 'claude_code'],
     [undefined, { CURSOR_AGENT: '1' }, 'cursor'],
@@ -116,11 +120,12 @@ async function test() {
     await main(['generate', '--request', file, '--source', '  '], { out: line => blankPreview.push(JSON.parse(line)), clientFactory: previewFactory });
     assert.strictEqual(blankPreview[0].body.platform, 'workbuddy');
     delete process.env.PIPPIT_CLI_SOURCE;
-    for (const [key, host] of [
+    for (const [key, host, value = 'private-id'] of [
+      ['DREAMINA_CLI_CALLER_AGENT', 'trae', 'Trae'],
       ['OPENCODE', 'opencode'], ['QWEN_CODE', 'qwen_code'], ['CLINE_ACTIVE', 'cline'],
       ['COPILOT_CLI', 'github_copilot_cli'], ['COPILOT_AGENT_SESSION_ID', 'github_copilot_cli'],
     ]) {
-      process.env[key] = 'private-id';
+      process.env[key] = value;
       const preview = [];
       await main(['generate', '--request', file, '--source', ''], { out: line => preview.push(JSON.parse(line)), clientFactory: previewFactory });
       assert.strictEqual(preview[0].body.platform, host);

@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { isWindows, run, runSilent } = require('./platform');
-const { DEFAULT_PKG, installGlobalPackageSkills } = require('./skills');
+const { DEFAULT_PKG, globalPackageRoot, installGlobalPackageSkills } = require('./skills');
 const { reportBundledSkillTelemetry } = require('./telemetry');
 
 const VERSION = require('../package.json').version.replace(/-.*$/, '');
@@ -112,7 +112,7 @@ function main(args = process.argv.slice(2)) {
   }
 
   console.log(`pippit-tool-cli is ready: ${bin}`);
-  reportBundledSkillTelemetry('install', 'npx_install', source);
+  reportBundledSkillTelemetry('install', 'npx_install', source, () => path.join(globalPackageRoot(DEFAULT_PKG), 'bin', isWindows ? 'pippit-tool-cli.exe' : 'pippit-tool-cli'));
   console.log('Try: pippit-tool-cli short-drama +submit-run --message "写一个短剧开头"');
 }
 
