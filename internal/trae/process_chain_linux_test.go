@@ -15,12 +15,8 @@ func TestNativeTraeParent(t *testing.T) {
 		return
 	}
 	// Use a real parent executable and leave the shell alive until the child exits.
-	shell, err := os.ReadFile("/bin/sh")
-	if err != nil {
-		t.Fatal(err)
-	}
 	parent := filepath.Join(t.TempDir(), "traex")
-	if err := os.WriteFile(parent, shell, 0700); err != nil {
+	if err := os.Symlink("/bin/sh", parent); err != nil {
 		t.Fatal(err)
 	}
 	testBinary, err := os.Executable()

@@ -35,7 +35,7 @@ func walk(ctx context.Context, pid int, lookup func(context.Context, int) (int, 
 		default:
 			if strings.Contains(p, "/trae.app/") || strings.Contains(p, "/trae cn.app/") ||
 				strings.Contains(p, "/programs/trae cn/") || strings.HasSuffix(p, "/.local/bin/coco") ||
-				strings.Contains(name, "agent-tool-host") || (strings.Contains(name, "trae") && strings.Contains(name, "helper")) {
+				(strings.Contains(p, "/agent-tool-host/") || name == "agent-tool-host") || (strings.Contains(name, "trae") && strings.Contains(name, "helper")) {
 				return true
 			}
 			for _, other := range []string{"/cursor.app/", "/workbuddy.app/", "/chatgpt.app/", "/doubaowork.app/", "/.codex/", "/@openai/codex/", "/@anthropic-ai/claude-code/"} {

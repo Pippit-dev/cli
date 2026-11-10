@@ -23,11 +23,18 @@ func parentExecutable(_ context.Context, pid int) (int, string) {
 		return 0, ""
 	}
 	parent, _ := strconv.Atoi(fields[1])
+	// The kernel keeps a launch name even when /proc/PID/exe resolves a symlink.
+	start := strings.IndexByte(line, '(')
+	comm := ""
+	if start >= 0 && start < end {
+		comm = line[start+1 : end]
+	}
+	if strings.EqualFold(comm, "traex") || strings.EqualFold(comm, "trae cn") {
+		return parent, comm
+	}
 	exe, err := os.Readlink(dir + "/exe")
 	if err != nil {
-		if start := strings.IndexByte(line, '('); start >= 0 && start < end {
-			exe = line[start+1 : end]
-		}
+		exe = comm
 	}
 	return parent, exe
 }
