@@ -246,6 +246,7 @@ function resolveHostSource(explicit, env = process.env) {
     if (active(key)) hosts.add(host);
   }
   if (active('DOUBAO_OFFICE_AGENT_NAME') && active('DOUBAO_OFFICE_APP_ID')) hosts.add('doubao');
+  if ((env.DREAMINA_CLI_CALLER_AGENT || '').trim().toLowerCase() === 'trae') hosts.add('trae');
   if (env.CODEBUDDY_HOST === 'workbuddy-desktop') hosts.add('workbuddy');
   return hosts.size === 1 ? [...hosts][0] : '';
 }

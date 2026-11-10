@@ -9,6 +9,8 @@ func TestDetectHostSource(t *testing.T) {
 		want string
 	}{
 		{"unknown", nil, ""},
+		{"trae", map[string]string{"DREAMINA_CLI_CALLER_AGENT": " Trae "}, "trae"},
+		{"trae conflict", map[string]string{"DREAMINA_CLI_CALLER_AGENT": "trae", "CURSOR_AGENT": "1"}, ""},
 		{"doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private", "DOUBAO_OFFICE_APP_ID": "app"}, "doubao"},
 		{"incomplete doubao", map[string]string{"DOUBAO_OFFICE_AGENT_NAME": "private"}, ""},
 		{"workbuddy desktop", map[string]string{"CODEBUDDY_HOST": "workbuddy-desktop"}, "workbuddy"},

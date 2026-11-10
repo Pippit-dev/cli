@@ -39,6 +39,9 @@ func detectHostSource(getenv func(string) string) string {
 	if active("DOUBAO_OFFICE_AGENT_NAME") && active("DOUBAO_OFFICE_APP_ID") {
 		hosts["doubao"] = true
 	}
+	if strings.EqualFold(strings.TrimSpace(getenv("DREAMINA_CLI_CALLER_AGENT")), "trae") {
+		hosts["trae"] = true
+	}
 	if getenv("CODEBUDDY_HOST") == "workbuddy-desktop" {
 		hosts["workbuddy"] = true
 	}

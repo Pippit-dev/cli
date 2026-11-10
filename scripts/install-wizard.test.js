@@ -91,6 +91,8 @@ console.log('Install source forwarding, precedence, omission, retry and telemetr
 
 // Exercise the actual install entry through JSON serialization; no real installation/network.
 for (const [args, env, want] of [
+  [[], { DREAMINA_CLI_CALLER_AGENT: ' Trae ' }, 'trae'],
+  [[], { DREAMINA_CLI_CALLER_AGENT: 'trae', CURSOR_AGENT: '1' }, undefined],
   [[], { DOUBAO_OFFICE_AGENT_NAME: 'private-id', DOUBAO_OFFICE_APP_ID: 'app' }, 'doubao'],
   [[], { DOUBAO_OFFICE_AGENT_NAME: 'private-id' }, undefined],
   [[], { CODEBUDDY_HOST: 'workbuddy-desktop' }, 'workbuddy'],
