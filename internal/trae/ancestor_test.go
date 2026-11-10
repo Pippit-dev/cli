@@ -12,6 +12,8 @@ func TestCallerChain(t *testing.T) {
 	}{
 		{[]string{"/bin/sh", "/Applications/Trae CN.app/Contents/Frameworks/Electron"}, true},
 		{[]string{"node", `C:\Users\agent\AppData\Local\Programs\Trae CN\Trae CN.exe`}, true},
+		{[]string{"powershell.exe", `C:\Users\agent\AppData\Local\Programs\Trae\Trae.exe`}, true},
+		{[]string{"powershell.exe", `C:\Tools\MyTrae.exe`}, false},
 		{[]string{"/usr/bin/bash", "/opt/traex"}, true},
 		{[]string{"/usr/bin/codex", "/Applications/Trae.app/Contents/MacOS/Electron"}, false},
 		{[]string{"/Applications/Trae CN.app/Contents/bin/aha_doctor"}, false},

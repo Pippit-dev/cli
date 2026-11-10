@@ -26,7 +26,7 @@ func walk(ctx context.Context, pid int, lookup func(context.Context, int) (int, 
 		p := strings.ToLower(strings.ReplaceAll(executable, "\\", "/"))
 		name := strings.TrimSuffix(path.Base(p), ".exe")
 		switch name {
-		case "traex", "trae cn":
+		case "trae", "traex", "trae cn":
 			return true
 		case "codex", "claude", "cursor", "workbuddy", "doubaowork", "agentinfraservice", "agentinfraservic":
 			return false
