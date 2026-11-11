@@ -35,18 +35,66 @@ func (f *commandFakeClient) SendMultipartRequest(context.Context, string, map[st
 }
 
 func TestCommandExposesOnlyProviderNeutralPublicVerbs(t *testing.T) {
+	t.Setenv(internalTransportEnv, "")
 	cmd := NewCommand(&bytes.Buffer{}, &bytes.Buffer{}, &common.Runner{Client: &commandFakeClient{}})
 	got := make([]string, 0, len(cmd.Commands()))
 	for _, child := range cmd.Commands() {
 		got = append(got, child.Name())
 	}
-	if strings.Join(got, ",") != "allocate,apply,command,create,get,upload" {
-		t.Fatalf("commands = %v, want allocate/apply/command/create/get/upload", got)
+	if strings.Join(got, ",") != "allocate,command,create,get,upload" {
+		t.Fatalf("commands = %v, want allocate/command/create/get/upload", got)
 	}
 	for _, forbidden := range []string{"import", "bind", "team"} {
 		if strings.Contains(strings.ToLower(cmd.CommandPath()+" "+cmd.Short+" "+strings.Join(got, " ")), forbidden) {
 			t.Fatalf("public command surface contains forbidden verb %q", forbidden)
 		}
+	}
+}
+
+func TestBareCanvasHelpSkipsParentPreRun(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	called := false
+	root := &cobra.Command{Use: "cli", PersistentPreRunE: func(*cobra.Command, []string) error {
+		called = true
+		return nil
+	}}
+	root.AddCommand(NewCommand(&stdout, &stderr, &common.Runner{Client: &commandFakeClient{}}))
+	root.SetArgs([]string{"canvas"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if called || !strings.Contains(stdout.String(), "canvas command list") {
+		t.Fatalf("bare help must skip parent pre-run: called=%v stdout=%s", called, stdout.String())
+	}
+}
+
+func TestPublicApplyCannotReachWriteTransport(t *testing.T) {
+	for _, transport := range []string{"", "1"} {
+		for _, args := range [][]string{{"apply"}, {"apply", "--help"}, {"apply", "--file", "-", "--transport-result"}} {
+			t.Run(transport+strings.Join(args, " "), func(t *testing.T) {
+				t.Setenv(internalTransportEnv, transport)
+				client := &commandFakeClient{}
+				var stdout bytes.Buffer
+				cmd := NewCommand(&stdout, &bytes.Buffer{}, &common.Runner{Client: client})
+				cmd.SetArgs(args)
+				cmd.SetIn(strings.NewReader(`{}`))
+				if err := cmd.Execute(); err == nil && !strings.Contains(strings.Join(args, " "), "--help") {
+					t.Fatal("public apply must fail")
+				}
+				if strings.Contains(stdout.String(), "Apply one Canvas patch transaction") {
+					t.Fatal("removed apply help was exposed")
+				}
+				if client.request != nil {
+					t.Fatalf("public apply sent a request: %#v", client.request)
+				}
+			})
+		}
+	}
+	t.Setenv(internalTransportEnv, "")
+	cmd := NewCommand(&bytes.Buffer{}, &bytes.Buffer{}, &common.Runner{Client: &commandFakeClient{}})
+	cmd.SetArgs([]string{internalApplyCommand, "--file", "-"})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("private transport must not be registered without SDK opt-in")
 	}
 }
 
@@ -127,17 +175,18 @@ func TestApplyRequestRejectsTeamOrImportExtensions(t *testing.T) {
 }
 
 func TestApplyTransportResultFlagIsHiddenAndPrintsExplicitReject(t *testing.T) {
+	t.Setenv(internalTransportEnv, "1")
 	client := &commandFakeClient{response: `{"ret":"0","log_id":"transport-log","data":{"results":[{"transaction_id":"tx-1","status":"reject","message":"version conflict","current_asset_versions":{"asset-1":9},"server_detail":{"reason":"conflict"}}]}}`}
 	var stdout, stderr bytes.Buffer
 	cmd := NewCommand(&stdout, &stderr, &common.Runner{Client: client})
 	var applyCommand *cobra.Command
 	for _, child := range cmd.Commands() {
-		if child.Name() == "apply" {
+		if child.Name() == internalApplyCommand {
 			applyCommand = child
 			break
 		}
 	}
-	if applyCommand == nil {
+	if applyCommand == nil || !applyCommand.Hidden {
 		t.Fatal("apply command not found")
 	}
 	flag := applyCommand.Flags().Lookup("transport-result")
@@ -147,7 +196,7 @@ func TestApplyTransportResultFlagIsHiddenAndPrintsExplicitReject(t *testing.T) {
 
 	request := `{"batch_id":"batch-1","client_id":"client-1","transactions":[{"transaction_id":"tx-1","patches":[{"asset_id":"asset-1","op":"replace","path":"","value":{}}]}]}`
 	cmd.SetIn(strings.NewReader(request))
-	cmd.SetArgs([]string{"apply", "--file", "-", "--transport-result"})
+	cmd.SetArgs([]string{internalApplyCommand, "--file", "-", "--transport-result"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -162,12 +211,13 @@ func TestApplyTransportResultFlagIsHiddenAndPrintsExplicitReject(t *testing.T) {
 }
 
 func TestApplyTransportResultPrintsRootCreateAckWithoutVersion(t *testing.T) {
+	t.Setenv(internalTransportEnv, "1")
 	client := &commandFakeClient{response: `{"ret":"0","data":{"results":[{"transaction_id":"tx-1","status":"ack","server_detail":{"created":true}}]}}`}
 	var stdout, stderr bytes.Buffer
 	cmd := NewCommand(&stdout, &stderr, &common.Runner{Client: client})
 	request := `{"batch_id":"batch-1","client_id":"client-1","transactions":[{"transaction_id":"tx-1","patches":[{"asset_id":"asset-new","op":"add","path":"","value":{}}]}]}`
 	cmd.SetIn(strings.NewReader(request))
-	cmd.SetArgs([]string{"apply", "--file", "-", "--transport-result"})
+	cmd.SetArgs([]string{internalApplyCommand, "--file", "-", "--transport-result"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

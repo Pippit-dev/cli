@@ -15,6 +15,9 @@ const native = path.join(
   `pippit-tool-cli${process.platform === 'win32' ? '.exe' : ''}`,
 );
 const windowsNative = path.join(fixture, 'bin', 'pippit-tool-cli.exe');
+const legacyRoot = path.join(fixture, 'legacy-native');
+const legacyScripts = path.join(legacyRoot, 'scripts');
+const legacyNative = path.join(legacyRoot, 'bin', path.basename(native));
 let checks = 0;
 
 try {
@@ -50,7 +53,8 @@ const deny = (name) => () => {
 const execFileSync = childProcess.execFileSync;
 let nativeInvocations = 0;
 childProcess.execFileSync = (command, args, options) => {
-  if (![${JSON.stringify(native)}, ${JSON.stringify(windowsNative)}].includes(command)) return deny("execFileSync")();
+  if (process.env.PIPPIT_TEST_REJECT_NATIVE === "1") return deny("raw write native invocation")();
+  if (![${JSON.stringify(native)}, ${JSON.stringify(windowsNative)}, ${JSON.stringify(legacyNative)}].includes(command)) return deny("execFileSync")();
   if (++nativeInvocations > 1) return deny("repeated native preparation")();
   return execFileSync(command, args, options);
 };
@@ -102,6 +106,73 @@ globalThis.fetch = deny("fetch");
   const unknownAction = launch('run.js', ['canvas', 'command', 'unknown-action'], 1);
   assert(unknownAction.stderr.length > 0);
 
+  const removedApplyArgs = [
+      ['canvas', 'apply'], ['canvas', 'apply', '--help'],
+      ['canvas', 'apply', '--file', '-', '--transport-result'],
+      ['--team-id', '12', 'canvas', 'apply'], ['canvas', '_apply', '--file', '-'],
+      ['canvas', '--team-id=0', 'apply'], ['canvas', '--team-id', '0', 'apply', '--file', '-'],
+      ['--space-context', 'binding', 'canvas', '--team-id=0', 'apply'], ['help', 'canvas', 'apply'],
+      ['canvas', '--project-id=123', 'apply'], ['canvas', '--project-id', '123', 'apply'],
+      ['canvas', '--file', '-', 'apply'], ['canvas', '--file=-', 'apply'],
+      ['--project-id=123', 'canvas', 'apply'], ['--file', '-', 'canvas', 'apply'],
+      ['canvas', '--project-id=123', '--team-id', '12', 'apply'],
+      ['canvas', '--team-id=12', '--file', '-', 'apply'],
+      ['--team-id', '12', 'canvas', '--project-id', '123', '--file', '-', 'apply'],
+      ['--space-context=binding', '--file=-', 'canvas', '--team-id=12', '--project-id=123', 'apply'],
+      ['canvas', '--transport-result=true', '--file=-', 'apply'],
+      ['canvas', '--transport-result=false', '--project-id=123', 'apply', '--help'],
+      ['canvas', '--file', '-', '--team-id', '12', '_apply'],
+      ['--project-id=123', 'canvas', '--file=-', '_apply'],
+    ];
+  function checkRemovedApply(scriptDirectory = scripts) {
+    for (const args of removedApplyArgs) {
+      const result = launch('run.js', args, 1, { PIPPIT_TEST_REJECT_NATIVE: '1', PIPPIT_CLI_CANVAS_TRANSPORT: '1' }, scriptDirectory);
+      assert(result.stderr.includes('use canvas command run'), result.stderr);
+      assert.strictEqual(result.stdout, '');
+    }
+  }
+  checkRemovedApply(); // Missing binary: no installation or update check.
+
+  // Compile an offline legacy Cobra fixture with the old apply flag contract.
+  // Prove the pre-command flags reach an executable old write entry, then run
+  // the actual npm launcher against that binary with native dispatch forbidden.
+  // Keep the legacy executable separate: Windows may still hold a lock after
+  // a child exits, so the current CLI build must never overwrite that file.
+  fs.mkdirSync(legacyScripts, { recursive: true });
+  fs.mkdirSync(path.dirname(legacyNative));
+  for (const name of fs.readdirSync(scripts)) {
+    fs.copyFileSync(path.join(scripts, name), path.join(legacyScripts, name));
+  }
+  fs.copyFileSync(path.join(fixture, 'package.json'), path.join(legacyRoot, 'package.json'));
+  const legacySource = path.join(legacyRoot, 'legacy.go');
+  fs.writeFileSync(legacySource, `package main
+import ("fmt"; "os"; "github.com/spf13/cobra")
+func main() {
+  root := &cobra.Command{Use: "pippit-tool-cli", SilenceErrors: true, SilenceUsage: true}
+  root.PersistentFlags().String("team-id", "", "space")
+  root.PersistentFlags().String("space-context", "", "binding")
+  canvas := &cobra.Command{Use: "canvas", Args: cobra.NoArgs}
+  apply := &cobra.Command{Use: "apply", Args: cobra.NoArgs, Run: func(*cobra.Command, []string) { fmt.Println("LEGACY_APPLY_DISPATCHED") }}
+  apply.Flags().String("project-id", "", "project")
+  apply.Flags().String("file", "-", "request")
+  apply.Flags().Bool("transport-result", false, "transport")
+  canvas.AddCommand(apply)
+  root.AddCommand(canvas)
+  if err := root.Execute(); err != nil { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+}
+`);
+  const legacyBuild = spawnSync('go', ['build', '-o', legacyNative, legacySource], { cwd: root, encoding: 'utf8', timeout: 180000 });
+  assert.ifError(legacyBuild.error);
+  assert.strictEqual(legacyBuild.status, 0, legacyBuild.stderr);
+  for (const args of removedApplyArgs.filter((args) => !args.includes('_apply') && args[0] !== 'help' && !args.includes('--help'))) {
+    const result = spawnSync(legacyNative, args, { encoding: 'utf8', timeout: 15000 });
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 0, `${args.join(' ')}: ${result.stderr}`);
+    assert(result.stdout.includes('LEGACY_APPLY_DISPATCHED'), result.stdout);
+    checks += 1;
+  }
+  checkRemovedApply(legacyScripts); // Legacy binary: no raw writes, installation or update.
+
   const build = spawnSync('go', ['build', '-o', native, '.'], {
     cwd: root,
     encoding: 'utf8',
@@ -109,12 +180,52 @@ globalThis.fetch = deny("fetch");
   });
   assert.ifError(build.error);
   assert.strictEqual(build.status, 0, build.stderr);
+  checkRemovedApply(); // Existing binary: never forward the removed entry.
+  const ordinaryArgs = launch('run.js', ['canvas', 'create', '--title', 'canvas', 'apply', '--help']);
+  assert(ordinaryArgs.stdout.includes('canvas create'), ordinaryArgs.stdout);
+  for (const [args, status] of [
+    [['generate-image', '--prompt', 'canvas', 'apply', '--help'], 0],
+    [['--team-id', 'canvas', 'generate-image', '--prompt', 'apply', '--help'], 0],
+    [['canvas', 'create', '--title', 'apply', '--help'], 0],
+    [['canvas', '--project-id=canvas', 'create', '--title', 'apply', '--help'], 1],
+    [['canvas', '--file', 'apply', '--help'], 1],
+    [['canvas', '--', 'apply', '--help'], 1],
+  ]) {
+    const result = launch('run.js', args, status);
+    assert(!result.stderr.includes('canvas apply is unavailable'), result.stderr);
+    assert(result.stdout.length > 0 || result.stderr.length > 0);
+  }
+  const ordinaryCommandArgs = launch('run.js', ['canvas', 'command', 'describe', 'canvas', 'apply'], 1);
+  assert(ordinaryCommandArgs.stderr.includes('多余的位置参数'), ordinaryCommandArgs.stderr);
+  assert(!ordinaryCommandArgs.stderr.includes('canvas apply is unavailable'));
   for (const args of [['--help'], ['canvas', '--help'], ['help', 'canvas']]) {
     const result = launch('run.js', args);
+    assert(!/^\s+(?:apply|_apply)\s/m.test(result.stdout), result.stdout);
     for (const action of ['list', 'describe', 'schema', 'guide', 'run']) {
       assert(result.stdout.includes(`canvas command ${action}`), result.stdout);
     }
   }
+  for (const args of [['canvas', 'apply'], ['canvas', '--team-id=0', 'apply'], ['canvas', '_apply']]) {
+    const result = spawnSync(native, args, { encoding: 'utf8', timeout: 15000, env: { ...process.env, PIPPIT_CLI_CANVAS_TRANSPORT: '' } });
+    assert.ifError(result.error);
+    assert.strictEqual(result.status, 1, result.stderr);
+    assert.strictEqual(result.stdout, '');
+    checks += 1;
+  }
+  const removedHelp = spawnSync(native, ['canvas', 'apply', '--help'], { encoding: 'utf8', timeout: 15000 });
+  assert.ifError(removedHelp.error);
+  assert.strictEqual(removedHelp.status, 0, removedHelp.stderr);
+  assert(removedHelp.stdout.includes('canvas command list'), removedHelp.stdout);
+  assert(!/^\s+(?:apply|_apply)\s/m.test(removedHelp.stdout), removedHelp.stdout);
+  const completion = spawnSync(native, ['__complete', 'canvas', ''], { encoding: 'utf8', timeout: 15000 });
+  assert.ifError(completion.error);
+  assert.strictEqual(completion.status, 0, completion.stderr);
+  assert(!/^(?:apply|_apply)(?:\t|$)/m.test(completion.stdout), completion.stdout);
+  const bareHelp = spawnSync(native, ['canvas', '--team-id=invalid', '--space-context=invalid'], { encoding: 'utf8', timeout: 15000 });
+  assert.ifError(bareHelp.error);
+  assert.strictEqual(bareHelp.status, 0, bareHelp.stderr);
+  assert.strictEqual(bareHelp.stderr, '');
+  assert(bareHelp.stdout.includes('canvas command list'), bareHelp.stdout);
   for (const action of ['list', 'run', 'unknown-action']) {
     const result = spawnSync(native, ['canvas', 'command', action], {
       encoding: 'utf8',

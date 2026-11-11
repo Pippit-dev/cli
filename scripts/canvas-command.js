@@ -17,6 +17,9 @@ const DEFAULT_SDK_MODULE = path.join(
   "xyq-canvas-command-runtime.cjs"
 );
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
+const INTERNAL_APPLY_COMMAND = "_apply";
+const INTERNAL_TRANSPORT_ENV = "PIPPIT_CLI_CANVAS_TRANSPORT";
+const INTERNAL_SEMANTIC_COMMAND_ENV = "PIPPIT_CLI_CANVAS_SEMANTIC_COMMAND";
 const UPGRADE_NOTICE_PREFIX = "[pippit-tool-cli] New version available:";
 const LOGIN_UPGRADE_NOTICE = "[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.";
 const PERSISTENCE_VERSION = 1;
@@ -191,15 +194,19 @@ function spawnProcess(invocation, args, options = {}) {
   });
 }
 
+function nativeCommandLabel(args) {
+  return args[0] === "canvas" && args[1] === INTERNAL_APPLY_COMMAND ? "canvas command write" : args.join(" ");
+}
+
 class NativeCommandError extends Error {
   constructor(args, result) {
-    const detail = result.stderr && result.stderr.trim();
+    const detail = result.stderr && result.stderr.trim().replaceAll(INTERNAL_APPLY_COMMAND, "canvas command write");
     const suffix = detail
       ? `：${detail}`
       : result.signal
         ? `（信号 ${result.signal}）`
         : `（退出码 ${result.exitCode ?? "unknown"}）`;
-    super(`原生 CLI 命令执行失败：${args.join(" ")}${suffix}`);
+    super(`原生 CLI 命令执行失败：${nativeCommandLabel(args)}${suffix}`);
     this.name = "NativeCommandError";
     this.exitCode = result.exitCode;
   }
@@ -216,12 +223,27 @@ class NativeCanvasClient {
     this.cwd = options.cwd;
     this.stderr = options.stderr || process.stderr;
     this.teamID = options.teamID;
+    this.semanticCommand = options.semanticCommand;
+  }
+
+  publicInvocation() {
+    const env = { ...(this.invocation?.env || process.env) };
+    delete env[INTERNAL_TRANSPORT_ENV];
+    delete env[INTERNAL_SEMANTIC_COMMAND_ENV];
+    return { ...this.invocation, env };
   }
 
   async runJSON(args, input) {
     if (args[0] === "canvas" && this.teamID !== undefined) args = [...args, "--team-id", this.teamID];
     if (args[0] === "canvas" && this.spaceContext) args = [...args, "--space-context", this.spaceContext];
-    const result = await spawnProcess(this.invocation, args, {
+    const invocation = this.publicInvocation();
+    // This selects a private process protocol, not an authorization boundary.
+    // Only the SDK write child needs it; reads and login use the public tree.
+    if (args[0] === "canvas" && args[1] === INTERNAL_APPLY_COMMAND) {
+      invocation.env[INTERNAL_TRANSPORT_ENV] = "1";
+      if (this.semanticCommand) invocation.env[INTERNAL_SEMANTIC_COMMAND_ENV] = this.semanticCommand;
+    }
+    const result = await spawnProcess(invocation, args, {
       cwd: this.cwd,
       input: input === undefined ? undefined : JSON.stringify(input),
     });
@@ -236,7 +258,7 @@ class NativeCanvasClient {
         this.spaceContext = output.space_context;
       }
     } catch (error) {
-      throw new Error(`原生 CLI 未返回有效 JSON（${args.join(" ")}）：${error.message}`);
+      throw new Error(`原生 CLI 未返回有效 JSON（${nativeCommandLabel(args)}）：${error.message}`);
     }
     const notices = result.stderr.split(/\r?\n/).filter((line) =>
       line.startsWith(UPGRADE_NOTICE_PREFIX) || line === LOGIN_UPGRADE_NOTICE
@@ -254,7 +276,7 @@ class NativeCanvasClient {
     }
     if (status?.logged_in === true) return status;
     this.stderr.write("小云雀 CLI 尚未登录，正在打开网页授权…\n");
-    const result = await spawnProcess(this.invocation, ["login"], {
+    const result = await spawnProcess(this.publicInvocation(), ["login"], {
       cwd: this.cwd,
       interactive: true,
     });
@@ -275,7 +297,7 @@ class NativeCanvasClient {
       if (!isAuthenticationFailure(error)) throw error;
     }
     this.stderr.write("小云雀 CLI 登录态已失效，正在重新打开网页授权…\n");
-    const result = await spawnProcess(this.invocation, ["login", "--force"], {
+    const result = await spawnProcess(this.publicInvocation(), ["login", "--force"], {
       cwd: this.cwd,
       interactive: true,
     });
@@ -299,7 +321,7 @@ class NativeCanvasClient {
     if (!Array.isArray(request?.transactions) || request.transactions.length !== 1) {
       throw new Error("画布同步一次只允许提交一个 transaction");
     }
-    return this.runJSON(["canvas", "apply", "--transport-result", "--file", "-"], request);
+    return this.runJSON(["canvas", INTERNAL_APPLY_COMMAND, "--transport-result", "--file", "-"], request);
   }
 
   async getAssets(assetIds) {
@@ -882,7 +904,7 @@ async function runCanvasCommand(args, options = {}) {
   const input = parseInputJSON(parsed, cwd);
   const route = routes.get(parsed.commandName);
   validatePublicCommandInput(route, input);
-  const nativeClient = new NativeCanvasClient(options.nativeInvocation, { cwd, stderr, teamID });
+  const nativeClient = new NativeCanvasClient(options.nativeInvocation, { cwd, stderr, teamID, semanticCommand: catalogEntry.name });
   const authStatus = await nativeClient.ensureCanvasAccess(parsed.canvasId);
   const credentialScope = authStatus.credential_scope && nativeClient.teamID && nativeClient.teamID !== "0"
     ? `${authStatus.credential_scope}:team:${nativeClient.teamID}`
