@@ -17,6 +17,7 @@ const (
 	DefaultHTTPTimeout           = 30 * time.Minute
 	DefaultAuthTTL               = 30 * time.Second
 	DefaultAuthStoreServiceName  = "pippit-cli"
+	CanvasSubmitRunPath          = "/api/biz/v1/skill/canvas/submit_run"
 	SubmitRunPath                = "/api/biz/v1/skill/submit_run"
 	SubmitMarketingRunPath       = "/api/biz/v1/agent/submit_marketing_run"
 	QueryGenerateVideoResultPath = "/api/biz/v1/agent/query_generate_video_result"

@@ -120,6 +120,7 @@ const commandModules = {
   "video-super-resolution": ["video-super-resolution"],
   "erase-video-subtitle": ["erase-video-subtitle"],
   "query-result": ["query-result"],
+  "media-tools": ["image-super-resolution", "video-matting"],
   "get-credit-balance": ["get-credit-balance"],
   watermark: ["watermark"],
 };

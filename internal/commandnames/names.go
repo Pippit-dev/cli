@@ -2,15 +2,17 @@
 package commandnames
 
 const (
-	Login          = "login"
-	Logout         = "logout"
-	Status         = "status"
-	Space          = "space"
-	Update         = "update"
-	Completion     = "completion"
-	Help           = "help"
-	Model          = "model"
-	Watermark      = "watermark"
-	IP             = "ip"
-	DownloadResult = "download-result"
+	ImageSuperResolution = "image-super-resolution"
+	VideoMatting         = "video-matting"
+	Login                = "login"
+	Logout               = "logout"
+	Status               = "status"
+	Space                = "space"
+	Update               = "update"
+	Completion           = "completion"
+	Help                 = "help"
+	Model                = "model"
+	Watermark            = "watermark"
+	IP                   = "ip"
+	DownloadResult       = "download-result"
 )

@@ -11,6 +11,7 @@ import (
 	canvascmd "github.com/Pippit-dev/pippit-cli/cmd/canvas"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_image"
 	"github.com/Pippit-dev/pippit-cli/cmd/generate_video"
+	"github.com/Pippit-dev/pippit-cli/cmd/media_tool"
 	"github.com/Pippit-dev/pippit-cli/cmd/short_drama"
 	updatecmd "github.com/Pippit-dev/pippit-cli/cmd/update"
 	"github.com/Pippit-dev/pippit-cli/cmd/video_tool"
@@ -135,6 +136,8 @@ func newRootCommandWithAdapter(stdout, stderr io.Writer, runner *common.Runner, 
 	root.AddCommand(generate_image.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewCommand(stdout, stderr, runner))
 	root.AddCommand(generate_video.NewQueryResultCommand(stdout, stderr, runner))
+	root.AddCommand(media_tool.NewImageSuperResolutionCommand(stdout, stderr, runner))
+	root.AddCommand(media_tool.NewVideoMattingCommand(stdout, stderr, runner))
 	root.AddCommand(video_tool.NewSuperResolutionCommand(stdout, stderr, runner))
 	root.AddCommand(video_tool.NewEraseSubtitleCommand(stdout, stderr, runner))
 	root.AddCommand(short_drama.NewCommand(stdout, stderr, runner))

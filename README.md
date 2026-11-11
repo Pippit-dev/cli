@@ -133,6 +133,7 @@ node skills/xyq-marketing-skill/scripts/marketing.js query --thread-id THREAD_ID
 | 生图、参考图编辑 | `generate-image` | [图片](skills/xyq-nest-skill/commands/generate-image.md) |
 | 查看可用图片/视频模型、参数配置 | `model list` / `model describe` | [模型发现](skills/xyq-nest-skill/commands/model.md) |
 | 生视频、首尾帧 | `generate-video` | [视频](skills/xyq-nest-skill/commands/generate-video.md) |
+| 图片超分、视频抠像 | `image-super-resolution` / `video-matting` | [结构化工具与恢复](skills/xyq-nest-skill/commands/media-tools.md) |
 | 视频超分 | `video-super-resolution` | [超分](skills/xyq-nest-skill/commands/video-super-resolution.md) |
 | 擦字幕 | `erase-video-subtitle` | [擦字幕](skills/xyq-nest-skill/commands/erase-video-subtitle.md) |
 | 查询并下载结果 | `query-result` | [查询](skills/xyq-nest-skill/commands/query-result.md) |
@@ -535,7 +536,7 @@ pippit-tool-cli update --source HOST
 
 ### 宿主来源统计
 
-生成提交命令均支持可选 `--source`：`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`short-drama +submit-run`、`marketing generate`。
+生成提交命令均支持可选 `--source`：`generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`image-super-resolution`、`video-matting`、`short-drama +submit-run`、`marketing generate`。
 
 由宿主 Agent 根据实际环境静默填写稳定标识，例如豆包办公 `doubao`、WorkBuddy `workbuddy`、Codex `codex`。其它来源可使用其真实产品标识；来源未知时省略，不询问用户，也不从 prompt 猜测。该值去掉首尾空白后写入请求顶层 `platform`，仅供统计，不参与创作、模型选择或鉴权；无法解析来源时不发送该字段。省略 `--source`、显式空值或纯空白时，CLI 按以下顺序尽力补齐来源：
 

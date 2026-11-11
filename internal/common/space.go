@@ -36,7 +36,7 @@ func spaceOperation(path string) string {
 		return ""
 	}
 	switch u.Path {
-	case config.SubmitRunPath, config.SubmitMarketingRunPath:
+	case config.SubmitRunPath, config.SubmitMarketingRunPath, config.CanvasSubmitRunPath:
 		return "submit"
 	case config.GetThreadPath, config.QueryGenerateVideoResultPath:
 		return "query"
@@ -49,6 +49,9 @@ func spaceOperation(path string) string {
 }
 
 func SpaceReferences(body any) (space.References, error) {
+	if provider, ok := body.(interface{ SpaceReferences() space.References }); ok {
+		return provider.SpaceReferences(), nil
+	}
 	var ref space.References
 	if body == nil {
 		return ref, nil

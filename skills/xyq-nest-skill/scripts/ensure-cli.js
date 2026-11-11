@@ -10,6 +10,7 @@ const REQUIRED_COMMANDS = [
   "status", "login", "logout", "query-result", "upload-file",
   "space list", "space use",
   "generate-image", "generate-video", "video-super-resolution",
+  "image-super-resolution", "video-matting",
   "erase-video-subtitle", "get-credit-balance", "model list", "model describe",
 ];
 // v1.0.50 first ships ordinary-image binding guards in both Canvas entries.
