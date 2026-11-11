@@ -57,12 +57,22 @@ func runnerClient(runner *common.Runner, operation string) (common.Client, error
 	return runner.Client, nil
 }
 
-func pathWithProjectID(path, projectID string) string {
+func pathWithApplyQuery(path, projectID, commandName string) (string, error) {
 	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return path
+	if projectID == "" && commandName == "" {
+		return path, nil
 	}
-	query := url.Values{}
-	query.Set("project_id", projectID)
-	return path + "?" + query.Encode()
+	parsed, err := url.Parse(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid canvas write URL: %w", err)
+	}
+	query := parsed.Query()
+	if projectID != "" {
+		query.Set("project_id", projectID)
+	}
+	if commandName != "" {
+		query.Set("command", commandName)
+	}
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), nil
 }

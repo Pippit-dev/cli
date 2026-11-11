@@ -21,6 +21,7 @@ const maxApplyRequestBytes = 64 << 20
 
 const internalApplyCommand = "_apply"
 const internalTransportEnv = "PIPPIT_CLI_CANVAS_TRANSPORT"
+const internalSemanticCommandEnv = "PIPPIT_CLI_CANVAS_SEMANTIC_COMMAND"
 
 // NewCommand builds the provider-neutral Canvas command tree.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
@@ -148,6 +149,7 @@ func newApplyTransportCommand(stdout, stderr io.Writer, runner *common.Runner) *
 			}
 			result, err := canvascore.Apply(cmd.Context(), canvascore.ApplyOptions{
 				ProjectID:                   projectID,
+				CommandName:                 os.Getenv(internalSemanticCommandEnv),
 				Request:                     request,
 				AllowNonAcknowledgedResults: transportResult,
 			}, runner)

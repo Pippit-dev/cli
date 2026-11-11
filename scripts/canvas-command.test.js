@@ -4,7 +4,9 @@ const assert = require("assert");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { execFile, spawnSync } = require("child_process");
+const http = require("http");
+const { promisify } = require("util");
 
 const {
   canvasSpaceArgs,
@@ -352,12 +354,123 @@ result.then(value => process.stdout.write(JSON.stringify(value) + "\\n")).catch(
   }
 }
 
+async function testSemanticCommandHTTP() {
+  const fixture = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "canvas-command-http-")));
+  const native = path.join(fixture, `pippit-tool-cli${process.platform === "win32" ? ".exe" : ""}`);
+  const captured = [];
+  const server = http.createServer(async (request, response) => {
+    try {
+      let payload = "";
+      for await (const chunk of request) payload += chunk;
+      const body = JSON.parse(payload);
+      const url = new URL(request.url, `http://${request.headers.host}`);
+      assert.strictEqual(request.headers.authorization, "Bearer fixture-http-key");
+      assert.strictEqual(request.headers["x-team-id"] || "", "12");
+      assert.strictEqual(request.method, "POST");
+      assert.strictEqual(request.headers["content-type"], "application/json");
+      captured.push({ url: request.url, body, authPreserved: true, teamID: "12", origin: request.headers.host });
+      let data;
+      if (url.pathname.endsWith("/query")) {
+        assert(!url.searchParams.has("command"));
+        data = { Assets: body.pippit_asset_ids.map((id) => ({
+          PippitAssetID: id, version: 5,
+          TextInfo: { Content: JSON.stringify(id === "role_1" ? { basic_info: { name: "角色一" }, node_name: "人物节点" }
+            : { root_canvas_id: id, assets: { [id]: { content: { nodes: {}, edges: {} }, type: "canvas", pippitAssetId: id, extra: {} } } }) },
+        })) };
+      } else if (url.pathname.endsWith("/batch_generate_asset_id")) {
+        assert(!url.searchParams.has("command"));
+        data = { ids: ["allocated_role"] };
+      } else {
+        assert(url.pathname.endsWith("/batch_patch_asset"));
+        data = { results: body.transactions.map((tx) => ({
+          transaction_id: tx.transaction_id, status: "ack",
+          asset_versions: Object.fromEntries(tx.patches.map((patch) => [patch.asset_id, 6])),
+        })) };
+      }
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ ret: "0", data }));
+    } catch (error) {
+      response.writeHead(500);
+      response.end(String(error));
+    }
+  });
+  try {
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    fs.writeFileSync(path.join(fixture, "config.toml"), `xyq_api_url = ${JSON.stringify(origin)}\n`);
+    const build = spawnSync("go", ["build", "-o", native, "."], { cwd: path.resolve(__dirname, ".."), encoding: "utf8", timeout: 180000 });
+    assert.ifError(build.error);
+    assert.strictEqual(build.status, 0, build.stderr);
+    const env = { ...process.env, XYQ_ACCESS_KEY: "fixture-http-key", HOME: fixture, USERPROFILE: fixture,
+      PIPPIT_CLI_UPDATE_CHECKED: "1", PIPPIT_CLI_CANVAS_SEMANTIC_COMMAND: "inherited-private-argv", PIPPIT_CLI_DISABLE_TELEMETRY: "1" };
+    const invocation = { command: native, env };
+    const sdk = createFakeSdk();
+    const mixed = "xyq.role.updateDescription";
+    const encoded = "fixture.command +/&=?";
+    sdk.XYQ_CANVAS_REGISTERED_COMMAND_DEFINITIONS.push(...[mixed, encoded].map((name) => ({ name, description: "HTTP fixture registered command" })));
+    const createRuntime = sdk.createPippitAssetRuntime;
+    sdk.createPippitAssetRuntime = (options) => createRuntime({ ...options, sync: { ...options.sync, batchPatchAsset: (request) => {
+      request.transactions[0].intent = "caller intent with private input, unrelated to command";
+      return options.sync.batchPatchAsset(request);
+    } } });
+    const createDefinitions = sdk.createXyqCanvasOpencodeToolDefinitions;
+    sdk.createXyqCanvasOpencodeToolDefinitions = (options) => {
+      const definitions = createDefinitions(options);
+      const execute = definitions.apply_mutations.execute;
+      definitions.apply_mutations.execute = async (input) => {
+        const result = await execute(input);
+        options.runtime.store.pending = true;
+        return result;
+      };
+      return definitions;
+    };
+    for (const command of ["create_biz_node", mixed, encoded, "apply_mutations"]) {
+      const before = captured.length;
+      const input = command === "create_biz_node" ? { nodeKind: "role" } : { intent: "user intent differs from directory", mutations: [] };
+      await runCanvasCommand(["canvas", "command", "run", command, "--canvas-id", "canvas_1", "--team-id", "12", "--input", JSON.stringify(input)],
+        { cwd: fixture, nativeInvocation: invocation, sdk, stdout: outputBuffer(), stderr: outputBuffer() });
+      const writes = captured.slice(before).filter((entry) => entry.url.startsWith("/api/biz/v1/skill/canvas/batch_patch_asset"));
+      assert.strictEqual(writes.length, 1);
+      const url = new URL(writes[0].url, origin);
+      assert.strictEqual(url.searchParams.get("command"), command);
+      assert.deepStrictEqual([...url.searchParams.keys()], ["command"]);
+      assert.strictEqual(url.search, `?${new URLSearchParams({ command })}`);
+      assert.notStrictEqual(url.searchParams.get("command"), writes[0].body.transactions[0].intent);
+      assert(!writes[0].url.includes("inherited-private-argv"));
+    }
+    const beforeUnknown = captured.length;
+    await assert.rejects(runCanvasCommand(["canvas", "command", "run", "unregistered-private-name", "--canvas-id", "canvas_1", "--input", "{}"],
+      { cwd: fixture, nativeInvocation: invocation, sdk }), /未知的画布 command/);
+    assert.strictEqual(captured.length, beforeUnknown);
+    const request = { batch_id: "batch-http", client_id: "client-http", transactions: [{ transaction_id: "tx-http", intent: "body intent is not command",
+      patches: [{ asset_id: "canvas_1", base_asset_version: 5, op: "replace", path: "/content/title", value: "unchanged body" }] }] };
+    for (const semanticCommand of [undefined, mixed]) {
+      const client = new NativeCanvasClient(invocation, { cwd: fixture, teamID: "12", semanticCommand });
+      await client.runJSON(["canvas", "_apply", "--file", "-", "--project-id", "123"], request);
+      const entry = captured[captured.length - 1];
+      const url = new URL(entry.url, origin);
+      assert.strictEqual(url.searchParams.get("project_id"), "123");
+      assert.strictEqual(url.searchParams.get("command"), semanticCommand || null);
+      assert.deepStrictEqual(entry.body, { ...request, Base: {} });
+    }
+    const rejected = await promisify(execFile)(native, ["canvas", "apply", "--help"], { cwd: fixture, env });
+    assert(!/^\s+(?:apply|_apply)\s/m.test(rejected.stdout));
+    assert(captured.every((entry) => entry.origin === new URL(origin).host));
+    if (process.env.PIPPIT_TEST_HTTP_CAPTURE) fs.writeFileSync(process.env.PIPPIT_TEST_HTTP_CAPTURE, JSON.stringify(captured, null, 2) + "\n");
+    console.log(`Semantic command HTTP: ${captured.filter((entry) => entry.url.includes("batch_patch_asset")).length} real native writes captured; catalog name, case, encoding, intent, project, body, auth and space passed.`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(fixture, { recursive: true, force: true, maxRetries: 4, retryDelay: 100 });
+  }
+}
+
 async function main() {
   for (const invocation of [undefined, null, {}]) {
     const client = new NativeCanvasClient(invocation);
     await assert.rejects(client.runJSON(["status"]), /^Error: 原生 CLI 执行入口缺失$/);
     await assert.rejects(client.apply({ transactions: [{}] }), /^Error: 原生 CLI 执行入口缺失$/);
   }
+  await testSemanticCommandHTTP();
   testNativeUpgradeNotices();
   const domExceptionDescriptor = Object.getOwnPropertyDescriptor(globalThis, "DOMException");
   Object.defineProperty(globalThis, "DOMException", { configurable: true, value: undefined, writable: true });
@@ -454,6 +567,7 @@ else if (args[1] === "get" && process.env.FAKE_AUTH_REJECT_FILE && !fs.existsSyn
   process.stderr.write("HTTP 401\n");
   process.exit(7);
 }
+
 else if (args[1] === "get") {
   const teamFlag = args.indexOf("--team-id");
   const teamID = teamFlag >= 0 ? args[teamFlag + 1]

@@ -12,6 +12,7 @@ const args = process.argv.slice(2);
 // The launcher owns the notice for this invocation, including native children.
 const nativeEnv = { ...process.env, PIPPIT_CLI_UPDATE_CHECKED: '1' };
 delete nativeEnv.PIPPIT_CLI_CANVAS_TRANSPORT;
+delete nativeEnv.PIPPIT_CLI_CANVAS_SEMANTIC_COMMAND;
 
 const oldBin = bin + '.old';
 function restoreOldBinary() {

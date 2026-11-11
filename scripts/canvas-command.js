@@ -19,6 +19,7 @@ const DEFAULT_SDK_MODULE = path.join(
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 const INTERNAL_APPLY_COMMAND = "_apply";
 const INTERNAL_TRANSPORT_ENV = "PIPPIT_CLI_CANVAS_TRANSPORT";
+const INTERNAL_SEMANTIC_COMMAND_ENV = "PIPPIT_CLI_CANVAS_SEMANTIC_COMMAND";
 const UPGRADE_NOTICE_PREFIX = "[pippit-tool-cli] New version available:";
 const LOGIN_UPGRADE_NOTICE = "[pippit-tool-cli] If browser authorization fails, update the CLI and run pippit-tool-cli login again.";
 const PERSISTENCE_VERSION = 1;
@@ -222,17 +223,27 @@ class NativeCanvasClient {
     this.cwd = options.cwd;
     this.stderr = options.stderr || process.stderr;
     this.teamID = options.teamID;
+    this.semanticCommand = options.semanticCommand;
+  }
+
+  publicInvocation() {
+    const env = { ...(this.invocation?.env || process.env) };
+    delete env[INTERNAL_TRANSPORT_ENV];
+    delete env[INTERNAL_SEMANTIC_COMMAND_ENV];
+    return { ...this.invocation, env };
   }
 
   async runJSON(args, input) {
     if (args[0] === "canvas" && this.teamID !== undefined) args = [...args, "--team-id", this.teamID];
     if (args[0] === "canvas" && this.spaceContext) args = [...args, "--space-context", this.spaceContext];
-    const env = { ...(this.invocation?.env || process.env) };
+    const invocation = this.publicInvocation();
     // This selects a private process protocol, not an authorization boundary.
     // Only the SDK write child needs it; reads and login use the public tree.
-    delete env[INTERNAL_TRANSPORT_ENV];
-    if (args[0] === "canvas" && args[1] === INTERNAL_APPLY_COMMAND) env[INTERNAL_TRANSPORT_ENV] = "1";
-    const result = await spawnProcess({ ...this.invocation, env }, args, {
+    if (args[0] === "canvas" && args[1] === INTERNAL_APPLY_COMMAND) {
+      invocation.env[INTERNAL_TRANSPORT_ENV] = "1";
+      if (this.semanticCommand) invocation.env[INTERNAL_SEMANTIC_COMMAND_ENV] = this.semanticCommand;
+    }
+    const result = await spawnProcess(invocation, args, {
       cwd: this.cwd,
       input: input === undefined ? undefined : JSON.stringify(input),
     });
@@ -265,7 +276,7 @@ class NativeCanvasClient {
     }
     if (status?.logged_in === true) return status;
     this.stderr.write("小云雀 CLI 尚未登录，正在打开网页授权…\n");
-    const result = await spawnProcess(this.invocation, ["login"], {
+    const result = await spawnProcess(this.publicInvocation(), ["login"], {
       cwd: this.cwd,
       interactive: true,
     });
@@ -286,7 +297,7 @@ class NativeCanvasClient {
       if (!isAuthenticationFailure(error)) throw error;
     }
     this.stderr.write("小云雀 CLI 登录态已失效，正在重新打开网页授权…\n");
-    const result = await spawnProcess(this.invocation, ["login", "--force"], {
+    const result = await spawnProcess(this.publicInvocation(), ["login", "--force"], {
       cwd: this.cwd,
       interactive: true,
     });
@@ -893,7 +904,7 @@ async function runCanvasCommand(args, options = {}) {
   const input = parseInputJSON(parsed, cwd);
   const route = routes.get(parsed.commandName);
   validatePublicCommandInput(route, input);
-  const nativeClient = new NativeCanvasClient(options.nativeInvocation, { cwd, stderr, teamID });
+  const nativeClient = new NativeCanvasClient(options.nativeInvocation, { cwd, stderr, teamID, semanticCommand: catalogEntry.name });
   const authStatus = await nativeClient.ensureCanvasAccess(parsed.canvasId);
   const credentialScope = authStatus.credential_scope && nativeClient.teamID && nativeClient.teamID !== "0"
     ? `${authStatus.credential_scope}:team:${nativeClient.teamID}`

@@ -14,6 +14,7 @@ var decimalIDPattern = regexp.MustCompile(`^[1-9][0-9]*$`)
 
 type ApplyOptions struct {
 	ProjectID                   string
+	CommandName                 string
 	Request                     ApplyRequest
 	AllowNonAcknowledgedResults bool
 }
@@ -105,7 +106,11 @@ func Apply(ctx context.Context, opts ApplyOptions, runner *common.Runner) (*Appl
 	}
 
 	var envelope responseEnvelope
-	if err := client.SendRequest(ctx, pathWithProjectID(ApplyPath, projectID), request, &envelope); err != nil {
+	path, err := pathWithApplyQuery(ApplyPath, projectID, opts.CommandName)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.SendRequest(ctx, path, request, &envelope); err != nil {
 		return nil, fmt.Errorf("canvas apply request failed; outcome may be ambiguous, do not replay blindly: %w", err)
 	}
 	if err := envelope.validate("canvas apply"); err != nil {
