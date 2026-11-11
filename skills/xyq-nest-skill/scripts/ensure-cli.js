@@ -99,7 +99,7 @@ function ensureCLI({ canvas = false } = {}) {
     }
     const commands = REQUIRED_COMMANDS.map((command) => command.split(" "));
     if (canvas) {
-      for (const command of ["create", "get", "allocate", "upload", "apply"]) commands.push(["canvas", command]);
+      for (const command of ["create", "get", "allocate", "upload"]) commands.push(["canvas", command]);
     }
     for (const command of commands) {
       try {

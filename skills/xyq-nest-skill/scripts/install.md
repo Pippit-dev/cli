@@ -36,9 +36,9 @@ node "{baseDir}/scripts/ensure-cli.js"
 
 ## Canvas 运行时检查
 
-画布任务改用 `node "{baseDir}/scripts/ensure-cli.js" --canvas`。要求 CLI 至少为 `1.0.50` 正式版，该版本起原生 `canvas apply` 和 npm 语义运行时均包含普通图片绑定校验；仅有同名命令不能证明旧版包含该修复。旧版、预发布版或无法识别的版本按不兼容处理，先查缓存，再至多安装一次；最新包仍不兼容则报错。普通媒体任务不受此最低版本限制。
+画布任务改用 `node "{baseDir}/scripts/ensure-cli.js" --canvas`。要求 CLI 至少为 `1.0.50` 正式版，该版本起画布写入传输和 npm 语义运行时均包含普通图片绑定校验；仅有同名命令不能证明旧版包含该修复。旧版、预发布版或无法识别的版本按不兼容处理，先查缓存，再至多安装一次；最新包仍不兼容则报错。普通媒体任务不受此最低版本限制。
 
-除原有检查外，再验证五个原生资产子命令的帮助，并通过同一个 npm 包的 Node 入口真实执行离线 `canvas command list`，确认运行时可加载且含基本查询与节点创建能力。该检查不登录、不访问画布、不写入远端。保留当前 Skill 的实际路径及返回的 `version`、`cli_path`、`canvas_entry`，便于故障定位；`Pippit-CLI/1.0` 是 User-Agent，不能作为 CLI 发行版本。
+除原有检查外，再验证四个原生资产子命令的帮助，并通过同一个 npm 包的 Node 入口真实执行离线 `canvas command list`，确认运行时可加载且含基本查询与节点创建能力。该检查不登录、不访问画布、不写入远端。保留当前 Skill 的实际路径及返回的 `version`、`cli_path`、`canvas_entry`，便于故障定位；`Pippit-CLI/1.0` 是 User-Agent，不能作为 CLI 发行版本。
 
 成功额外返回 `canvas_entry`，供 `node "CANVAS_ENTRY" canvas command ...` 使用；`cli_path` 仍用于原生命令。语义操作的实际支持范围以当前目录为准，检查通过不代表所有业务操作或服务端权限都可用。
 

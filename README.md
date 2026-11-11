@@ -232,27 +232,26 @@ pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --
 
 ## Canvas 原子命令
 
-CLI 提供个人和团队漫剧画布的通用原子命令，不包含特定来源的导入或转换逻辑：
+CLI 提供个人和团队漫剧画布的通用资产命令，不包含特定来源的导入或转换逻辑：
 
 ```bash
 # 首次使用时打开小云雀网页授权
 pippit-tool-cli login
 pippit-tool-cli status
 
-# 创建、分配资产 ID、查询、上传与提交单个画布 transaction
+# 创建、分配资产 ID、查询与上传
 pippit-tool-cli canvas create --title "CLI Canvas" --wait
 pippit-tool-cli canvas allocate --count 3
 pippit-tool-cli canvas get --asset-id PIPPIT_ASSET_ID
 pippit-tool-cli canvas upload --path ./reference.png
 pippit-tool-cli canvas upload --url 'https://example.com/reference?signature=...' --team-id 123456
-pippit-tool-cli canvas apply --project-id PROJECT_ID --file ./patch.json
 ```
 
 `canvas upload` 的 `--path` 与 `--url` 必须且只能提供一个。URL 模式不在本机下载或缓存素材；`--timeout` 仍只控制上传返回后的素材查询等待，查询超时保留资产 ID 和 warning，不自动再次导入。上传成功不代表已插入画布。
 
-五个命令复用 `space use TEAM_ID` 保存的默认空间，也支持单次 `--team-id TEAM_ID`，个人空间使用 `0`。操作已有画布时显式使用其原 `--team-id`，CLI 不根据画布 ID 自动选择团队。`canvas get` 返回实际 `team_id`，本地账号可识别时还返回 `space_context`；`canvas command run` 据此固定后续子进程的空间与账号/API origin，期间切换默认空间不影响当前操作。本地恢复记录和检查点按账号、团队与画布隔离，原有个人记录保持可读。
+四个命令复用 `space use TEAM_ID` 保存的默认空间，也支持单次 `--team-id TEAM_ID`，个人空间使用 `0`。操作已有画布时显式使用其原 `--team-id`，CLI 不根据画布 ID 自动选择团队。`canvas get` 返回实际 `team_id`，本地账号可识别时还返回 `space_context`；`canvas command run` 据此固定后续子进程的空间与账号/API origin，期间切换默认空间不影响当前操作。本地恢复记录和检查点按账号、团队与画布隔离，原有个人记录保持可读。
 
-五个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际资产仍由后续 `apply` transaction 创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。`apply` 当前只接受一个 transaction，但该 transaction 可以包含多个 patches；CLI 会严格检查 transaction ACK 和每个目标资产的新版本。
+四个命令均输出单行 JSON，资源 ID 保持字符串。`allocate` 只预留 ID，实际节点或资产由后续语义编辑创建。`create` 的 `request_id` 用于追踪，不是跨服务崩溃窗口的严格幂等键；写请求结果不明确时不要盲目重放，应先使用 `canvas get` 回读确认。语义写入由 SDK 构造事务，并检查 transaction ACK 和目标资产版本。
 
 通过 npm 安装的 CLI 还提供基于同一 Canvas SDK 的语义命令目录：
 
@@ -273,13 +272,13 @@ pippit-tool-cli canvas command schema
 pippit-tool-cli canvas command guide
 pippit-tool-cli canvas command guide storyboard
 
-# 由 SDK 业务工厂创建角色节点；修改会通过现有 canvas apply 原子提交
+# 由 SDK 业务工厂创建角色节点并保存
 pippit-tool-cli canvas command run create_biz_node \
   --canvas-id PIPPIT_CANVAS_ASSET_ID \
   --input '{"nodeKind":"role","initialData":{"nodeName":"测试角色"}}'
 ```
 
-`canvas command` 由 npm 包内固定的 Canvas SDK 运行时提供，复用网页登录、`canvas get`、`canvas allocate` 和 `canvas apply`；不会读取或打印 Access Key，也不直接选择服务端地址。公开目录只包含已登记的 mutation 和业务命令，不开放任意内部 command 调用。
+`canvas command` 由 npm 包内固定的 Canvas SDK 运行时提供，复用网页登录、`canvas get`、`canvas allocate` 和内部写入传输；不会读取或打印 Access Key，也不直接选择服务端地址。公开目录只包含已登记的 mutation 和业务命令，不开放任意内部 command 调用。
 
 `list [--category <category>]` 返回精简命令目录；`describe <command>` 说明入口参数，按 `--operation <name>` 查看一种领域操作、按 `--node-kind <kind>` 查看业务节点初始字段、按 `--path <schema.path>` 查看 schema 子路径。需要完整嵌套结构时使用 `schema [command]` 显式导出。`create_biz_node.nodeKind` 包含 `scene3d` 与 `timeline-composition`；字段枚举、必填项、默认值与动态来源以当前安装版本的 schema 为准。
 

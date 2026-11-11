@@ -89,7 +89,7 @@ async function main() {
           ? {PippitAssetID: id, AssetType: 4, TextInfo: {content: JSON.stringify(rootAsset)}, version: 1}
           : null).filter(Boolean);
       console.log(JSON.stringify({assets}));
-    } else if (args[1] === "apply") {
+    } else if (args[1] === "_apply") {
       const request = JSON.parse(fs.readFileSync(0, "utf8"));
       fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(request) + "\\n");
       console.log(JSON.stringify({batch_id: request.batch_id, results: request.transactions.map(tx => ({

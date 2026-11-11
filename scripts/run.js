@@ -11,6 +11,7 @@ const bin = path.join(__dirname, '..', 'bin', 'pippit-tool-cli' + ext);
 const args = process.argv.slice(2);
 // The launcher owns the notice for this invocation, including native children.
 const nativeEnv = { ...process.env, PIPPIT_CLI_UPDATE_CHECKED: '1' };
+delete nativeEnv.PIPPIT_CLI_CANVAS_TRANSPORT;
 
 const oldBin = bin + '.old';
 function restoreOldBinary() {
@@ -38,7 +39,38 @@ function runCanvas() {
     });
 }
 
+function isRawCanvasWrite(args) {
+  // Include all value-taking flags accepted by the legacy apply command:
+  // Cobra can find that subcommand even when its flags precede its name.
+  const valueFlags = new Set(['--team-id', '--space-context', '--project-id', '--file']);
+  const booleanFlags = new Set(['--help', '-h', '--transport-result']);
+  const commands = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+    if (value === '--') break;
+    const equals = value.indexOf('=');
+    const flag = equals < 0 ? value : value.slice(0, equals);
+    if (valueFlags.has(flag)) {
+      if (equals < 0) index += 1;
+      continue;
+    }
+    if (booleanFlags.has(flag)) continue;
+    if (value.startsWith('-')) return false; // Invalid/command-local options belong to the native parser.
+    if (commands.length === 0 && value === 'help') continue;
+    commands.push(value);
+    if (commands.length === 2) break;
+  }
+  return commands[0] === 'canvas' && ['apply', '_apply'].includes(commands[1]);
+}
+
 function main() {
+  // Reject the removed raw write entry before update checks or installation,
+  // even when an older native binary is still present in the npm package.
+  if (isRawCanvasWrite(args)) {
+    console.error('canvas apply is unavailable; use canvas command run with a semantic command.');
+    process.exitCode = 1;
+    return;
+  }
   // Installation help must work before any native binary preparation.
   if (args[0] === 'install') {
     return require('./install-wizard.js').main(args.slice(1));

@@ -318,7 +318,7 @@ function checkCanvasBootstrap() {
     assert.strictEqual(next.proc.exitCode, 0, next.errors.join("\n"));
     assert.strictEqual(JSON.parse(next.output[0]).canvas_entry, result.canvas_entry);
     assert.strictEqual(fixture.dirs.length, 1);
-    for (const command of ["create", "get", "allocate", "upload", "apply"]) {
+    for (const command of ["create", "get", "allocate", "upload"]) {
       assert.strictEqual(fixture.calls.filter((call) => call.args.join(" ") === `canvas ${command} --help`).length, 2);
     }
     assert.strictEqual(fixture.calls.filter((call) => call.args[0].endsWith("run.js")).length, 2);

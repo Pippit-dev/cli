@@ -14,9 +14,13 @@ import (
 	canvascore "github.com/Pippit-dev/pippit-cli/internal/canvas"
 	"github.com/Pippit-dev/pippit-cli/internal/common"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const maxApplyRequestBytes = 64 << 20
+
+const internalApplyCommand = "_apply"
+const internalTransportEnv = "PIPPIT_CLI_CANVAS_TRANSPORT"
 
 // NewCommand builds the provider-neutral Canvas command tree.
 func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
@@ -24,14 +28,25 @@ func NewCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command 
 		Use:   "canvas",
 		Short: "Create and operate novel canvases",
 		Long:  "Create and operate novel canvases in the selected personal or team space.\n\n" + CommandDiscoveryHelp,
-		Args:  cobra.NoArgs,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				// Preserve bare canvas help before the root update/space hook.
+				return pflag.ErrHelp
+			}
+			return cobra.NoArgs(cmd, args)
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error { return cmd.Help() },
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
 	cmd.AddCommand(newCreateCommand(stdout, stderr, runner))
 	cmd.AddCommand(newGetCommand(stdout, stderr, runner))
 	cmd.AddCommand(newAllocateCommand(stdout, stderr, runner))
-	cmd.AddCommand(newApplyCommand(stdout, stderr, runner))
+	// The SDK bridge opts in for its child process. The public command tree
+	// never registers apply, including when the internal transport is enabled.
+	if os.Getenv(internalTransportEnv) == "1" {
+		cmd.AddCommand(newApplyTransportCommand(stdout, stderr, runner))
+	}
 	cmd.AddCommand(newUploadCommand(stdout, stderr, runner))
 	cmd.AddCommand(newCommandHelp())
 	return cmd
@@ -117,14 +132,15 @@ func newGetCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Comma
 	return cmd
 }
 
-func newApplyCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
+func newApplyTransportCommand(stdout, stderr io.Writer, runner *common.Runner) *cobra.Command {
 	var filePath string
 	var projectID string
 	var transportResult bool
 	cmd := &cobra.Command{
-		Use:   "apply",
-		Short: "Apply one Canvas patch transaction",
-		Args:  cobra.NoArgs,
+		Use:    internalApplyCommand,
+		Short:  "Internal SDK write transport",
+		Hidden: true,
+		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			request, err := readApplyRequest(cmd.InOrStdin(), filePath)
 			if err != nil {
