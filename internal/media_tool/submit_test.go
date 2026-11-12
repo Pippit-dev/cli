@@ -188,3 +188,22 @@ func TestKnownCrossSpaceAssetRejectedBeforeSend(t *testing.T) {
 		t.Fatalf("result=%+v error=%v calls=%d", result, err, calls)
 	}
 }
+
+func TestHTTPAuthRejectionPreservesRecoveryAndLogID(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("X-Tt-Logid", "auth-rejected-log")
+				w.WriteHeader(status)
+				fmt.Fprint(w, `{"ret":"1015","errmsg":"invalid access key"}`)
+			}))
+			defer server.Close()
+			result, err := Submit(context.Background(), Options{Tool: commandnames.ImageSuperResolution, AssetID: "asset"}, &common.Runner{Client: common.NewHTTPClient(server.URL, time.Second, common.NewAccessKeyAuthorizer("invalid"))}, nil)
+			if err == nil || result.Status != "rejected" || result.LogID != "auth-rejected-log" || result.ThreadID == "" || result.RunID == "" || calls != 1 || strings.Contains(result.ErrorMessage, "查询原") {
+				t.Fatalf("result=%+v error=%v calls=%d", result, err, calls)
+			}
+		})
+	}
+}

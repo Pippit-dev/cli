@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -149,6 +151,15 @@ func Submit(ctx context.Context, opts Options, runner *common.Runner, beforeSend
 	}
 	var resp common.SubmitRunResponse
 	if err = runner.Client.SendRequest(ctx, path, req, &resp); err != nil {
+		var httpErr *common.HTTPResponseError
+		if errors.As(err, &httpErr) {
+			result.LogID = httpErr.LogID()
+			if httpErr.StatusCode == http.StatusUnauthorized || httpErr.StatusCode == http.StatusForbidden {
+				result.Status = "rejected"
+				result.ErrorMessage = fmt.Sprintf("提交被拒绝：%v", err)
+				return result, common.NewLogIDError(result.ErrorMessage, result.LogID)
+			}
+		}
 		result.Status = "submission_unknown"
 		result.ErrorMessage = fmt.Sprintf("提交结果不明：%v；请查询原 thread/run，不要重复提交", err)
 		return result, fmt.Errorf("%s", result.ErrorMessage)
