@@ -32,6 +32,7 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 					result.ErrorMessage = err.Error()
 				}
 			}
+			result.TeamID = common.SpaceTeamID(cmd.Context())
 			encoder := json.NewEncoder(stdout)
 			encoder.SetIndent("", "  ")
 			return encoder.Encode(result)
@@ -39,8 +40,8 @@ func NewQueryResultCommand(stdout, stderr io.Writer, runner *common.Runner) *cob
 	}
 	cmd.SetOut(stdout)
 	cmd.SetErr(stderr)
-	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from generate-video output")
-	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from generate-video output")
+	cmd.Flags().StringVar(&opts.ThreadID, "thread-id", "", "thread_id from a generation or media tool submission")
+	cmd.Flags().StringVar(&opts.RunID, "run-id", "", "run_id from a generation or media tool submission")
 	cmd.Flags().StringVar(&opts.DownloadDir, "download-dir", "", "directory to download completed videos or images into")
 	return cmd
 }

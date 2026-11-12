@@ -1,6 +1,6 @@
 ---
 name: xyq-skill
-description: 使用小云雀 pippit-tool-cli 上传本地素材或通过 URL 导入素材，生成或编辑图片、生成视频、超分和擦字幕，查询结果并交付媒体；操作小云雀个人或团队 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分及管理授权。用户提到小云雀、xyq 并需要这些操作时使用。
+description: 使用小云雀 pippit-tool-cli 上传本地素材或通过 URL 导入素材，生成或编辑图片、生成视频、图片超分、视频抠像、视频超分和擦字幕，查询结果并交付媒体；操作小云雀个人或团队 Canvas 画布、节点、布局、连线、角色/场景、生成提示词、3D 导演台与多轨草稿；查询积分及管理授权。用户提到小云雀、xyq 并需要这些操作时使用。
 user-invocable: true
 metadata:
   {"openclaw": {"emoji": "💬", "requires": {"bins": ["node"]}}}
@@ -41,6 +41,7 @@ metadata:
 | 生成图片，或基于参考图修改图片 | `generate-image` | [生图与图片编辑](commands/generate-image.md) |
 | 查询当前可用的图片/视频模型、比例、分辨率及推理强度等参数配置 | `model list` / `model describe` | [模型发现](commands/model.md) |
 | 生成视频、参考生成、视频编辑、视频延长、首尾帧生成、Draft 样片及转成片 | `generate-video` | [生视频](commands/generate-video.md) |
+| 图片超分或视频抠像（黑色/绿色背景 MP4） | `image-super-resolution` / `video-matting` | [结构化媒体工具](commands/media-tools.md) |
 | 提升已有视频分辨率、视频超分 | `video-super-resolution` | [超分](commands/video-super-resolution.md) |
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
@@ -59,7 +60,8 @@ metadata:
 - 图片模型对用户只展示服务端返回的名称；列表、选择、详情与生成命令均使用完整名称，不解释或展示对应底层枚举。名称到提交标识由 CLI 解析，详见 [模型发现](commands/model.md)。
 - 用户明确要求生成或处理，即可在该范围内执行；仅咨询用法、费用或方案时不提交。范围、必填信息或消耗 credits 的授权不明确时，先确认，不重复索要已给出的授权。
 - 提问优先使用宿主实际提供且当前模式允许的工具：Codex 的 `request_user_input` 或 `request_user_input_async`，WorkBuddy 的 `ask_user_question`；不可用时用普通聊天。需要答案时等待答复。
-- 生成和视频处理命令的素材参数接收本地文件路径，CLI 内部上传，单文件必须小于 500 MB（500000000 字节）；不能把 URL 或资产 ID 填入这些路径参数。用户要求从外链导入素材时，使用 `upload-file --url`，或在画布流程中使用 `canvas upload --url` 并保留其查询等待与输出，由服务端读取源文件，无需先下载到本机；参数、限制及后续资产复用见 [上传说明](commands/upload-file.md)。
+- `image-super-resolution` / `video-matting` 使用 `upload-file` 返回的 `asset_id`，须复用相同空间；这两个命令的参数、提交恢复和交付见 [结构化媒体工具](commands/media-tools.md)。
+- 其他生成和视频处理命令的素材参数接收本地文件路径，CLI 内部上传，单文件必须小于 500 MB（500000000 字节）；不能把 URL 或资产 ID 填入这些路径参数。用户要求从外链导入素材时，使用 `upload-file --url`，或在画布流程中使用 `canvas upload --url` 并保留其查询等待与输出，由服务端读取源文件，无需先下载到本机；参数、限制及后续资产复用见 [上传说明](commands/upload-file.md)。
 - `generate-image` / `generate-video` 上传素材失败时，向用户说明 CLI 返回的素材类型、类型内序号、文件名、原始原因和可用的 LogID，并说明尚未提交生成任务。序号按同类型参数的传入顺序从 1 开始，不是所有附件的混合序号；只有服务端明确返回审核拒绝时才说明审核未通过，不能把网络、权限等失败都归为审核问题。
 - `generate-image` / `generate-video` 将所有参考素材按最多 10 个并发上传，等待本批上传结束后统一返回全部失败项；某个素材失败不会跳过其他素材。错误按图片、视频、音频分组及各自输入顺序列出，生成引用也保留输入顺序，不按上传完成先后排序。任一素材失败均不提交生成；向用户一次性列全失败素材，不只转述第一项。网络失败、取消或超时不代表审核通过。根据失败原因等待用户替换对应素材或解决问题，不自动删减素材、重传或重新提交生成。旧 CLI 如首错即停或未返回文件定位，须如实说明其结果范围，不凭图片内容猜测未检查素材的审核结论。
 - 提交成功后立即展示真实 `web_thread_link`；未返回链接时如实说明，保留任务 ID。后续查询和下载失败不能触发重复生成。
@@ -67,7 +69,7 @@ metadata:
 
 ## 宿主来源统计
 
-调用 `generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle` 时，由宿主 Agent 根据实际运行环境静默附加可选 `--source`，仅用于来源统计，不影响创作参数或工具效果。
+调用 `generate-image`、`generate-video`、`video-super-resolution`、`erase-video-subtitle`、`image-super-resolution`、`video-matting` 时，由宿主 Agent 根据实际运行环境静默附加可选 `--source`，仅用于来源统计，不影响创作参数或工具效果。
 
 - 使用稳定的宿主标识：豆包办公填 `doubao`，WorkBuddy 填 `workbuddy`，Codex 填 `codex`；其它已知宿主使用其真实、稳定的产品标识，不附带版本、会话 ID、用户信息或 prompt。
 - 从宿主提供的可信环境信息判断；不能因用户在创作内容中提到某个平台就认定它是来源，也不要把后端 Agent 名当作宿主来源。

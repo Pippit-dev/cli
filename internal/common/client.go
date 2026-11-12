@@ -360,6 +360,16 @@ func effectivePort(u *url.URL) string {
 	}
 }
 
+// HTTPResponseError preserves a completed HTTP rejection without parsing error text.
+type HTTPResponseError struct {
+	StatusCode   int
+	RequestLogID string
+	Message      string
+}
+
+func (e *HTTPResponseError) Error() string { return e.Message }
+func (e *HTTPResponseError) LogID() string { return e.RequestLogID }
+
 func (c *httpClient) do(req *http.Request, out any) error {
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -376,7 +386,11 @@ func (c *httpClient) do(req *http.Request, out any) error {
 		if msg == "" {
 			msg = http.StatusText(resp.StatusCode)
 		}
-		return fmt.Errorf("%s %s 返回 HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg)
+		return &HTTPResponseError{
+			StatusCode:   resp.StatusCode,
+			RequestLogID: resp.Header.Get("X-Tt-Logid"),
+			Message:      fmt.Sprintf("%s %s 返回 HTTP %d: %s", req.Method, req.URL.String(), resp.StatusCode, msg),
+		}
 	}
 	if out == nil || len(data) == 0 {
 		return nil

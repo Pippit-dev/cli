@@ -75,6 +75,7 @@ type QueryResultOptions struct {
 
 // QueryResultResult describes the user-facing query-result outcome.
 type QueryResultResult struct {
+	TeamID       string             `json:"team_id"`
 	Status       string             `json:"status,omitempty"`
 	Completed    bool               `json:"completed"`
 	ThreadID     string             `json:"thread_id"`
@@ -148,9 +149,10 @@ type queryVideo struct {
 }
 
 type queryImage struct {
-	DownloadURL string         `json:"url"`
-	AssetID     string         `json:"asset_id"`
-	Metadata    queryImageMeta `json:"metadata"`
+	DownloadURL   string         `json:"url"`
+	AssetID       string         `json:"asset_id"`
+	PippitAssetID string         `json:"pippit_asset_id"`
+	Metadata      queryImageMeta `json:"metadata"`
 }
 
 type queryImageMeta struct {
@@ -183,6 +185,7 @@ func QueryResult(ctx context.Context, opts *QueryResultOptions, runner *common.R
 	}
 	logResolvedQueryError(queryErr, opts)
 	result := &QueryResultResult{
+		TeamID:    common.SpaceTeamID(ctx),
 		Status:    statusForRunState(run.State),
 		Completed: isTerminalRunState(run.State),
 		ThreadID:  firstNonEmpty(thread.ThreadID, opts.ThreadID),
@@ -528,7 +531,7 @@ func hasVideoExtension(name string) bool {
 }
 
 func imageFileName(image queryImage, index int) string {
-	name := image.AssetID
+	name := firstNonEmpty(image.PippitAssetID, image.AssetID)
 	if name == "" {
 		name = "result_" + strconv.Itoa(index)
 	}
