@@ -207,3 +207,16 @@ func TestHTTPAuthRejectionPreservesRecoveryAndLogID(t *testing.T) {
 		})
 	}
 }
+
+func TestInternalBusinessErrorMayHaveCreatedRun(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		fmt.Fprint(w, `{"ret":"1","errmsg":"服务器繁忙，请稍后重试","log_id":"created-run-error"}`)
+	}))
+	defer server.Close()
+	result, err := Submit(context.Background(), Options{Tool: commandnames.ImageSuperResolution, AssetID: "asset"}, &common.Runner{Client: common.NewHTTPClient(server.URL, time.Second, common.NewAccessKeyAuthorizer("key"))}, nil)
+	if err == nil || result.Status != "submission_unknown" || result.ThreadID == "" || result.RunID == "" || result.LogID != "created-run-error" || calls != 1 || !strings.Contains(result.ErrorMessage, "不要重复提交") {
+		t.Fatalf("result=%+v error=%v calls=%d", result, err, calls)
+	}
+}

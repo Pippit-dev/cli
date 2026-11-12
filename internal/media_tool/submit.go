@@ -165,6 +165,13 @@ func Submit(ctx context.Context, opts Options, runner *common.Runner, beforeSend
 		return result, fmt.Errorf("%s", result.ErrorMessage)
 	}
 	result.LogID = resp.LogID
+	// An internal business error can arrive after the server persisted a Run.
+	// Keep its recovery IDs instead of implying that resubmission is safe.
+	if resp.Ret == "1" {
+		result.Status = "submission_unknown"
+		result.ErrorMessage = fmt.Sprintf("提交结果不明：ret=%s errmsg=%s；请查询原 thread/run，不要重复提交", resp.Ret, resp.Errmsg)
+		return result, common.NewLogIDError(result.ErrorMessage, result.LogID)
+	}
 	if resp.Ret != "0" {
 		result.Status = "rejected"
 		result.ErrorMessage = fmt.Sprintf("提交被拒绝: ret=%s errmsg=%s", resp.Ret, resp.Errmsg)
