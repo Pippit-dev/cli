@@ -146,9 +146,21 @@ func Submit(ctx context.Context, opts Options, runner *common.Runner, beforeSend
 		}
 	}
 	path := config.CanvasSubmitRunPath
+	query := url.Values{}
 	if source := strings.TrimSpace(opts.Source); source != "" {
-		path += "?platform=" + url.QueryEscape(source)
+		query.Set("platform", source)
 	}
+	// Both operations use the novel agent tool workflow. Carry business labels
+	// like the existing CLI video entry; identity is supplied only by the server.
+	babi, err := json.Marshal(map[string]string{
+		"scene_lv1": "ai_agent", "scene_lv2": "front_tool", "tool_id": "novel",
+		"tab_name": "other", "edit_type": "novel", "enter_from": "skill",
+	})
+	if err != nil {
+		return nil, err
+	}
+	query.Set("babi_param", string(babi))
+	path += "?" + query.Encode()
 	var resp common.SubmitRunResponse
 	if err = runner.Client.SendRequest(ctx, path, req, &resp); err != nil {
 		var httpErr *common.HTTPResponseError

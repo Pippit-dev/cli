@@ -73,6 +73,13 @@ func TestSubmitQueryDownload(t *testing.T) {
 						if r.URL.Query().Get("platform") != "codex" {
 							t.Error("host attribution missing")
 						}
+						var babi map[string]string
+						if err := json.Unmarshal([]byte(r.URL.Query().Get("babi_param")), &babi); err != nil {
+							t.Errorf("missing cost attribution: %v", err)
+						}
+						if babi["scene_lv1"] != "ai_agent" || babi["scene_lv2"] != "front_tool" || babi["tool_id"] != "novel" || babi["enter_from"] != "skill" {
+							t.Errorf("incorrect media tool attribution: %#v", babi)
+						}
 						var req Request
 						if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 							t.Error(err)
