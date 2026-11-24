@@ -41,10 +41,11 @@ func GetRunCredits(ctx context.Context, opts GetRunCreditsOptions, runner *Runne
 		return nil, fmt.Errorf("get_run_credits 运行器客户端缺失")
 	}
 	var resp struct {
-		Ret    string `json:"ret"`
-		Errmsg string `json:"errmsg"`
-		LogID  string `json:"log_id"`
-		Data   struct {
+		Ret           string `json:"ret"`
+		Errmsg        string `json:"errmsg"`
+		LogID         string `json:"log_id"`
+		ConfirmedFree bool   `json:"confirmed_free"`
+		Data          struct {
 			Run struct {
 				RunID       string            `json:"run_id"`
 				ThreadID    string            `json:"thread_id"`
@@ -66,11 +67,11 @@ func GetRunCredits(ctx context.Context, opts GetRunCreditsOptions, runner *Runne
 	}
 	return &GetRunCreditsResult{
 		TeamID: SpaceTeamID(ctx), ThreadID: run.ThreadID, RunID: run.RunID,
-		Credits: run.Consumption.credits(run.State),
+		Credits: run.Consumption.credits(run.State, resp.ConfirmedFree),
 	}, nil
 }
 
-func (snapshot runCreditSnapshot) credits(state int) RunCredits {
+func (snapshot runCreditSnapshot) credits(state int, confirmedFree bool) RunCredits {
 	credits := RunCredits{
 		PreDeducted:      creditInteger(snapshot.PreDeductCredits),
 		Returned:         creditInteger(snapshot.ReturnedCredits),
@@ -92,7 +93,7 @@ func (snapshot runCreditSnapshot) credits(state int) RunCredits {
 		credits.Deducted = actual
 	case 1:
 		// A default zero without a ledger row does not confirm free usage.
-		if updated := creditInteger(snapshot.UpdatedAtMS); *actual == 0 && updated != nil && *updated > 0 {
+		if updated := creditInteger(snapshot.UpdatedAtMS); *actual == 0 && (confirmedFree || (updated != nil && *updated > 0)) {
 			credits.Deducted = actual
 		}
 	}

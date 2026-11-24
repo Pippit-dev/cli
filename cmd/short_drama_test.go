@@ -1056,3 +1056,24 @@ func assertFileContent(t *testing.T, path string, want string) {
 		t.Fatalf("ReadFile(%s) = %q, want %q", path, string(data), want)
 	}
 }
+
+func TestShortDramaSubmitRunPreservesIDsWhenOutcomeUnknown(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/biz/v1/skill/submit_run" {
+			t.Errorf("unexpected request path %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread_123","run_id":"run_456","state":0},"thread":{"thread_id":"thread_123","project_id":9007199254740993},"web_thread_link":"https://xyq.example/project"}}`))
+	}))
+	defer server.Close()
+	var stdout, stderr bytes.Buffer
+	root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+	root.SetArgs([]string{"short-drama", "+submit-run", "--message", "create"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	result := decodeJSON(t, stdout.Bytes())
+	if result["submission_status"] != "unknown" || result["project_id"] != "9007199254740993" ||
+		result["thread_id"] != "thread_123" || result["run_id"] != "run_456" || result["warning"] == "" {
+		t.Fatalf("unexpected recovery response: %s", stdout.String())
+	}
+}
