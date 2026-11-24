@@ -27,6 +27,7 @@ const (
 	GetLiteTeamListPath          = "/api/biz/v1/skill/get_lite_team_list"
 	GetAvailableModelListPath    = "/api/biz/v1/skill/get_available_model_list"
 	GetThreadPath                = "/api/biz/v1/skill/get_thread"
+	GetRunCreditsPath            = "/api/biz/v1/skill/get_run_credits"
 	UploadFilePath               = "/api/biz/v1/skill/upload_file"
 	ListThreadFilePath           = "/api/biz/v1/skill/list_thread_file"
 	EnvXYQAccessKey              = "XYQ_ACCESS_KEY"

@@ -71,6 +71,11 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 			_, _ = w.Write([]byte(`{"ret":"0","data":{"Assets":[{"PippitAssetID":"canvas"}]}}`))
 		case config.SubmitRunPath:
 			_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread-a","run_id":"run-a"}}}`))
+		case config.GetRunCreditsPath:
+			if requestRef.ThreadID != "" || requestRef.RunID != "run-a" {
+				t.Errorf("run-only references = %#v", requestRef)
+			}
+			_, _ = w.Write([]byte(`{"ret":"0","data":{"run":{"thread_id":"thread-a","run_id":"run-a","state":3,"credit_consumption":{"status":5,"actual_deduct_credits":"2","returned_credits":"3"}}}}`))
 		case config.GetThreadPath:
 			_, _ = w.Write([]byte(`{"ret":"0","data":{"readable_text":"task result"}}`))
 		case config.ListThreadFilePath:
@@ -152,6 +157,9 @@ func TestSpaceCommandsAndBusinessTaskScope(t *testing.T) {
 	must("space", "use", "34")
 	listTeamID = "34"
 	checkList("34")
+	if got := must("get-run-credits", "--run-id", "run-a"); !strings.Contains(got, `"team_id":"12"`) || !strings.Contains(got, `"credits":{"deducted":2,"returned":3,"settlementStatus":5}`) {
+		t.Fatalf("Run credits in original team = %s", got)
+	}
 	must("model", "list", "--refresh")
 	if requests[len(requests)-1] != config.GetAvailableModelListPath+":34" {
 		t.Fatal("model query did not forward the selected team", requests)

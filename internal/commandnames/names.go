@@ -13,4 +13,5 @@ const (
 	Watermark      = "watermark"
 	IP             = "ip"
 	DownloadResult = "download-result"
+	GetRunCredits  = "get-run-credits"
 )
