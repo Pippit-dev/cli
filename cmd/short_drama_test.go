@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1054,5 +1056,53 @@ func assertFileContent(t *testing.T, path string, want string) {
 	}
 	if string(data) != want {
 		t.Fatalf("ReadFile(%s) = %q, want %q", path, string(data), want)
+	}
+}
+
+func TestShortDramaSubmitRunUsesProjectID(t *testing.T) {
+	for _, tc := range []struct {
+		name, thread, project, returnedThread string
+		state                                 int
+	}{
+		{"new", "", "", "new-thread", 1},
+		{"project", "", "9007199254740993", "project-thread", 1},
+		{"thread", "existing-thread", "", "existing-thread", 1},
+		{"matching IDs", "existing-thread", "9007199254740993", "existing-thread", 1},
+		{"ambiguous", "", "", "new-thread", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				var body map[string]string
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if body["project_id"] != tc.project || body["thread_id"] != tc.thread {
+					t.Errorf("unexpected submit IDs: %#v", body)
+				}
+				_, _ = fmt.Fprintf(w, `{"ret":"0","data":{"run":{"thread_id":%q,"run_id":"run","state":%d},"thread":{"thread_id":%q,"project_id":9007199254740993},"web_thread_link":"https://xyq.example/project"}}`, tc.returnedThread, tc.state, tc.returnedThread)
+			}))
+			defer server.Close()
+
+			var stdout, stderr bytes.Buffer
+			root := newTestRootCommand(t, &stdout, &stderr, server.URL)
+			args := []string{"short-drama", "+submit-run", "--message", "create"}
+			if tc.thread != "" {
+				args = append(args, "--thread-id", tc.thread)
+			}
+			if tc.project != "" {
+				args = append(args, "--project-id", tc.project)
+			}
+			root.SetArgs(args)
+			if err := root.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			result := decodeJSON(t, stdout.Bytes())
+			if calls != 1 || result["project_id"] != "9007199254740993" || result["thread_id"] != tc.returnedThread || result["run_id"] != "run" ||
+				(result["submission_status"] == "unknown") != (tc.state == 0) {
+				t.Fatalf("calls=%d output=%s", calls, stdout.String())
+			}
+		})
 	}
 }
