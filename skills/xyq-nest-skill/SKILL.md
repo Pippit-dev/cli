@@ -45,7 +45,7 @@ metadata:
 | 去除已有视频字幕 | `erase-video-subtitle` | [擦字幕](commands/erase-video-subtitle.md) |
 | 查询已有任务进度、下载生成结果 | `query-result` | [查询结果](commands/query-result.md) |
 | 查询当前空间积分余额、剩余 credits | `get-credit-balance` | [积分](commands/get-credit-balance.md) |
-| 查询单个 Run 的积分消耗 | `get-run-credits --run-id RUN_ID` | [Run 积分](../../README.md#短剧工作流技能) |
+| 查询单个 Run 的积分消耗 | `get-run-credits --run-id RUN_ID` | [Run 积分](commands/get-credit-balance.md#按-run-查询积分消耗) |
 | 查询或修改当前账号的 AIGC 水印开关 | `watermark [on\|off]` | [账号水印设置](commands/watermark.md) |
 
 - 普通生图、生视频也走对应生成命令，无需用户额外声明“模型直出”。

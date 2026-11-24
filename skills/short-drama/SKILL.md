@@ -37,7 +37,7 @@ metadata:
 | 上传本地参考剧本 | `short-drama +upload-file` | [上传文件](commands/upload-file.md) |
 | 查询角色、场景、外观、画布、分镜等业务内容 | 同一会话 `short-drama +submit-run`，再用 `get-thread` 获取回答 | [业务内容查询](workflows/creation.md#业务内容查询) |
 | 查询会话进展、后端提问和结果 | `get-thread` | [查询进展](commands/get-thread.md) |
-| 查询单个 Run 的积分消耗 | `get-run-credits --run-id RUN_ID` | [Run 积分](../../README.md#短剧工作流技能) |
+| 查询单个 Run 的积分消耗 | `get-run-credits --run-id RUN_ID` | [Run 积分](commands/get-thread.md#按-run-查询积分消耗) |
 | 获取会话产物列表 | `list-thread-file` | [会话文件](commands/list-thread-file.md) |
 | 下载已发现的会话产物 | `download-result` | [下载文件](commands/download-result.md) |
 
