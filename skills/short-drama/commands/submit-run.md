@@ -25,3 +25,5 @@ pippit-tool-cli short-drama +submit-run --message "用户的新需求或回复" 
 保存 ID、立即展示任务链接，按 [创作与会话续接](../workflows/creation.md) 处理页面与后端问题，并进入 [轮询与文件交付](../workflows/poll-and-deliver.md)。缺少链接时如实说明，不自行拼接。
 
 提交失败按错误处理；网络超时或响应不完整时不能推断未提交，不自动重提。已有会话可先查询该会话，无法确认则报告不确定性。查询或下载失败不能触发新建任务。
+
+如果返回 `submission_status: "unknown"`，保留 `project_id`、`thread_id` 和 `run_id`，用 `get-thread --thread-id THREAD_ID --run-id RUN_ID` 查询原任务。查询暂时无结果时保留原 ID，等待结果明确后再决定是否需要重新提交。

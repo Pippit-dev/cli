@@ -120,7 +120,7 @@ const commandModules = {
   "video-super-resolution": ["video-super-resolution"],
   "erase-video-subtitle": ["erase-video-subtitle"],
   "query-result": ["query-result"],
-  "get-credit-balance": ["get-credit-balance"],
+  "get-credit-balance": ["get-credit-balance", "get-run-credits"],
   watermark: ["watermark"],
 };
 for (const [moduleName, commands] of Object.entries(commandModules)) {

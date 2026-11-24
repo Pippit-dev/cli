@@ -103,8 +103,12 @@ func (s *Store) load(kind, id, thread string) (*record, error) {
 		return nil, fmt.Errorf("无法读取%s空间记录: %w", kind, err)
 	}
 	var r record
-	if json.Unmarshal(data, &r) != nil || r.Version != Version || r.Account != s.Account || r.Origin != s.Origin || r.Kind != kind || r.ID != id || r.ThreadID != thread {
+	if json.Unmarshal(data, &r) != nil || r.Version != Version || r.Account != s.Account || r.Origin != s.Origin || r.Kind != kind || r.ID != id {
 		return nil, fmt.Errorf("%s空间记录损坏、身份不符或版本不支持", kind)
+	}
+	// Run-only reads may use the stored space without knowing the thread ID.
+	if (kind != "run" || thread != "") && r.ThreadID != thread {
+		return nil, fmt.Errorf("%s空间记录的 thread_id 不匹配", kind)
 	}
 	teamID, err := ParseTeamID(r.TeamID)
 	if err != nil || teamID != r.TeamID {
@@ -200,8 +204,13 @@ func referenceKeys(ref References) []referenceKey {
 func (s *Store) Remember(ref References, selected Selection) error {
 	for _, key := range referenceKeys(ref) {
 		old, err := s.load(key.kind, key.id, key.thread)
-		if err == nil && old != nil && old.TeamID != selected.TeamID {
-			return fmt.Errorf("拒绝覆盖归属不同的%s记录", key.kind)
+		if err == nil && old != nil {
+			if old.TeamID != selected.TeamID {
+				return fmt.Errorf("拒绝覆盖归属不同的%s记录", key.kind)
+			}
+			if key.kind == "run" && key.thread == "" {
+				continue
+			}
 		}
 		if err := s.save(key.kind, key.id, key.thread, selected); err != nil {
 			return err

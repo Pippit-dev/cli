@@ -216,13 +216,17 @@ pippit-tool-cli get-credit-balance
 pippit-tool-cli short-drama +submit-run --message "写一个赛博朋克短剧开头"
 pippit-tool-cli short-drama +upload-file --path ./reference.doc
 pippit-tool-cli get-thread --thread-id thread_123 --run-id run_456
+pippit-tool-cli get-run-credits --run-id run_456
 pippit-tool-cli list-thread-file --thread-id thread_123 --page-num 1 --page-size 200
 pippit-tool-cli download-result --output-path ./thread_123/results/result.mp4 --url URL --updated-at 1779716734
 ```
 
 `get-credit-balance`: 使用当前登录凭证查询所选个人或团队空间的有效积分余额，并输出 `{"total_remain_amount":"123"}`；零余额会显式输出为 `"0"`。加 `--with-log-id` 可在输出中同时保留本次请求的 `log_id`。
 
-`+submit-run`: 输出 `thread_id`、`run_id` 和 `web_thread_link`；其中 `--message` 为必填参数。
+`+submit-run` 需要 `--message`。新会话会创建短剧项目，返回 `thread_id`、`run_id` 和可打开项目的 `web_thread_link`。续接时传原 `--thread-id`。
+
+`get-run-credits --run-id RUN_ID` 只读查询单个 Run 的积分消耗。`credits.deducted` 是结算后的净实扣，确认零消费时为 `0`，待结算或缺少账本时为 `null`。可选 `--thread-id` 用于核对会话。跨设备查询团队任务时可指定原空间 `--team-id`。
+
 `get-thread`: 请求中带 `version=v2`，并输出 `readable_text`。
 `list-thread-file`: 输出会话文件列表、分页提示和可直接传给下载命令的 `file_path`。
 `+upload-file`: 输出返回的 `asset_id`。 当前仅支持 `.doc`、`.docx` 和 `.txt` 文件。
